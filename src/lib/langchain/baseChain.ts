@@ -2,11 +2,20 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
 import { ChatGroq } from '@langchain/groq'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { BaseMessage, SystemMessage, HumanMessage } from '@langchain/core/messages'
+import { LinguisticProfile, EmotionalState } from '@/types/database'
+import { PersonalityService } from '@/lib/services/personalityService'
+import { emotionalService } from '@/lib/services/emotionalService'
 
 export interface LLMConfig {
   temperature?: number
   maxTokens?: number
   model?: string
+}
+
+// Phase 1 context for enhanced prompts
+export interface Phase1Context {
+  linguisticProfile?: LinguisticProfile
+  emotionalState?: EmotionalState
 }
 
 export class BaseChain {
@@ -155,13 +164,42 @@ export class BaseChain {
     agentPersona: string,
     agentGoals: string[],
     memoryContext?: string,
-    personalityContext?: string
+    personalityContext?: string,
+    phase1Context?: Phase1Context,
+    agentName?: string
   ): string {
     let systemPrompt = `You are an AI agent with the following persona: ${agentPersona}
 
 Your goals are: ${agentGoals.join(', ')}
 
 Respond naturally and helpfully to user queries. Keep responses conversational but focused on your defined role and goals.`
+
+    // Phase 1: Add linguistic style context
+    if (phase1Context?.linguisticProfile && agentName) {
+      const linguisticPrompt = PersonalityService.getLinguisticPrompt(
+        phase1Context.linguisticProfile,
+        agentName
+      )
+      systemPrompt += `
+
+${linguisticPrompt}`
+    }
+
+    // Phase 1: Add emotional state context
+    if (phase1Context?.emotionalState) {
+      const emotionalPrompt = emotionalService.getEmotionalPrompt(phase1Context.emotionalState)
+      if (emotionalPrompt) {
+        systemPrompt += `
+
+${emotionalPrompt}`
+      }
+
+      // Add full emotional context for more nuanced responses
+      const fullEmotionalContext = emotionalService.getFullEmotionalContext(phase1Context.emotionalState)
+      systemPrompt += `
+
+${fullEmotionalContext}`
+    }
 
     if (memoryContext) {
       systemPrompt += `
@@ -180,5 +218,30 @@ ${personalityContext}`
     }
 
     return systemPrompt
+  }
+
+  /**
+   * Create enhanced system prompt with all Phase 1 features
+   */
+  createEnhancedSystemPrompt(params: {
+    agentName: string
+    agentPersona: string
+    agentGoals: string[]
+    memoryContext?: string
+    personalityContext?: string
+    linguisticProfile?: LinguisticProfile
+    emotionalState?: EmotionalState
+  }): string {
+    return this.createSystemPrompt(
+      params.agentPersona,
+      params.agentGoals,
+      params.memoryContext,
+      params.personalityContext,
+      {
+        linguisticProfile: params.linguisticProfile,
+        emotionalState: params.emotionalState
+      },
+      params.agentName
+    )
   }
 }
