@@ -8,8 +8,24 @@ import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
 import { MemoryRecord } from '@/types/database'
-import { ArrowLeft, Send, Bot, User, Settings, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star } from 'lucide-react'
+import { ArrowLeft, Send, Bot, User, Settings, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star, Award, Heart, Clock, Sparkles } from 'lucide-react'
 import { getCurrentLLMModel } from '@/utils/llm'
+
+// Phase 1 Components
+import { EmotionRadar, EmotionBars } from '@/components/emotions/EmotionRadar'
+import { EmotionTimeline, EmotionSummary } from '@/components/emotions/EmotionTimeline'
+import { AchievementBadge, AchievementCard, LevelProgress } from '@/components/achievements/AchievementBadge'
+import { AchievementNotification, useAchievementNotifications } from '@/components/achievements/AchievementNotification'
+import { TimelineExplorer } from '@/components/timeline/TimelineExplorer'
+import { NeuralViz, NeuralViz2D } from '@/components/visualizations/NeuralViz'
+
+// Phase 1 Services
+import { emotionalService } from '@/lib/services/emotionalService'
+import { achievementService } from '@/lib/services/achievementService'
+import { timelineService } from '@/lib/services/timelineService'
+import { ACHIEVEMENTS } from '@/lib/constants/achievements'
+
+type TabType = 'chat' | 'memory' | 'emotions' | 'achievements' | 'timeline' | 'neural'
 
 export default function AgentDetail() {
   const params = useParams()
@@ -20,7 +36,7 @@ export default function AgentDetail() {
   const { messages, sendMessage, loading: messagesLoading } = useMessageStore()
 
   const [newMessage, setNewMessage] = useState('')
-  const [activeTab, setActiveTab] = useState<'chat' | 'memory'>('chat')
+  const [activeTab, setActiveTab] = useState<TabType>('chat')
   const [memories, setMemories] = useState<MemoryRecord[]>([])
   const [memoryStats, setMemoryStats] = useState<{
     totalMemories: number
@@ -35,6 +51,18 @@ export default function AgentDetail() {
   })
   const [loadingMemories, setLoadingMemories] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Phase 1: Achievement notifications
+  const { current: currentAchievement, handleClose: handleAchievementClose, notify: notifyAchievement } = useAchievementNotifications()
+
+  // Phase 1: Timeline events (generated from memories and messages)
+  const [timelineEvents, setTimelineEvents] = useState<ReturnType<typeof timelineService.aggregateEvents> extends Promise<infer T> ? T : never>([])
+
+  // Get agent progress and stats with defaults
+  const agentProgress = currentAgent?.progress || achievementService.createDefaultProgress()
+  const agentStats = currentAgent?.stats || achievementService.createDefaultStats()
+  const agentEmotionalState = currentAgent?.emotionalState || emotionalService.createDefaultEmotionalState()
+  const agentEmotionalHistory = currentAgent?.emotionalHistory || []
 
   useEffect(() => {
     // Find the current agent
@@ -81,10 +109,27 @@ export default function AgentDetail() {
     }
   }
 
-  const handleTabChange = (tab: 'chat' | 'memory') => {
+  const handleTabChange = (tab: TabType) => {
     setActiveTab(tab)
     if (tab === 'memory' && memories.length === 0) {
       loadMemories()
+    }
+    if (tab === 'timeline' && timelineEvents.length === 0 && currentAgent) {
+      loadTimelineEvents()
+    }
+  }
+
+  const loadTimelineEvents = async () => {
+    if (!currentAgent) return
+    try {
+      const events = await timelineService.aggregateEvents(
+        currentAgent,
+        memories,
+        messages as any // Convert message types
+      )
+      setTimelineEvents(events)
+    } catch (error) {
+      console.error('Failed to load timeline events:', error)
     }
   }
 
@@ -183,10 +228,10 @@ export default function AgentDetail() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex gap-2 p-1 bg-muted/30 rounded-xl w-fit">
+        <div className="flex gap-2 p-1 bg-muted/30 rounded-xl w-fit overflow-x-auto">
           <button
             onClick={() => handleTabChange('chat')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
               activeTab === 'chat'
                 ? 'bg-primary text-primary-foreground shadow-lg'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -196,15 +241,59 @@ export default function AgentDetail() {
             Chat
           </button>
           <button
+            onClick={() => handleTabChange('emotions')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
+              activeTab === 'emotions'
+                ? 'bg-primary text-primary-foreground shadow-lg'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <Heart className="h-4 w-4 inline mr-2" />
+            Emotions
+          </button>
+          <button
+            onClick={() => handleTabChange('achievements')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
+              activeTab === 'achievements'
+                ? 'bg-primary text-primary-foreground shadow-lg'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <Award className="h-4 w-4 inline mr-2" />
+            Achievements
+          </button>
+          <button
+            onClick={() => handleTabChange('timeline')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
+              activeTab === 'timeline'
+                ? 'bg-primary text-primary-foreground shadow-lg'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <Clock className="h-4 w-4 inline mr-2" />
+            Timeline
+          </button>
+          <button
+            onClick={() => handleTabChange('neural')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
+              activeTab === 'neural'
+                ? 'bg-primary text-primary-foreground shadow-lg'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <Sparkles className="h-4 w-4 inline mr-2" />
+            Neural
+          </button>
+          <button
             onClick={() => handleTabChange('memory')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
               activeTab === 'memory'
                 ? 'bg-primary text-primary-foreground shadow-lg'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
             }`}
           >
             <Brain className="h-4 w-4 inline mr-2" />
-            Memory & Growth
+            Memory
           </button>
         </div>
 
@@ -262,6 +351,53 @@ export default function AgentDetail() {
               </CardContent>
             </Card>
 
+            {/* Phase 1: Level Progress */}
+            <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl hover:shadow-2xl transition-all duration-300">
+              <CardHeader className="space-y-4">
+                <CardTitle className="flex items-center gap-3 text-xl">
+                  <div className="p-2 rounded-xl bg-amber-500/10">
+                    <Award className="h-6 w-6 text-amber-500" />
+                  </div>
+                  Level & Progress
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <LevelProgress
+                  level={agentProgress.level}
+                  xp={agentProgress.experiencePoints}
+                  nextLevelXP={agentProgress.nextLevelXP}
+                  progressPercent={achievementService.getLevelInfo(agentProgress).progressPercent}
+                  skillPoints={agentProgress.skillPoints}
+                />
+                <div className="mt-4 text-center text-sm text-muted-foreground">
+                  {Object.keys(agentProgress.achievements).length} / {ACHIEVEMENTS.length} achievements
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Phase 1: Emotion Mini Display */}
+            <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl hover:shadow-2xl transition-all duration-300">
+              <CardHeader className="space-y-4">
+                <CardTitle className="flex items-center gap-3 text-xl">
+                  <div className="p-2 rounded-xl bg-pink-500/10">
+                    <Heart className="h-6 w-6 text-pink-500" />
+                  </div>
+                  Current Mood
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center">
+                <NeuralViz2D agent={currentAgent} className="w-32 h-32" />
+                <div className="mt-3 text-center">
+                  <div className="text-lg font-medium capitalize">
+                    {agentEmotionalState.dominantEmotion}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {emotionalService.getEmotionalSummary(agentEmotionalState)}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl hover:shadow-2xl transition-all duration-300">
               <CardHeader className="space-y-4">
                 <CardTitle className="flex items-center gap-3 text-xl">
@@ -274,11 +410,11 @@ export default function AgentDetail() {
               <CardContent className="space-y-6">
                 <div className="grid grid-cols-2 gap-6">
                   <div className="text-center p-4 rounded-xl bg-primary/5">
-                    <div className="text-3xl font-bold text-primary mb-1">127</div>
+                    <div className="text-3xl font-bold text-primary mb-1">{agentStats.totalMessages}</div>
                     <div className="text-sm text-muted-foreground">Messages</div>
                   </div>
                   <div className="text-center p-4 rounded-xl bg-accent/5">
-                    <div className="text-3xl font-bold text-accent mb-1">24</div>
+                    <div className="text-3xl font-bold text-accent mb-1">{agentStats.conversationCount}</div>
                     <div className="text-sm text-muted-foreground">Sessions</div>
                   </div>
                 </div>
@@ -584,10 +720,223 @@ export default function AgentDetail() {
                   </CardContent>
                 </Card>
               </div>
-            )}
+            ) : activeTab === 'emotions' ? (
+              /* Emotions Tab */
+              <div className="space-y-6">
+                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                  <CardHeader className="space-y-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 rounded-xl bg-pink-500/10">
+                        <Heart className="h-6 w-6 text-pink-500" />
+                      </div>
+                      Emotional State
+                    </CardTitle>
+                    <CardDescription>
+                      {currentAgent.name}&apos;s current emotional state and history
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid md:grid-cols-2 gap-8">
+                      <div className="flex flex-col items-center">
+                        <h4 className="text-sm font-medium text-muted-foreground mb-4">Emotion Radar</h4>
+                        <EmotionRadar emotionalState={agentEmotionalState} size={280} />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-medium text-muted-foreground mb-4">Emotion Levels</h4>
+                        <EmotionBars emotionalState={agentEmotionalState} />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                  <CardHeader className="space-y-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 rounded-xl bg-purple-500/10">
+                        <Clock className="h-6 w-6 text-purple-500" />
+                      </div>
+                      Emotional Timeline
+                    </CardTitle>
+                    <CardDescription>
+                      Recent emotional events and triggers
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <EmotionTimeline events={agentEmotionalHistory} maxEvents={15} />
+                  </CardContent>
+                </Card>
+              </div>
+            ) : activeTab === 'achievements' ? (
+              /* Achievements Tab */
+              <div className="space-y-6">
+                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                  <CardHeader className="space-y-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 rounded-xl bg-amber-500/10">
+                        <Award className="h-6 w-6 text-amber-500" />
+                      </div>
+                      Level Progress
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <LevelProgress
+                      level={agentProgress.level}
+                      xp={agentProgress.experiencePoints}
+                      nextLevelXP={agentProgress.nextLevelXP}
+                      progressPercent={achievementService.getLevelInfo(agentProgress).progressPercent}
+                      skillPoints={agentProgress.skillPoints}
+                    />
+                  </CardContent>
+                </Card>
+
+                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                  <CardHeader className="space-y-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 rounded-xl bg-green-500/10">
+                        <Star className="h-6 w-6 text-green-500" />
+                      </div>
+                      Unlocked Achievements ({Object.keys(agentProgress.achievements).length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {Object.keys(agentProgress.achievements).length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        No achievements unlocked yet. Keep interacting to unlock achievements!
+                      </div>
+                    ) : (
+                      <div className="grid gap-4">
+                        {achievementService.getUnlockedAchievements(agentProgress).map(achievement => (
+                          <AchievementCard
+                            key={achievement.id}
+                            achievement={achievement}
+                            unlocked={true}
+                            unlockedAt={achievement.unlockedAt}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                  <CardHeader className="space-y-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 rounded-xl bg-gray-500/10">
+                        <Award className="h-6 w-6 text-gray-500" />
+                      </div>
+                      Available Achievements
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-4 max-h-96 overflow-y-auto">
+                      {achievementService.getLockedAchievements(agentProgress, agentStats)
+                        .slice(0, 10)
+                        .map(achievement => (
+                          <AchievementCard
+                            key={achievement.id}
+                            achievement={achievement}
+                            unlocked={false}
+                            progress={achievement.progress}
+                          />
+                        ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : activeTab === 'timeline' ? (
+              /* Timeline Tab */
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-blue-500/10">
+                      <Clock className="h-6 w-6 text-blue-500" />
+                    </div>
+                    Timeline Explorer
+                  </CardTitle>
+                  <CardDescription>
+                    Explore {currentAgent.name}&apos;s life events and memories over time
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <TimelineExplorer events={timelineEvents} />
+                </CardContent>
+              </Card>
+            ) : activeTab === 'neural' ? (
+              /* Neural Visualization Tab */
+              <div className="space-y-6">
+                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                  <CardHeader className="space-y-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 rounded-xl bg-indigo-500/10">
+                        <Sparkles className="h-6 w-6 text-indigo-500" />
+                      </div>
+                      Neural Visualization
+                    </CardTitle>
+                    <CardDescription>
+                      A 3D visualization of {currentAgent.name}&apos;s mind, memories, and emotional state
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <NeuralViz agent={currentAgent} height={500} />
+                  </CardContent>
+                </Card>
+
+                <div className="grid md:grid-cols-2 gap-6">
+                  <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                    <CardHeader>
+                      <CardTitle className="text-lg">Memory Network</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Total Memories</span>
+                          <span className="font-medium">{currentAgent.memoryCount || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Active Memories</span>
+                          <span className="font-medium">{Math.floor((currentAgent.memoryCount || 0) * 0.3)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Connections</span>
+                          <span className="font-medium">{Math.floor((currentAgent.memoryCount || 0) * 0.5)}</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                    <CardHeader>
+                      <CardTitle className="text-lg">Cognitive State</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Dominant Emotion</span>
+                          <span className="font-medium capitalize">{agentEmotionalState.dominantEmotion}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Personality Level</span>
+                          <span className="font-medium">Level {agentProgress.level}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Total Interactions</span>
+                          <span className="font-medium">{currentAgent.totalInteractions || 0}</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
+
+      {/* Achievement Notification */}
+      <AchievementNotification
+        achievement={currentAchievement}
+        onClose={handleAchievementClose}
+      />
     </div>
   )
 }
