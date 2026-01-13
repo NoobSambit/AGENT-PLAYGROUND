@@ -163,7 +163,7 @@ export interface NarrativeThread {
 }
 
 export interface TimelineFilters {
-  types: TimelineEventType[] | ['all']
+  types: (TimelineEventType | 'all')[]
   dateRange: {
     start: string | null
     end: string | null
@@ -256,6 +256,17 @@ export interface AgentRecord {
   // Phase 1: Achievement System
   progress?: AgentProgress
   stats?: AgentStats
+
+  // Phase 2: Psychological Profile
+  psychologicalProfile?: PsychologicalProfile
+
+  // Phase 2: Stats counters
+  relationshipCount?: number
+  creativeWorks?: number
+  dreamCount?: number
+  journalCount?: number
+  challengesCompleted?: number
+  challengeWins?: number
 }
 
 export interface MemoryRecord {

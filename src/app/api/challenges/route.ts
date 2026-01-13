@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
 
     // Get challenges
     const challengesRef = collection(db, 'challenges')
-    let q = query(challengesRef, orderBy('createdAt', 'desc'), limit(limitCount))
+    const q = query(challengesRef, orderBy('createdAt', 'desc'), limit(limitCount))
 
     const snapshot = await getDocs(q)
     let challenges: Challenge[] = snapshot.docs.map(doc => ({

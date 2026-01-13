@@ -1,7 +1,16 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { AgentService } from '@/lib/services/agentService'
-import { CreateAgentData, MemoryRecord, CreateMemoryData } from '@/types/database'
+import {
+  CreateAgentData,
+  MemoryRecord,
+  CreateMemoryData,
+  AgentProgress,
+  AgentStats,
+  EmotionalState,
+  EmotionalEvent,
+  LinguisticProfile
+} from '@/types/database'
 
 export interface Agent {
   id: string
@@ -9,11 +18,23 @@ export interface Agent {
   persona: string
   goals: string[]
   createdAt: string
+  updatedAt?: string
   status: 'active' | 'inactive' | 'training'
   coreTraits?: Record<string, number> // Immutable personality traits
   dynamicTraits?: Record<string, number> // Learned personality traits
   memoryCount?: number // Number of memories stored
   totalInteractions?: number // Total interactions for personality evolution
+
+  // Phase 1: Linguistic Personality System
+  linguisticProfile?: LinguisticProfile
+
+  // Phase 1: Achievement & Progress System
+  progress?: AgentProgress
+  stats?: AgentStats
+
+  // Phase 1: Emotional State System
+  emotionalState?: EmotionalState
+  emotionalHistory?: EmotionalEvent[]
 }
 
 interface AgentState {

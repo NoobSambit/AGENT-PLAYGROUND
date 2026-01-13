@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
-import { MemoryRecord } from '@/types/database'
+import { MemoryRecord, MessageRecord, AgentRecord } from '@/types/database'
 import { ArrowLeft, Send, Bot, User, Settings, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star, Award, Heart, Clock, Sparkles, Users, Palette, Moon, BookOpen, Target, Swords } from 'lucide-react'
 import { getCurrentLLMModel } from '@/utils/llm'
 
@@ -131,9 +131,9 @@ export default function AgentDetail() {
     if (!currentAgent) return
     try {
       const events = await timelineService.aggregateEvents(
-        currentAgent,
+        currentAgent as unknown as AgentRecord,
         memories,
-        messages as any // Convert message types
+        messages as unknown as MessageRecord[]
       )
       setTimelineEvents(events)
     } catch (error) {
@@ -450,7 +450,7 @@ export default function AgentDetail() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center">
-                <NeuralViz2D agent={currentAgent} className="w-32 h-32" />
+                <NeuralViz2D agent={currentAgent as unknown as AgentRecord} className="w-32 h-32" />
                 <div className="mt-3 text-center">
                   <div className="text-lg font-medium capitalize">
                     {agentEmotionalState.dominantEmotion}
@@ -607,7 +607,7 @@ export default function AgentDetail() {
               </div>
             </Card>
             </>
-            ) : (
+            ) : activeTab === 'memory' ? (
               /* Memory & Growth Interface */
               <div className="space-y-6">
                 {/* Personality Traits */}
@@ -941,7 +941,7 @@ export default function AgentDetail() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="p-0">
-                    <NeuralViz agent={currentAgent} height={500} />
+                    <NeuralViz agent={currentAgent as unknown as AgentRecord} height={500} />
                   </CardContent>
                 </Card>
 
@@ -1078,7 +1078,7 @@ export default function AgentDetail() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ChallengeHub currentAgentId={currentAgent.id} agents={agents} />
+                  <ChallengeHub currentAgentId={currentAgent.id} agents={agents as unknown as AgentRecord[]} />
                 </CardContent>
               </Card>
             ) : null}
