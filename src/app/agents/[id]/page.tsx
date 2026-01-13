@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
-import { MemoryRecord } from '@/types/database'
-import { ArrowLeft, Send, Bot, User, Settings, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star, Award, Heart, Clock, Sparkles } from 'lucide-react'
+import { MemoryRecord, MessageRecord, AgentRecord } from '@/types/database'
+import { ArrowLeft, Send, Bot, User, Settings, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star, Award, Heart, Clock, Sparkles, Users, Palette, Moon, BookOpen, Target, Swords } from 'lucide-react'
 import { getCurrentLLMModel } from '@/utils/llm'
 
 // Phase 1 Components
@@ -19,13 +19,21 @@ import { AchievementNotification, useAchievementNotifications } from '@/componen
 import { TimelineExplorer } from '@/components/timeline/TimelineExplorer'
 import { NeuralViz, NeuralViz2D } from '@/components/visualizations/NeuralViz'
 
+// Phase 2 Components
+import { RelationshipGraph } from '@/components/relationships/RelationshipGraph'
+import { CreativePortfolio } from '@/components/creative/CreativePortfolio'
+import { DreamJournal } from '@/components/dreams/DreamJournal'
+import { JournalViewer } from '@/components/journal/JournalViewer'
+import { ProfileViewer } from '@/components/profile/ProfileViewer'
+import { ChallengeHub } from '@/components/challenges/ChallengeHub'
+
 // Phase 1 Services
 import { emotionalService } from '@/lib/services/emotionalService'
 import { achievementService } from '@/lib/services/achievementService'
 import { timelineService } from '@/lib/services/timelineService'
 import { ACHIEVEMENTS } from '@/lib/constants/achievements'
 
-type TabType = 'chat' | 'memory' | 'emotions' | 'achievements' | 'timeline' | 'neural'
+type TabType = 'chat' | 'memory' | 'emotions' | 'achievements' | 'timeline' | 'neural' | 'relationships' | 'creative' | 'dreams' | 'journal' | 'profile' | 'challenges'
 
 export default function AgentDetail() {
   const params = useParams()
@@ -123,9 +131,9 @@ export default function AgentDetail() {
     if (!currentAgent) return
     try {
       const events = await timelineService.aggregateEvents(
-        currentAgent,
+        currentAgent as unknown as AgentRecord,
         memories,
-        messages as any // Convert message types
+        messages as unknown as MessageRecord[]
       )
       setTimelineEvents(events)
     } catch (error) {
@@ -295,6 +303,62 @@ export default function AgentDetail() {
             <Brain className="h-4 w-4 inline mr-2" />
             Memory
           </button>
+          {/* Phase 2 Tabs */}
+          <button
+            onClick={() => handleTabChange('creative')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
+              activeTab === 'creative'
+                ? 'bg-primary text-primary-foreground shadow-lg'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <Palette className="h-4 w-4 inline mr-2" />
+            Creative
+          </button>
+          <button
+            onClick={() => handleTabChange('dreams')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
+              activeTab === 'dreams'
+                ? 'bg-primary text-primary-foreground shadow-lg'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <Moon className="h-4 w-4 inline mr-2" />
+            Dreams
+          </button>
+          <button
+            onClick={() => handleTabChange('journal')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
+              activeTab === 'journal'
+                ? 'bg-primary text-primary-foreground shadow-lg'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <BookOpen className="h-4 w-4 inline mr-2" />
+            Journal
+          </button>
+          <button
+            onClick={() => handleTabChange('profile')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
+              activeTab === 'profile'
+                ? 'bg-primary text-primary-foreground shadow-lg'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <Target className="h-4 w-4 inline mr-2" />
+            Profile
+          </button>
+          <button
+            onClick={() => handleTabChange('challenges')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
+              activeTab === 'challenges'
+                ? 'bg-primary text-primary-foreground shadow-lg'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <Swords className="h-4 w-4 inline mr-2" />
+            Challenges
+          </button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -386,7 +450,7 @@ export default function AgentDetail() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center">
-                <NeuralViz2D agent={currentAgent} className="w-32 h-32" />
+                <NeuralViz2D agent={currentAgent as unknown as AgentRecord} className="w-32 h-32" />
                 <div className="mt-3 text-center">
                   <div className="text-lg font-medium capitalize">
                     {agentEmotionalState.dominantEmotion}
@@ -543,7 +607,7 @@ export default function AgentDetail() {
               </div>
             </Card>
             </>
-            ) : (
+            ) : activeTab === 'memory' ? (
               /* Memory & Growth Interface */
               <div className="space-y-6">
                 {/* Personality Traits */}
@@ -877,7 +941,7 @@ export default function AgentDetail() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="p-0">
-                    <NeuralViz agent={currentAgent} height={500} />
+                    <NeuralViz agent={currentAgent as unknown as AgentRecord} height={500} />
                   </CardContent>
                 </Card>
 
@@ -927,6 +991,96 @@ export default function AgentDetail() {
                   </Card>
                 </div>
               </div>
+            ) : activeTab === 'creative' ? (
+              /* Phase 2: Creative Portfolio Tab */
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-purple-500/10">
+                      <Palette className="h-6 w-6 text-purple-500" />
+                    </div>
+                    Creative Portfolio
+                  </CardTitle>
+                  <CardDescription>
+                    {currentAgent.name}&apos;s creative works including stories, poems, and more
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <CreativePortfolio agentId={currentAgent.id} agentName={currentAgent.name} />
+                </CardContent>
+              </Card>
+            ) : activeTab === 'dreams' ? (
+              /* Phase 2: Dream Journal Tab */
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-indigo-500/10">
+                      <Moon className="h-6 w-6 text-indigo-500" />
+                    </div>
+                    Dream Journal
+                  </CardTitle>
+                  <CardDescription>
+                    Explore {currentAgent.name}&apos;s subconscious through generated dreams
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <DreamJournal agentId={currentAgent.id} agentName={currentAgent.name} />
+                </CardContent>
+              </Card>
+            ) : activeTab === 'journal' ? (
+              /* Phase 2: Journal Tab */
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-amber-500/10">
+                      <BookOpen className="h-6 w-6 text-amber-500" />
+                    </div>
+                    Personal Journal
+                  </CardTitle>
+                  <CardDescription>
+                    {currentAgent.name}&apos;s personal reflections and thoughts
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <JournalViewer agentId={currentAgent.id} agentName={currentAgent.name} />
+                </CardContent>
+              </Card>
+            ) : activeTab === 'profile' ? (
+              /* Phase 2: Psychological Profile Tab */
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-cyan-500/10">
+                      <Target className="h-6 w-6 text-cyan-500" />
+                    </div>
+                    Psychological Profile
+                  </CardTitle>
+                  <CardDescription>
+                    {currentAgent.name}&apos;s personality assessments (Big Five, MBTI, Enneagram)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ProfileViewer agentId={currentAgent.id} agentName={currentAgent.name} />
+                </CardContent>
+              </Card>
+            ) : activeTab === 'challenges' ? (
+              /* Phase 2: Challenges Tab */
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-rose-500/10">
+                      <Swords className="h-6 w-6 text-rose-500" />
+                    </div>
+                    Challenge Hub
+                  </CardTitle>
+                  <CardDescription>
+                    Collaborative challenges and competitions between agents
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ChallengeHub currentAgentId={currentAgent.id} agents={agents as unknown as AgentRecord[]} />
+                </CardContent>
+              </Card>
             ) : null}
           </div>
         </div>
