@@ -9,10 +9,17 @@ export interface MemoryChainConfig {
   importanceThreshold?: number
 }
 
+export interface MemoryLoadResult {
+  messages: BaseMessage[]
+  memoryIds: string[]
+  memories: MemoryRecord[]
+}
+
 export class MemoryChain {
   private static instances = new Map<string, MemoryChain>()
   private config: MemoryChainConfig
   private memoryCache: Map<string, MemoryRecord[]> = new Map()
+  private lastRetrievedIds: string[] = []
 
   constructor(config: MemoryChainConfig) {
     this.config = {
@@ -30,25 +37,45 @@ export class MemoryChain {
     return MemoryChain.instances.get(agentId)!
   }
 
-  async loadMemory(): Promise<BaseMessage[]> {
+  /**
+   * Load memory and return both messages and memory IDs for visualization
+   */
+  async loadMemoryWithIds(): Promise<MemoryLoadResult> {
     try {
       const cacheKey = this.getCacheKey()
+      let memories: MemoryRecord[]
+
       if (this.memoryCache.has(cacheKey)) {
-        return this.memoryCache.get(cacheKey)!.map(this.memoryToMessage)
+        memories = this.memoryCache.get(cacheKey)!
+      } else {
+        memories = await this.getRelevantMemories()
+        this.memoryCache.set(cacheKey, memories)
       }
 
-      // Get relevant memories from Firestore
-      const memories = await this.getRelevantMemories()
+      // Track retrieved IDs for visualization
+      this.lastRetrievedIds = memories.map(m => m.id)
 
-      // Cache the memories
-      this.memoryCache.set(cacheKey, memories)
-
-      // Convert memories to LangChain messages
-      return memories.map(this.memoryToMessage)
+      return {
+        messages: memories.map(this.memoryToMessage),
+        memoryIds: this.lastRetrievedIds,
+        memories
+      }
     } catch (error) {
       console.error('Error loading memory:', error)
-      return []
+      return { messages: [], memoryIds: [], memories: [] }
     }
+  }
+
+  /**
+   * Get the last retrieved memory IDs (for visualization)
+   */
+  getLastRetrievedIds(): string[] {
+    return this.lastRetrievedIds
+  }
+
+  async loadMemory(): Promise<BaseMessage[]> {
+    const result = await this.loadMemoryWithIds()
+    return result.messages
   }
 
   async saveMemory(input: string, output: string, metadata?: Record<string, unknown>): Promise<void> {
@@ -252,5 +279,76 @@ export class MemoryChain {
   // Clear all caches
   static clearAllCaches(): void {
     MemoryChain.instances.clear()
+  }
+
+  /**
+   * Get relevant memories for a specific query (for visualization activation)
+   * Returns memory IDs that match the query based on keywords
+   */
+  async getRelevantMemoriesForQuery(queryText: string, maxCount: number = 10): Promise<{
+    memoryIds: string[]
+    memories: MemoryRecord[]
+  }> {
+    try {
+      const allMemories = await MemoryService.getAllMemoriesForAgent(this.config.agentId)
+      const queryLower = queryText.toLowerCase()
+      const queryWords = queryLower.split(/\s+/).filter(w => w.length > 3)
+
+      // Score each memory based on relevance
+      const scoredMemories = allMemories.map(memory => {
+        let score = 0
+
+        // Check keyword matches
+        memory.keywords.forEach(keyword => {
+          if (queryLower.includes(keyword.toLowerCase())) {
+            score += 3
+          }
+          queryWords.forEach(word => {
+            if (keyword.toLowerCase().includes(word)) {
+              score += 1
+            }
+          })
+        })
+
+        // Check content matches
+        if (memory.content.toLowerCase().includes(queryLower)) {
+          score += 2
+        }
+        queryWords.forEach(word => {
+          if (memory.content.toLowerCase().includes(word)) {
+            score += 0.5
+          }
+        })
+
+        // Boost by importance
+        score += memory.importance * 0.2
+
+        return { memory, score }
+      })
+
+      // Sort by score and return top matches
+      const relevantMemories = scoredMemories
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, maxCount)
+        .map(item => item.memory)
+
+      this.lastRetrievedIds = relevantMemories.map(m => m.id)
+
+      return {
+        memoryIds: this.lastRetrievedIds,
+        memories: relevantMemories
+      }
+    } catch (error) {
+      console.error('Error getting relevant memories for query:', error)
+      return { memoryIds: [], memories: [] }
+    }
+  }
+
+  /**
+   * Get agent ID for this chain
+   */
+  getAgentId(): string {
+    return this.config.agentId
   }
 }
