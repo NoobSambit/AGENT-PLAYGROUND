@@ -1069,6 +1069,181 @@ export interface UpdateAgentDataPhase2 extends UpdateAgentData {
   }
 }
 
+// ============================================
+// PHASE 3: Memory Graph & Concept Types
+// ============================================
+
+export type ConceptCategory =
+  | 'entity'      // People, places, things
+  | 'topic'       // Subject areas
+  | 'emotion'     // Emotional concepts
+  | 'event'       // Events and actions
+  | 'attribute'   // Properties and characteristics
+  | 'relation'    // Relationships between concepts
+
+export interface Concept {
+  id: string
+  name: string
+  category: ConceptCategory
+  description: string
+
+  // Semantic relationships
+  relatedConcepts: Array<{
+    conceptId: string
+    relationshipType: 'is_a' | 'part_of' | 'related_to' | 'opposite_of' | 'causes' | 'similar_to'
+    strength: number // 0-1
+  }>
+
+  // Usage tracking
+  occurrenceCount: number
+  lastOccurrence: string
+  memoryIds: string[] // Memories containing this concept
+
+  // Metadata
+  importance: number // 0-1 calculated from frequency and context
+  emotionalValence: number // -1 to 1 (negative to positive)
+
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MemoryLink {
+  id: string
+  sourceMemoryId: string
+  targetMemoryId: string
+
+  // Link properties
+  linkType: 'semantic' | 'temporal' | 'causal' | 'emotional' | 'associative'
+  strength: number // 0-1
+
+  // Shared concepts that create this link
+  sharedConcepts: string[] // Concept IDs
+
+  // Explanation
+  reason: string
+
+  createdAt: string
+}
+
+export interface MemoryGraph {
+  agentId: string
+  concepts: Concept[]
+  links: MemoryLink[]
+
+  // Graph statistics
+  stats: {
+    totalConcepts: number
+    totalLinks: number
+    averageLinkStrength: number
+    mostConnectedMemory: string
+    conceptClusters: Array<{
+      name: string
+      conceptIds: string[]
+      centralConcept: string
+    }>
+  }
+
+  lastUpdated: string
+}
+
+// Knowledge Graph Node for visualization
+export interface KnowledgeGraphNode {
+  id: string
+  type: 'memory' | 'concept'
+  label: string
+  size: number // Based on importance/connections
+  color: string
+  position?: { x: number; y: number }
+  metadata: {
+    importance?: number
+    category?: ConceptCategory
+    memoryType?: MemoryRecord['type']
+    connectionCount: number
+  }
+}
+
+export interface KnowledgeGraphEdge {
+  id: string
+  source: string
+  target: string
+  strength: number
+  type: MemoryLink['linkType'] | 'concept_memory'
+  label?: string
+}
+
+export interface KnowledgeGraphData {
+  nodes: KnowledgeGraphNode[]
+  edges: KnowledgeGraphEdge[]
+}
+
+// ============================================
+// PHASE 3: Mentor Matching Types
+// ============================================
+
+export interface MentorCompatibility {
+  mentorId: string
+  menteeId: string
+
+  // Compatibility scores (0-1)
+  overallScore: number
+  categoryScores: {
+    skillMatch: number      // How well mentor's strengths match mentee's needs
+    personalityFit: number  // Personality compatibility
+    communicationStyle: number // Communication style alignment
+    availability: number    // Both agents have time for mentorship
+  }
+
+  // Recommended focus areas
+  recommendedFocus: MentorshipFocus[]
+
+  // Potential challenges
+  potentialChallenges: string[]
+
+  // Explanation
+  matchReason: string
+}
+
+export interface MentorProfile {
+  agentId: string
+
+  // What they can teach
+  expertiseAreas: MentorshipFocus[]
+  teachingStrengths: string[]
+  teachingStyle: 'structured' | 'exploratory' | 'socratic' | 'demonstrative'
+
+  // Track record
+  successfulMentorships: number
+  averageEffectiveness: number
+  testimonials: Array<{
+    menteeId: string
+    feedback: string
+    rating: number // 1-5
+    timestamp: string
+  }>
+
+  // Availability
+  isAvailable: boolean
+  maxMentees: number
+  currentMenteeCount: number
+}
+
+export interface MenteeProfile {
+  agentId: string
+
+  // Learning needs
+  learningGoals: MentorshipFocus[]
+  weakAreas: string[]
+  preferredLearningStyle: 'visual' | 'auditory' | 'kinesthetic' | 'reading'
+
+  // Progress tracking
+  completedMentorships: number
+  skillsLearned: string[]
+
+  // Current status
+  isSeekingMentor: boolean
+  currentMentorId?: string
+}
+
 // Database configuration types (for future implementation)
 export interface DatabaseConfig {
   type: 'sqlite' | 'postgresql' | 'supabase'
