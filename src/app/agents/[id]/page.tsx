@@ -8,7 +8,9 @@ import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
 import { MemoryRecord, MessageRecord, AgentRecord } from '@/types/database'
-import { ArrowLeft, Send, Bot, User, Settings, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star, Award, Heart, Clock, Sparkles, Users, Palette, Moon, BookOpen, Target, Swords, Network, Library, GraduationCap } from 'lucide-react'
+import { ArrowLeft, Send, Bot, User, Settings, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star, Award, Heart, Clock, Sparkles, Users, Palette, Moon, BookOpen, Target, Swords, Network, Library, GraduationCap, ChevronRight } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { GradientOrb } from '@/components/ui/animated-background'
 import { getCurrentLLMModel } from '@/utils/llm'
 
 // Phase 1 Components
@@ -213,206 +215,125 @@ export default function AgentDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background/90 to-background/50 p-6">
-      <div className="mx-auto max-w-7xl space-y-8">
+    <div className="relative min-h-screen pt-28 pb-20">
+      {/* Decorative orbs */}
+      <GradientOrb className="w-[600px] h-[600px] -top-[200px] -right-[200px] opacity-20" color="violet" />
+      <GradientOrb className="w-[400px] h-[400px] top-1/2 -left-[200px] opacity-15" color="cyan" />
+
+      <div className="relative z-10 mx-auto max-w-7xl px-6 space-y-8">
         {/* Header */}
-        <div className="flex items-center gap-6">
-          <Button
-            variant="ghost"
-            size="sm"
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-6"
+        >
+          <motion.button
+            whileHover={{ x: -4 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => router.back()}
-            className="gap-2 px-4 py-2 rounded-xl hover:bg-primary/10 transition-all duration-200"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/[0.05] transition-all"
           >
             <ArrowLeft className="h-4 w-4" />
             Back
-          </Button>
+          </motion.button>
           <div className="flex-1 space-y-2">
-            <h1 className="text-4xl font-bold tracking-tight text-foreground bg-gradient-to-r from-foreground to-primary/80 bg-clip-text">
-              {currentAgent.name}
-            </h1>
-            <p className="text-muted-foreground text-lg leading-relaxed">
-              {currentAgent.persona}
-            </p>
+            <div className="flex items-center gap-4">
+              <motion.div
+                animate={{ rotate: [0, 5, -5, 0] }}
+                transition={{ duration: 6, repeat: Infinity }}
+                className="w-14 h-14 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-2xl shadow-violet-500/30"
+              >
+                <Bot className="h-7 w-7 text-white" />
+              </motion.div>
+              <div>
+                <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+                  <span className="gradient-text-vibrant">{currentAgent.name}</span>
+                </h1>
+                <p className="text-muted-foreground text-base mt-1 line-clamp-1 max-w-lg">
+                  {currentAgent.persona}
+                </p>
+              </div>
+            </div>
           </div>
-          <Button variant="outline" size="sm" className="gap-2 px-4 py-2 rounded-xl hover:bg-muted/50 transition-all duration-200">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/[0.08] text-muted-foreground hover:text-foreground hover:bg-white/[0.05] transition-all"
+          >
             <Settings className="h-4 w-4" />
             Settings
-          </Button>
-        </div>
+          </motion.button>
+        </motion.div>
 
         {/* Tab Navigation */}
-        <div className="flex gap-2 p-1 bg-muted/30 rounded-xl w-fit overflow-x-auto">
-          <button
-            onClick={() => handleTabChange('chat')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'chat'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <MessageCircle className="h-4 w-4 inline mr-2" />
-            Chat
-          </button>
-          <button
-            onClick={() => handleTabChange('emotions')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'emotions'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <Heart className="h-4 w-4 inline mr-2" />
-            Emotions
-          </button>
-          <button
-            onClick={() => handleTabChange('achievements')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'achievements'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <Award className="h-4 w-4 inline mr-2" />
-            Achievements
-          </button>
-          <button
-            onClick={() => handleTabChange('timeline')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'timeline'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <Clock className="h-4 w-4 inline mr-2" />
-            Timeline
-          </button>
-          <button
-            onClick={() => handleTabChange('neural')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'neural'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <Sparkles className="h-4 w-4 inline mr-2" />
-            Neural
-          </button>
-          <button
-            onClick={() => handleTabChange('memory')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'memory'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <Brain className="h-4 w-4 inline mr-2" />
-            Memory
-          </button>
-          {/* Phase 2 Tabs */}
-          <button
-            onClick={() => handleTabChange('creative')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'creative'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <Palette className="h-4 w-4 inline mr-2" />
-            Creative
-          </button>
-          <button
-            onClick={() => handleTabChange('dreams')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'dreams'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <Moon className="h-4 w-4 inline mr-2" />
-            Dreams
-          </button>
-          <button
-            onClick={() => handleTabChange('journal')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'journal'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <BookOpen className="h-4 w-4 inline mr-2" />
-            Journal
-          </button>
-          <button
-            onClick={() => handleTabChange('profile')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'profile'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <Target className="h-4 w-4 inline mr-2" />
-            Profile
-          </button>
-          <button
-            onClick={() => handleTabChange('challenges')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'challenges'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <Swords className="h-4 w-4 inline mr-2" />
-            Challenges
-          </button>
-          {/* Phase 3 Tabs */}
-          <button
-            onClick={() => handleTabChange('knowledge-graph')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'knowledge-graph'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <Network className="h-4 w-4 inline mr-2" />
-            Knowledge
-          </button>
-          <button
-            onClick={() => handleTabChange('knowledge-library')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'knowledge-library'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <Library className="h-4 w-4 inline mr-2" />
-            Library
-          </button>
-          <button
-            onClick={() => handleTabChange('mentorship')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
-              activeTab === 'mentorship'
-                ? 'bg-primary text-primary-foreground shadow-lg'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <GraduationCap className="h-4 w-4 inline mr-2" />
-            Mentorship
-          </button>
-        </div>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="flex gap-1 p-1.5 rounded-2xl bg-white/[0.02] border border-white/[0.06] w-fit overflow-x-auto backdrop-blur-sm"
+        >
+          {[
+            { id: 'chat', icon: MessageCircle, label: 'Chat' },
+            { id: 'emotions', icon: Heart, label: 'Emotions' },
+            { id: 'achievements', icon: Award, label: 'Achievements' },
+            { id: 'timeline', icon: Clock, label: 'Timeline' },
+            { id: 'neural', icon: Sparkles, label: 'Neural' },
+            { id: 'memory', icon: Brain, label: 'Memory' },
+            { id: 'creative', icon: Palette, label: 'Creative' },
+            { id: 'dreams', icon: Moon, label: 'Dreams' },
+            { id: 'journal', icon: BookOpen, label: 'Journal' },
+            { id: 'profile', icon: Target, label: 'Profile' },
+            { id: 'challenges', icon: Swords, label: 'Challenges' },
+            { id: 'knowledge-graph', icon: Network, label: 'Knowledge' },
+            { id: 'knowledge-library', icon: Library, label: 'Library' },
+            { id: 'mentorship', icon: GraduationCap, label: 'Mentorship' },
+          ].map((tab) => {
+            const Icon = tab.icon
+            const isActive = activeTab === tab.id
+            return (
+              <motion.button
+                key={tab.id}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => handleTabChange(tab.id as TabType)}
+                className={`relative px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 whitespace-nowrap flex items-center gap-2 ${
+                  isActive
+                    ? 'text-white'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.05]'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="activeTab"
+                    className="absolute inset-0 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 shadow-lg shadow-violet-500/30"
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                  />
+                )}
+                <Icon className="h-4 w-4 relative z-10" />
+                <span className="relative z-10">{tab.label}</span>
+              </motion.button>
+            )
+          })}
+        </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Agent Info */}
-          <div className="space-y-6">
-            <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl hover:shadow-2xl transition-all duration-300">
-              <CardHeader className="space-y-4">
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 }}
+            className="space-y-6"
+          >
+            <div className="p-6 rounded-2xl premium-card">
+              <CardHeader className="space-y-4 p-0 pb-4">
                 <CardTitle className="flex items-center gap-3 text-xl">
-                  <div className="p-2 rounded-xl bg-primary/10">
-                    <Bot className="h-6 w-6 text-primary" />
+                  <div className="icon-container icon-container-purple">
+                    <Bot className="h-5 w-5" />
                   </div>
                   Agent Information
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-6 p-0">
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium text-muted-foreground">Status</h4>
                   <div className="flex items-center gap-3">
@@ -452,19 +373,19 @@ export default function AgentDetail() {
                   </div>
                 </div>
               </CardContent>
-            </Card>
+            </div>
 
             {/* Phase 1: Level Progress */}
-            <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl hover:shadow-2xl transition-all duration-300">
-              <CardHeader className="space-y-4">
+            <div className="p-6 rounded-2xl premium-card">
+              <CardHeader className="space-y-4 p-0 pb-4">
                 <CardTitle className="flex items-center gap-3 text-xl">
-                  <div className="p-2 rounded-xl bg-amber-500/10">
-                    <Award className="h-6 w-6 text-amber-500" />
+                  <div className="icon-container icon-container-amber">
+                    <Award className="h-5 w-5" />
                   </div>
                   Level & Progress
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-0">
                 <LevelProgress
                   level={agentProgress.level}
                   xp={agentProgress.experiencePoints}
@@ -476,19 +397,19 @@ export default function AgentDetail() {
                   {Object.keys(agentProgress.achievements).length} / {ACHIEVEMENTS.length} achievements
                 </div>
               </CardContent>
-            </Card>
+            </div>
 
             {/* Phase 1: Emotion Mini Display */}
-            <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl hover:shadow-2xl transition-all duration-300">
-              <CardHeader className="space-y-4">
+            <div className="p-6 rounded-2xl premium-card">
+              <CardHeader className="space-y-4 p-0 pb-4">
                 <CardTitle className="flex items-center gap-3 text-xl">
-                  <div className="p-2 rounded-xl bg-pink-500/10">
-                    <Heart className="h-6 w-6 text-pink-500" />
+                  <div className="icon-container icon-container-pink">
+                    <Heart className="h-5 w-5" />
                   </div>
                   Current Mood
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex flex-col items-center">
+              <CardContent className="flex flex-col items-center p-0">
                 <NeuralViz2D agent={currentAgent as unknown as AgentRecord} className="w-32 h-32" />
                 <div className="mt-3 text-center">
                   <div className="text-lg font-medium capitalize">
@@ -499,31 +420,31 @@ export default function AgentDetail() {
                   </div>
                 </div>
               </CardContent>
-            </Card>
+            </div>
 
-            <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl hover:shadow-2xl transition-all duration-300">
-              <CardHeader className="space-y-4">
+            <div className="p-6 rounded-2xl premium-card">
+              <CardHeader className="space-y-4 p-0 pb-4">
                 <CardTitle className="flex items-center gap-3 text-xl">
-                  <div className="p-2 rounded-xl bg-accent/10">
-                    <MessageCircle className="h-6 w-6 text-accent" />
+                  <div className="icon-container icon-container-cyan">
+                    <MessageCircle className="h-5 w-5" />
                   </div>
                   Chat Statistics
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="text-center p-4 rounded-xl bg-primary/5">
-                    <div className="text-3xl font-bold text-primary mb-1">{agentStats.totalMessages}</div>
+              <CardContent className="space-y-6 p-0">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-center p-4 rounded-xl bg-violet-500/10">
+                    <div className="text-3xl font-bold text-violet-400 mb-1">{agentStats.totalMessages}</div>
                     <div className="text-sm text-muted-foreground">Messages</div>
                   </div>
-                  <div className="text-center p-4 rounded-xl bg-accent/5">
-                    <div className="text-3xl font-bold text-accent mb-1">{agentStats.conversationCount}</div>
+                  <div className="text-center p-4 rounded-xl bg-cyan-500/10">
+                    <div className="text-3xl font-bold text-cyan-400 mb-1">{agentStats.conversationCount}</div>
                     <div className="text-sm text-muted-foreground">Sessions</div>
                   </div>
                 </div>
               </CardContent>
-            </Card>
-          </div>
+            </div>
+          </motion.div>
 
           {/* Main Content Area */}
           <div className="lg:col-span-2">
