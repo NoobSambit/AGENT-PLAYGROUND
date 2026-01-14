@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
 import { MemoryRecord, MessageRecord, AgentRecord } from '@/types/database'
-import { ArrowLeft, Send, Bot, User, Settings, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star, Award, Heart, Clock, Sparkles, Users, Palette, Moon, BookOpen, Target, Swords } from 'lucide-react'
+import { ArrowLeft, Send, Bot, User, Settings, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star, Award, Heart, Clock, Sparkles, Users, Palette, Moon, BookOpen, Target, Swords, Network, Library, GraduationCap } from 'lucide-react'
 import { getCurrentLLMModel } from '@/utils/llm'
 
 // Phase 1 Components
@@ -27,13 +27,18 @@ import { JournalViewer } from '@/components/journal/JournalViewer'
 import { ProfileViewer } from '@/components/profile/ProfileViewer'
 import { ChallengeHub } from '@/components/challenges/ChallengeHub'
 
+// Phase 3 Components
+import { KnowledgeGraph } from '@/components/knowledge/KnowledgeGraph'
+import { SharedKnowledgeLibrary } from '@/components/knowledge/SharedKnowledgeLibrary'
+import { MentorshipHub } from '@/components/mentorship/MentorshipHub'
+
 // Phase 1 Services
 import { emotionalService } from '@/lib/services/emotionalService'
 import { achievementService } from '@/lib/services/achievementService'
 import { timelineService } from '@/lib/services/timelineService'
 import { ACHIEVEMENTS } from '@/lib/constants/achievements'
 
-type TabType = 'chat' | 'memory' | 'emotions' | 'achievements' | 'timeline' | 'neural' | 'relationships' | 'creative' | 'dreams' | 'journal' | 'profile' | 'challenges'
+type TabType = 'chat' | 'memory' | 'emotions' | 'achievements' | 'timeline' | 'neural' | 'relationships' | 'creative' | 'dreams' | 'journal' | 'profile' | 'challenges' | 'knowledge-graph' | 'knowledge-library' | 'mentorship'
 
 export default function AgentDetail() {
   const params = useParams()
@@ -358,6 +363,40 @@ export default function AgentDetail() {
           >
             <Swords className="h-4 w-4 inline mr-2" />
             Challenges
+          </button>
+          {/* Phase 3 Tabs */}
+          <button
+            onClick={() => handleTabChange('knowledge-graph')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
+              activeTab === 'knowledge-graph'
+                ? 'bg-primary text-primary-foreground shadow-lg'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <Network className="h-4 w-4 inline mr-2" />
+            Knowledge
+          </button>
+          <button
+            onClick={() => handleTabChange('knowledge-library')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
+              activeTab === 'knowledge-library'
+                ? 'bg-primary text-primary-foreground shadow-lg'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <Library className="h-4 w-4 inline mr-2" />
+            Library
+          </button>
+          <button
+            onClick={() => handleTabChange('mentorship')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 whitespace-nowrap ${
+              activeTab === 'mentorship'
+                ? 'bg-primary text-primary-foreground shadow-lg'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <GraduationCap className="h-4 w-4 inline mr-2" />
+            Mentorship
           </button>
         </div>
 
@@ -1079,6 +1118,68 @@ export default function AgentDetail() {
                 </CardHeader>
                 <CardContent>
                   <ChallengeHub currentAgentId={currentAgent.id} agents={agents as unknown as AgentRecord[]} />
+                </CardContent>
+              </Card>
+            ) : activeTab === 'knowledge-graph' ? (
+              /* Phase 3: Knowledge Graph Tab */
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-emerald-500/10">
+                      <Network className="h-6 w-6 text-emerald-500" />
+                    </div>
+                    Knowledge Graph
+                  </CardTitle>
+                  <CardDescription>
+                    Visualize {currentAgent.name}&apos;s memory connections and concept relationships
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <KnowledgeGraph agentId={currentAgent.id} />
+                </CardContent>
+              </Card>
+            ) : activeTab === 'knowledge-library' ? (
+              /* Phase 3: Shared Knowledge Library Tab */
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-blue-500/10">
+                      <Library className="h-6 w-6 text-blue-500" />
+                    </div>
+                    Shared Knowledge Library
+                  </CardTitle>
+                  <CardDescription>
+                    Browse and contribute to the collective knowledge base shared by all agents
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <SharedKnowledgeLibrary
+                    agentId={currentAgent.id}
+                    agentName={currentAgent.name}
+                    showContribute={true}
+                  />
+                </CardContent>
+              </Card>
+            ) : activeTab === 'mentorship' ? (
+              /* Phase 3: Mentorship Hub Tab */
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-violet-500/10">
+                      <GraduationCap className="h-6 w-6 text-violet-500" />
+                    </div>
+                    Mentorship Hub
+                  </CardTitle>
+                  <CardDescription>
+                    Find mentors, teach others, and track {currentAgent.name}&apos;s learning journey
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <MentorshipHub
+                    agentId={currentAgent.id}
+                    agentName={currentAgent.name}
+                    allAgents={agents as unknown as AgentRecord[]}
+                  />
                 </CardContent>
               </Card>
             ) : null}
