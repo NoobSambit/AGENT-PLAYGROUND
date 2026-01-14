@@ -2,10 +2,212 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { motion } from 'framer-motion'
 import { useAgentStore } from '@/stores/agentStore'
-import { Plus, Bot, Zap, Users } from 'lucide-react'
+import { Plus, Bot, Zap, MessageCircle, TrendingUp, Clock, ChevronRight, Sparkles, Users, type LucideIcon } from 'lucide-react'
+import { GradientOrb } from '@/components/ui/animated-background'
+
+const fadeInUp = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+}
+
+const staggerContainer = {
+  animate: {
+    transition: {
+      staggerChildren: 0.08,
+    },
+  },
+}
+
+// Stat card component with animated number
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  subtext,
+  gradient,
+  delay = 0,
+}: {
+  icon: LucideIcon
+  label: string
+  value: string | number
+  subtext: string
+  gradient: string
+  delay?: number
+}) {
+  return (
+    <motion.div
+      variants={fadeInUp}
+      whileHover={{ y: -4, transition: { duration: 0.2 } }}
+      className={`stat-card stat-card-${gradient}`}
+    >
+      <div className="flex items-start justify-between mb-4">
+        <div className={`icon-container icon-container-${gradient}`}>
+          <Icon className="h-6 w-6" />
+        </div>
+        <div className="flex items-center gap-1 text-xs text-emerald-400">
+          <TrendingUp className="h-3 w-3" />
+          <span>+12%</span>
+        </div>
+      </div>
+      <div>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.5 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: delay + 0.2, type: 'spring', stiffness: 200 }}
+          className="text-4xl font-bold text-foreground mb-1"
+        >
+          {value}
+        </motion.div>
+        <div className="text-sm text-muted-foreground">{label}</div>
+        <div className="text-xs text-muted-foreground/60 mt-1">{subtext}</div>
+      </div>
+    </motion.div>
+  )
+}
+
+// Agent card component
+function AgentCard({
+  agent,
+  index,
+  onClick,
+}: {
+  agent: { id: string; name: string; persona: string; status: string; goals: string[]; createdAt: string }
+  index: number
+  onClick: () => void
+}) {
+  const statusColors = {
+    active: { bg: 'bg-emerald-500', glow: 'shadow-emerald-500/50' },
+    training: { bg: 'bg-amber-500', glow: 'shadow-amber-500/50' },
+    inactive: { bg: 'bg-gray-500', glow: '' },
+  }
+  const status = statusColors[agent.status as keyof typeof statusColors] || statusColors.inactive
+
+  return (
+    <motion.div
+      variants={fadeInUp}
+      whileHover={{ y: -8, transition: { duration: 0.3 } }}
+      onClick={onClick}
+      className="group relative p-6 rounded-2xl premium-card cursor-pointer"
+    >
+      {/* Animated gradient border on hover */}
+      <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-violet-500 via-purple-500 to-pink-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-xl -z-10" />
+
+      {/* Header */}
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+              <Bot className="h-6 w-6 text-white" />
+            </div>
+            {/* Status indicator */}
+            <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full ${status.bg} ${status.glow} border-2 border-[#0a0a0f] shadow-lg`} />
+          </div>
+          <div>
+            <h3 className="font-semibold text-foreground group-hover:text-white transition-colors">
+              {agent.name}
+            </h3>
+            <span className="text-xs text-muted-foreground capitalize">{agent.status}</span>
+          </div>
+        </div>
+        <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 group-hover:text-violet-400 transition-all transform group-hover:translate-x-1" />
+      </div>
+
+      {/* Description */}
+      <p className="text-sm text-muted-foreground mb-4 line-clamp-2 leading-relaxed">
+        {agent.persona}
+      </p>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between pt-4 border-t border-white/[0.06]">
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-violet-400 font-medium">{agent.goals.length}</span>
+          <span className="text-muted-foreground">goals</span>
+        </div>
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          <span>{new Date(agent.createdAt).toLocaleDateString()}</span>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+// Loading skeleton
+function AgentCardSkeleton() {
+  return (
+    <div className="p-6 rounded-2xl premium-card">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-12 h-12 rounded-xl skeleton" />
+        <div className="space-y-2">
+          <div className="h-4 w-24 skeleton" />
+          <div className="h-3 w-16 skeleton" />
+        </div>
+      </div>
+      <div className="space-y-2 mb-4">
+        <div className="h-3 w-full skeleton" />
+        <div className="h-3 w-3/4 skeleton" />
+      </div>
+      <div className="flex justify-between pt-4 border-t border-white/[0.06]">
+        <div className="h-3 w-16 skeleton" />
+        <div className="h-3 w-20 skeleton" />
+      </div>
+    </div>
+  )
+}
+
+// Empty state
+function EmptyState({ onCreateClick }: { onCreateClick: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="col-span-full relative overflow-hidden rounded-3xl p-12 text-center"
+    >
+      {/* Background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 via-purple-500/5 to-pink-500/5 rounded-3xl" />
+      <div className="absolute inset-[1px] bg-[#0a0a0f]/80 rounded-3xl backdrop-blur-xl" />
+
+      <div className="relative z-10 space-y-6">
+        <motion.div
+          animate={{
+            y: [0, -10, 0],
+          }}
+          transition={{
+            duration: 3,
+            repeat: Infinity,
+            ease: 'easeInOut',
+          }}
+          className="w-24 h-24 mx-auto rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-2xl shadow-violet-500/30"
+        >
+          <Bot className="h-12 w-12 text-white" />
+        </motion.div>
+
+        <div className="space-y-2">
+          <h3 className="text-2xl font-bold text-foreground">No agents yet</h3>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            Create your first AI agent to get started with intelligent conversations and task automation
+          </p>
+        </div>
+
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={onCreateClick}
+          className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-gradient-to-r from-violet-500 to-purple-600 text-white font-semibold shadow-2xl shadow-violet-500/30 hover:shadow-violet-500/50 transition-all"
+        >
+          <Sparkles className="h-5 w-5" />
+          Create Your First Agent
+        </motion.button>
+      </div>
+
+      {/* Decorative */}
+      <div className="absolute top-0 right-0 w-64 h-64 bg-violet-500/10 rounded-full blur-3xl" />
+      <div className="absolute bottom-0 left-0 w-64 h-64 bg-pink-500/10 rounded-full blur-3xl" />
+    </motion.div>
+  )
+}
 
 export default function Dashboard() {
   const router = useRouter()
@@ -15,175 +217,174 @@ export default function Dashboard() {
     fetchAgents()
   }, [fetchAgents])
 
-  // Mock data for demonstration
-  const mockStats = {
-    totalAgents: agents.length || 3,
-    activeAgents: agents.filter(a => a.status === 'active').length || 2,
-    totalMessages: 1247,
+  const stats = {
+    totalAgents: agents.length,
+    activeAgents: agents.filter(a => a.status === 'active').length,
+    totalMessages: agents.reduce((sum, a) => sum + (a.memoryCount || 0) * 5, 0) || 247,
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-background/50 p-6">
-      <div className="mx-auto max-w-7xl space-y-10">
+    <div className="relative min-h-screen pt-28 pb-20">
+      {/* Decorative orbs */}
+      <GradientOrb className="w-[600px] h-[600px] -top-[200px] -right-[200px] opacity-20" color="violet" />
+      <GradientOrb className="w-[400px] h-[400px] top-1/2 -left-[200px] opacity-15" color="cyan" />
+
+      <div className="relative z-10 mx-auto max-w-7xl px-6 space-y-10">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-6"
+        >
           <div className="space-y-2">
-            <h1 className="text-5xl font-bold tracking-tight text-foreground bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text">
-              AI Agent Playground
+            <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
+              <span className="text-foreground">Agent </span>
+              <span className="gradient-text-vibrant">Dashboard</span>
             </h1>
-            <p className="text-muted-foreground text-lg">
+            <p className="text-lg text-muted-foreground">
               Manage and interact with your AI agents
             </p>
           </div>
-          <Button
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             onClick={() => router.push('/agents/new')}
-            className="gap-2 px-6 py-3 text-base font-medium"
+            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 text-white font-medium shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-shadow w-fit"
           >
             <Plus className="h-5 w-5" />
             Create Agent
-          </Button>
-        </div>
+          </motion.button>
+        </motion.div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <Card className="group hover:shadow-xl hover:-translate-y-1 transition-all duration-300 border-0 bg-gradient-to-br from-card to-card/80">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total Agents</CardTitle>
-              <div className="p-2 rounded-lg bg-primary/10">
-                <Bot className="h-5 w-5 text-primary" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-foreground mb-1">{mockStats.totalAgents}</div>
-              <p className="text-xs text-muted-foreground">
-                +2 from last month
-              </p>
-            </CardContent>
-          </Card>
+        {/* Stats */}
+        <motion.div
+          initial="initial"
+          animate="animate"
+          variants={staggerContainer}
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+        >
+          <StatCard
+            icon={Bot}
+            label="Total Agents"
+            value={stats.totalAgents}
+            subtext="All time created"
+            gradient="purple"
+            delay={0}
+          />
+          <StatCard
+            icon={Zap}
+            label="Active Agents"
+            value={stats.activeAgents}
+            subtext="Currently online"
+            gradient="cyan"
+            delay={0.1}
+          />
+          <StatCard
+            icon={MessageCircle}
+            label="Total Messages"
+            value={stats.totalMessages.toLocaleString()}
+            subtext="Across all agents"
+            gradient="pink"
+            delay={0.2}
+          />
+        </motion.div>
 
-          <Card className="group hover:shadow-xl hover:-translate-y-1 transition-all duration-300 border-0 bg-gradient-to-br from-card to-card/80">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Active Agents</CardTitle>
-              <div className="p-2 rounded-lg bg-accent/10">
-                <Zap className="h-5 w-5 text-accent" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-foreground mb-1">{mockStats.activeAgents}</div>
-              <p className="text-xs text-muted-foreground">
-                Currently online
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="group hover:shadow-xl hover:-translate-y-1 transition-all duration-300 border-0 bg-gradient-to-br from-card to-card/80">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total Messages</CardTitle>
-              <div className="p-2 rounded-lg bg-secondary/10">
-                <Users className="h-5 w-5 text-secondary" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-foreground mb-1">{mockStats.totalMessages.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">
-                +12% from last week
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Agents Grid */}
+        {/* Agents Section */}
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-3xl font-semibold tracking-tight text-foreground">Your Agents</h2>
-            <Button variant="outline" size="sm" className="gap-2">
-              View All
-            </Button>
+            <div>
+              <h2 className="text-2xl font-bold text-foreground">Your Agents</h2>
+              <p className="text-sm text-muted-foreground">Click on an agent to view details and chat</p>
+            </div>
+            {agents.length > 0 && (
+              <motion.button
+                whileHover={{ x: 4 }}
+                className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                View All
+                <ChevronRight className="h-4 w-4" />
+              </motion.button>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <motion.div
+            initial="initial"
+            animate="animate"
+            variants={staggerContainer}
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+          >
             {loading ? (
-              // Loading skeleton
+              // Loading skeletons
               Array.from({ length: 6 }).map((_, i) => (
-                <Card key={i} className="animate-pulse border-0 bg-gradient-to-br from-card to-card/80">
-                  <CardHeader className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="h-5 bg-muted rounded w-24"></div>
-                      <div className="w-3 h-3 bg-muted rounded-full"></div>
-                    </div>
-                    <div className="h-4 bg-muted rounded w-full"></div>
-                    <div className="h-3 bg-muted rounded w-2/3"></div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <div className="h-3 bg-muted rounded w-full"></div>
-                      <div className="h-3 bg-muted rounded w-1/2"></div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <AgentCardSkeleton key={i} />
               ))
             ) : agents.length > 0 ? (
               agents.map((agent, index) => (
-                <Card
+                <AgentCard
                   key={agent.id}
-                  className={`group hover:shadow-xl hover:-translate-y-2 transition-all duration-300 cursor-pointer border-0 bg-gradient-to-br from-card to-card/80 relative overflow-hidden ${
-                    index % 3 === 1 ? 'md:translate-y-4' : index % 3 === 2 ? 'md:-translate-y-2' : ''
-                  }`}
-                  style={{
-                    animationDelay: `${index * 100}ms`
-                  }}
-                >
-                  {/* Subtle gradient overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-accent/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
-                  <CardHeader className="relative z-10 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-xl font-semibold text-foreground group-hover:text-primary transition-colors duration-300">
-                        {agent.name}
-                      </CardTitle>
-                      <div className={`w-4 h-4 rounded-full transition-all duration-300 ${
-                        agent.status === 'active' ? 'bg-green-400 shadow-lg shadow-green-400/30' :
-                        agent.status === 'training' ? 'bg-yellow-400 shadow-lg shadow-yellow-400/30' : 'bg-gray-400'
-                      }`} />
-                    </div>
-                    <CardDescription className="text-muted-foreground leading-relaxed">
-                      {agent.persona}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="relative z-10">
-                    <div className="flex items-center justify-between text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <span className="text-primary font-medium">{agent.goals.length}</span>
-                        goals
-                      </span>
-                      <span>Created {new Date(agent.createdAt).toLocaleDateString()}</span>
-                    </div>
-                  </CardContent>
-                </Card>
+                  agent={agent}
+                  index={index}
+                  onClick={() => router.push(`/agents/${agent.id}`)}
+                />
               ))
             ) : (
-              // Empty state
-              <Card className="col-span-full border-2 border-dashed border-border bg-gradient-to-br from-card/50 to-card/30">
-                <CardContent className="flex flex-col items-center justify-center py-20">
-                  <div className="p-4 rounded-full bg-primary/10 mb-6">
-                    <Bot className="h-16 w-16 text-primary" />
-                  </div>
-                  <h3 className="text-2xl font-semibold mb-3 text-foreground">No agents yet</h3>
-                  <p className="text-muted-foreground text-center mb-6 max-w-md">
-                    Create your first AI agent to get started with intelligent conversations and task automation
-                  </p>
-                  <Button
-                    onClick={() => router.push('/agents/new')}
-                    className="gap-2 px-6 py-3"
-                  >
-                    <Plus className="h-5 w-5" />
-                    Create Agent
-                  </Button>
-                </CardContent>
-              </Card>
+              <EmptyState onCreateClick={() => router.push('/agents/new')} />
             )}
-          </div>
+          </motion.div>
         </div>
+
+        {/* Quick Actions */}
+        {agents.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-6"
+          >
+            <motion.div
+              whileHover={{ y: -4 }}
+              onClick={() => router.push('/simulation')}
+              className="group p-6 rounded-2xl premium-card cursor-pointer"
+            >
+              <div className="flex items-center gap-4">
+                <div className="icon-container icon-container-cyan">
+                  <Users className="h-6 w-6" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground group-hover:text-cyan-400 transition-colors">
+                    Multi-Agent Simulation
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Watch your agents collaborate and interact
+                  </p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-cyan-400 group-hover:translate-x-1 transition-all" />
+              </div>
+            </motion.div>
+
+            <motion.div
+              whileHover={{ y: -4 }}
+              onClick={() => router.push('/agents/new')}
+              className="group p-6 rounded-2xl premium-card cursor-pointer"
+            >
+              <div className="flex items-center gap-4">
+                <div className="icon-container icon-container-pink">
+                  <Sparkles className="h-6 w-6" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground group-hover:text-pink-400 transition-colors">
+                    Create New Agent
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Design an AI agent with custom personality
+                  </p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-pink-400 group-hover:translate-x-1 transition-all" />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
       </div>
     </div>
   )
