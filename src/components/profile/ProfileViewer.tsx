@@ -1,13 +1,7 @@
 'use client'
 
-/**
- * Psychological Profile Component - Phase 2
- *
- * Displays an agent's psychological profile including Big Five,
- * MBTI, Enneagram, and other personality assessments.
- */
-
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
+import { Brain, RefreshCw, Sparkles } from 'lucide-react'
 import { PsychologicalProfile, BigFiveProfile, MBTIProfile, EnneagramProfile } from '@/types/database'
 
 interface ProfileViewerProps {
@@ -54,6 +48,8 @@ const ENNEAGRAM_TYPES: Record<number, { name: string; description: string; icon:
   9: { name: 'The Peacemaker', description: 'Receptive, reassuring, complacent', icon: '☮️' },
 }
 
+const panelClass = 'rounded-[1.6rem] border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
+
 export function ProfileViewer({ agentId, agentName }: ProfileViewerProps) {
   const [profile, setProfile] = useState<PsychologicalProfile | null>(null)
   const [loading, setLoading] = useState(true)
@@ -76,7 +72,7 @@ export function ProfileViewer({ agentId, agentName }: ProfileViewerProps) {
   }, [agentId])
 
   useEffect(() => {
-    fetchProfile()
+    void fetchProfile()
   }, [fetchProfile])
 
   const generateProfile = async () => {
@@ -99,30 +95,26 @@ export function ProfileViewer({ agentId, agentName }: ProfileViewerProps) {
   }
 
   if (loading) {
-    return (
-      <div className="text-center py-8 text-gray-400">
-        Loading psychological profile...
-      </div>
-    )
+    return <div className="py-8 text-center text-sm text-muted-foreground">Loading psychological profile...</div>
   }
 
   if (!profile) {
     return (
-      <div className="text-center py-12">
-        <div className="text-6xl mb-4">🧠</div>
-        <h3 className="text-xl font-semibold text-white mb-2">
-          No Profile Generated Yet
-        </h3>
-        <p className="text-gray-400 mb-6 max-w-md mx-auto">
-          Generate a psychological profile to understand {agentName}&apos;s
-          personality through Big Five, MBTI, and Enneagram assessments.
+      <div className={`${panelClass} text-center`}>
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[1.4rem] bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-[0_18px_40px_-24px_rgba(109,77,158,0.68)]">
+          <Brain className="h-8 w-8" />
+        </div>
+        <h3 className="mt-5 text-xl font-semibold text-foreground">No profile generated yet</h3>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-muted-foreground">
+          Generate a psychological profile to understand how {agentName} tends to think, communicate, react, and relate through Big Five, MBTI, and Enneagram views.
         </p>
         <button
-          onClick={generateProfile}
+          onClick={() => void generateProfile()}
           disabled={generating}
-          className="bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg transition-colors disabled:opacity-50"
+          className="mt-6 inline-flex h-11 items-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-5 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)] disabled:opacity-60"
         >
-          {generating ? 'Generating Profile...' : '🧠 Generate Profile'}
+          <Sparkles className="h-4 w-4" />
+          {generating ? 'Generating profile...' : 'Generate profile'}
         </button>
       </div>
     )
@@ -130,100 +122,89 @@ export function ProfileViewer({ agentId, agentName }: ProfileViewerProps) {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h3 className="text-xl font-semibold text-white">Psychological Profile</h3>
-          <p className="text-gray-400 text-sm">
-            {agentName}&apos;s personality assessment
+          <h3 className="text-xl font-semibold text-foreground">Psychological profile</h3>
+          <p className="mt-2 text-sm leading-7 text-muted-foreground">
+            A structured view of {agentName}&apos;s temperament, cognitive preferences, communication style, and relational tendencies.
           </p>
         </div>
         <button
-          onClick={generateProfile}
+          onClick={() => void generateProfile()}
           disabled={generating}
-          className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+          className="inline-flex h-11 items-center gap-2 rounded-full border border-border/70 bg-card/[0.62] px-4 text-sm font-medium text-foreground backdrop-blur-xl transition-all hover:border-primary/20 hover:bg-card/[0.82] disabled:opacity-60"
         >
-          {generating ? 'Regenerating...' : '🔄 Regenerate'}
+          <RefreshCw className={`h-4 w-4 ${generating ? 'animate-spin' : ''}`} />
+          {generating ? 'Regenerating...' : 'Regenerate'}
         </button>
       </div>
 
-      {/* Quick Summary */}
-      <div className="bg-gray-800 rounded-lg p-4">
-        <div className="flex items-center gap-4 mb-3">
-          <div className="text-4xl">{ENNEAGRAM_TYPES[profile.enneagram.primaryType]?.icon}</div>
+      <div className={`${panelClass} grid gap-5 lg:grid-cols-[0.9fr_1.1fr]`}>
+        <div className="flex items-center gap-4">
+          <div className="text-5xl">{ENNEAGRAM_TYPES[profile.enneagram.primaryType]?.icon}</div>
           <div>
-            <div className="text-xl font-bold text-white">{profile.mbti.type}</div>
-            <div className="text-gray-400 text-sm">
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Profile summary</div>
+            <div className="mt-2 text-2xl font-semibold text-foreground">{profile.mbti.type}</div>
+            <div className="mt-1 text-sm text-muted-foreground">
               {MBTI_DESCRIPTIONS[profile.mbti.type] || 'Unique personality type'}
             </div>
           </div>
         </div>
-        <p className="text-gray-300 text-sm">{profile.summary}</p>
+
+        <p className="text-sm leading-7 text-muted-foreground">{profile.summary}</p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-gray-700">
-        {(['bigfive', 'mbti', 'enneagram', 'insights'] as const).map(tab => (
+      <div className="tab-nav w-fit">
+        {(['bigfive', 'mbti', 'enneagram', 'insights'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              activeTab === tab
-                ? 'text-cyan-400 border-cyan-400'
-                : 'text-gray-400 border-transparent hover:text-gray-300'
-            }`}
+            className={activeTab === tab ? 'tab-item tab-item-active' : 'tab-item'}
           >
             {tab === 'bigfive' ? 'Big Five' : tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
       </div>
 
-      {/* Tab Content */}
-      {activeTab === 'bigfive' && (
-        <BigFiveView profile={profile.bigFive} />
-      )}
-
-      {activeTab === 'mbti' && (
-        <MBTIView profile={profile.mbti} />
-      )}
-
-      {activeTab === 'enneagram' && (
-        <EnneagramView profile={profile.enneagram} />
-      )}
-
-      {activeTab === 'insights' && (
-        <InsightsView profile={profile} />
-      )}
+      {activeTab === 'bigfive' && <BigFiveView profile={profile.bigFive} />}
+      {activeTab === 'mbti' && <MBTIView profile={profile.mbti} />}
+      {activeTab === 'enneagram' && <EnneagramView profile={profile.enneagram} />}
+      {activeTab === 'insights' && <InsightsView profile={profile} />}
     </div>
   )
 }
 
 function BigFiveView({ profile }: { profile: BigFiveProfile }) {
   return (
-    <div className="space-y-4">
-      {(Object.entries(BIG_FIVE_LABELS) as [keyof BigFiveProfile, typeof BIG_FIVE_LABELS[keyof BigFiveProfile]][]).map(
-        ([key, config]) => (
-          <div key={key} className="bg-gray-800 rounded-lg p-4">
-            <div className="flex justify-between mb-2">
-              <span className="font-medium text-white">{config.label}</span>
-              <span className="text-gray-400">{(profile[key] * 100).toFixed(0)}%</span>
+    <div className="grid gap-4">
+      {(Object.entries(BIG_FIVE_LABELS) as [keyof BigFiveProfile, typeof BIG_FIVE_LABELS[keyof BigFiveProfile]][]).map(([key, config]) => (
+        <div key={key} className={panelClass}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="font-medium text-foreground">{config.label}</div>
+              <div className="mt-1 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                {config.low} to {config.high}
+              </div>
             </div>
-            <div className="relative h-3 bg-gray-700 rounded-full overflow-hidden">
-              <div
-                className="absolute h-full rounded-full transition-all"
-                style={{
-                  width: `${profile[key] * 100}%`,
-                  backgroundColor: config.color,
-                }}
-              />
-            </div>
-            <div className="flex justify-between mt-1 text-xs text-gray-500">
-              <span>{config.low}</span>
-              <span>{config.high}</span>
-            </div>
+            <span className="text-sm font-semibold text-foreground">{(profile[key] * 100).toFixed(0)}%</span>
           </div>
-        )
-      )}
+
+          <div className="mt-4 h-3 rounded-full bg-muted/45">
+            <div
+              className="h-3 rounded-full transition-all"
+              style={{
+                width: `${profile[key] * 100}%`,
+                backgroundColor: config.color,
+              }}
+            />
+          </div>
+
+          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+            <span>{config.low}</span>
+            <span>{config.high}</span>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -238,60 +219,63 @@ function MBTIView({ profile }: { profile: MBTIProfile }) {
 
   return (
     <div className="space-y-6">
-      {/* Type Badge */}
-      <div className="text-center">
-        <div className="inline-flex items-center gap-1 text-4xl font-bold text-white bg-gray-800 px-6 py-3 rounded-lg">
-          {profile.type.split('').map((letter, i) => (
+      <div className={`${panelClass} text-center`}>
+        <div className="inline-flex items-center gap-1 rounded-[1.4rem] bg-background/45 px-6 py-4 text-4xl font-semibold text-foreground">
+          {profile.type.split('').map((letter, index) => (
             <span
-              key={i}
-              className={`${
-                i === 0 ? 'text-blue-400' :
-                i === 1 ? 'text-green-400' :
-                i === 2 ? 'text-yellow-400' :
-                'text-purple-400'
-              }`}
+              key={index}
+              className={
+                index === 0
+                  ? 'text-blue-500'
+                  : index === 1
+                    ? 'text-emerald-500'
+                    : index === 2
+                      ? 'text-amber-500'
+                      : 'text-primary'
+              }
             >
               {letter}
             </span>
           ))}
         </div>
-        <p className="text-gray-400 mt-2">
-          {MBTI_DESCRIPTIONS[profile.type]}
-        </p>
+        <p className="mt-4 text-sm leading-7 text-muted-foreground">{MBTI_DESCRIPTIONS[profile.type]}</p>
       </div>
 
-      {/* Dimensions */}
-      {dimensions.map(({ key, left, right, leftLabel, rightLabel }) => {
-        const value = profile.dimensions[key]
-        const percentage = ((value + 1) / 2) * 100
+      <div className="grid gap-4">
+        {dimensions.map(({ key, left, right, leftLabel, rightLabel }) => {
+          const value = profile.dimensions[key]
+          const percentage = ((value + 1) / 2) * 100
 
-        return (
-          <div key={key} className="bg-gray-800 rounded-lg p-4">
-            <div className="flex justify-between mb-2">
-              <span className={`font-bold ${value < 0 ? 'text-cyan-400' : 'text-gray-500'}`}>
-                {left} - {leftLabel}
-              </span>
-              <span className={`font-bold ${value >= 0 ? 'text-cyan-400' : 'text-gray-500'}`}>
-                {rightLabel} - {right}
-              </span>
+          return (
+            <div key={key} className={panelClass}>
+              <div className="flex justify-between gap-4 text-sm font-medium">
+                <span className={value < 0 ? 'text-accent' : 'text-muted-foreground'}>
+                  {left} • {leftLabel}
+                </span>
+                <span className={value >= 0 ? 'text-accent' : 'text-muted-foreground'}>
+                  {rightLabel} • {right}
+                </span>
+              </div>
+
+              <div className="relative mt-4 h-3 rounded-full bg-muted/45">
+                <div
+                  className="h-3 rounded-full bg-accent transition-all"
+                  style={{ width: `${percentage}%` }}
+                />
+                <div
+                  className="absolute top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-foreground"
+                  style={{ left: `${percentage}%` }}
+                />
+              </div>
+
+              <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+                <span>{(100 - percentage).toFixed(0)}%</span>
+                <span>{percentage.toFixed(0)}%</span>
+              </div>
             </div>
-            <div className="relative h-3 bg-gray-700 rounded-full">
-              <div
-                className="absolute h-full bg-cyan-500 rounded-full transition-all"
-                style={{ width: `${percentage}%` }}
-              />
-              <div
-                className="absolute top-1/2 -translate-y-1/2 w-1 h-5 bg-white rounded"
-                style={{ left: `${percentage}%` }}
-              />
-            </div>
-            <div className="flex justify-between mt-1 text-xs text-gray-500">
-              <span>{(100 - percentage).toFixed(0)}%</span>
-              <span>{percentage.toFixed(0)}%</span>
-            </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -301,222 +285,189 @@ function EnneagramView({ profile }: { profile: EnneagramProfile }) {
   const wingType = ENNEAGRAM_TYPES[profile.wing]
 
   return (
-    <div className="space-y-6">
-      {/* Primary Type */}
-      <div className="bg-gray-800 rounded-lg p-6 text-center">
-        <div className="text-5xl mb-3">{primaryType?.icon}</div>
-        <div className="text-2xl font-bold text-white">
+    <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+      <div className={`${panelClass} text-center`}>
+        <div className="text-5xl">{primaryType?.icon}</div>
+        <div className="mt-4 text-2xl font-semibold text-foreground">
           Type {profile.primaryType}: {primaryType?.name}
         </div>
-        <p className="text-gray-400 mt-2">{primaryType?.description}</p>
+        <p className="mt-3 text-sm leading-7 text-muted-foreground">{primaryType?.description}</p>
       </div>
 
-      {/* Wing */}
-      <div className="bg-gray-800 rounded-lg p-4">
-        <div className="flex items-center gap-3">
-          <span className="text-3xl">{wingType?.icon}</span>
-          <div>
-            <div className="text-sm text-gray-400">Wing</div>
-            <div className="font-semibold text-white">
-              Type {profile.wing}: {wingType?.name}
+      <div className="grid gap-4">
+        <div className={panelClass}>
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Wing</div>
+          <div className="mt-3 flex items-center gap-3">
+            <span className="text-3xl">{wingType?.icon}</span>
+            <div>
+              <div className="font-medium text-foreground">Type {profile.wing}: {wingType?.name}</div>
+              <div className="text-sm text-muted-foreground">{wingType?.description}</div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Tritype */}
-      <div className="bg-gray-800 rounded-lg p-4">
-        <div className="text-sm text-gray-400 mb-2">Tritype</div>
-        <div className="flex gap-4 justify-center">
-          {profile.tritype.map((type, i) => (
-            <div key={i} className="text-center">
-              <div className="text-2xl">{ENNEAGRAM_TYPES[type]?.icon}</div>
-              <div className="text-white font-semibold">Type {type}</div>
-              <div className="text-xs text-gray-500">{ENNEAGRAM_TYPES[type]?.name}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Instinctual Variant */}
-      <div className="bg-gray-800 rounded-lg p-4">
-        <div className="text-sm text-gray-400 mb-1">Instinctual Variant</div>
-        <div className="font-semibold text-white capitalize">
-          {profile.instinctualVariant.replace('-', ' ')}
-        </div>
-      </div>
-
-      {/* Enneagram Circle */}
-      <div className="bg-gray-800 rounded-lg p-4">
-        <div className="relative w-64 h-64 mx-auto">
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => {
-            const angle = ((num - 1) * 40 - 90) * (Math.PI / 180)
-            const x = 50 + 40 * Math.cos(angle)
-            const y = 50 + 40 * Math.sin(angle)
-            const isActive = num === profile.primaryType
-            const isWing = num === profile.wing
-            const isTritype = profile.tritype.includes(num)
-
-            return (
-              <div
-                key={num}
-                className={`absolute w-8 h-8 rounded-full flex items-center justify-center font-bold transition-all ${
-                  isActive
-                    ? 'bg-cyan-500 text-white scale-125'
-                    : isWing
-                    ? 'bg-cyan-700 text-white'
-                    : isTritype
-                    ? 'bg-cyan-900 text-cyan-300'
-                    : 'bg-gray-700 text-gray-400'
-                }`}
-                style={{
-                  left: `${x}%`,
-                  top: `${y}%`,
-                  transform: 'translate(-50%, -50%)',
-                }}
-              >
-                {num}
+        <div className={panelClass}>
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Tritype</div>
+          <div className="mt-4 flex flex-wrap justify-center gap-4">
+            {profile.tritype.map((type) => (
+              <div key={type} className="min-w-28 rounded-[1.25rem] bg-background/45 px-4 py-4 text-center">
+                <div className="text-2xl">{ENNEAGRAM_TYPES[type]?.icon}</div>
+                <div className="mt-2 font-medium text-foreground">Type {type}</div>
+                <div className="text-xs text-muted-foreground">{ENNEAGRAM_TYPES[type]?.name}</div>
               </div>
-            )
-          })}
+            ))}
+          </div>
+        </div>
+
+        <div className={panelClass}>
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Instinctual variant</div>
+          <div className="mt-3 text-lg font-medium capitalize text-foreground">
+            {profile.instinctualVariant.replace('-', ' ')}
+          </div>
+        </div>
+
+        <div className={panelClass}>
+          <div className="relative mx-auto h-64 w-64">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => {
+              const angle = ((num - 1) * 40 - 90) * (Math.PI / 180)
+              const x = 50 + 40 * Math.cos(angle)
+              const y = 50 + 40 * Math.sin(angle)
+              const isActive = num === profile.primaryType
+              const isWing = num === profile.wing
+              const isTritype = profile.tritype.includes(num)
+
+              return (
+                <div
+                  key={num}
+                  className={`absolute flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-all ${
+                    isActive
+                      ? 'scale-125 bg-accent text-white'
+                      : isWing
+                        ? 'bg-primary text-white'
+                        : isTritype
+                          ? 'bg-primary/15 text-primary'
+                          : 'bg-muted/60 text-muted-foreground'
+                  }`}
+                  style={{
+                    left: `${x}%`,
+                    top: `${y}%`,
+                    transform: 'translate(-50%, -50%)',
+                  }}
+                >
+                  {num}
+                </div>
+              )
+            })}
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
+function InsightBlock({
+  title,
+  items,
+  accent,
+}: {
+  title: string
+  items: string[]
+  accent: string
+}) {
+  if (items.length === 0) return null
+
+  return (
+    <div className={panelClass}>
+      <div className="flex items-center gap-2">
+        <span className="text-lg">{accent}</span>
+        <h4 className="font-semibold text-foreground">{title}</h4>
+      </div>
+      <ul className="mt-4 space-y-2">
+        {items.map((item) => (
+          <li key={item} className="flex items-start gap-2 text-sm leading-7 text-muted-foreground">
+            <span className="mt-2 h-1.5 w-1.5 rounded-full bg-primary" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function InsightsView({ profile }: { profile: PsychologicalProfile }) {
   return (
-    <div className="space-y-6">
-      {/* Strengths */}
-      <div className="bg-gray-800 rounded-lg p-4">
-        <h4 className="font-semibold text-white mb-3 flex items-center gap-2">
-          <span>💪</span> Strengths
-        </h4>
-        <ul className="space-y-2">
-          {profile.strengths.map((strength, i) => (
-            <li key={i} className="text-gray-300 flex items-start gap-2">
-              <span className="text-green-400">•</span>
-              {strength}
-            </li>
-          ))}
-        </ul>
-      </div>
+    <div className="grid gap-4 lg:grid-cols-2">
+      <InsightBlock title="Strengths" items={profile.strengths} accent="💪" />
+      <InsightBlock title="Growth areas" items={profile.challenges} accent="🎯" />
 
-      {/* Challenges */}
-      <div className="bg-gray-800 rounded-lg p-4">
-        <h4 className="font-semibold text-white mb-3 flex items-center gap-2">
-          <span>🎯</span> Growth Areas
-        </h4>
-        <ul className="space-y-2">
-          {profile.challenges.map((challenge, i) => (
-            <li key={i} className="text-gray-300 flex items-start gap-2">
-              <span className="text-yellow-400">•</span>
-              {challenge}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* Motivations */}
-      <div className="bg-gray-800 rounded-lg p-4">
-        <h4 className="font-semibold text-white mb-3 flex items-center gap-2">
-          <span>🔥</span> Motivations
-        </h4>
-        <div className="flex flex-wrap gap-2">
-          {profile.motivationalProfile.primaryMotivations.map((motivation, i) => (
-            <span
-              key={i}
-              className="text-xs bg-orange-600/30 text-orange-300 px-2 py-1 rounded"
-            >
+      <div className={panelClass}>
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🔥</span>
+          <h4 className="font-semibold text-foreground">Motivations</h4>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {profile.motivationalProfile.primaryMotivations.map((motivation) => (
+            <span key={motivation} className="rounded-full bg-amber-500/15 px-3 py-1 text-xs font-medium text-amber-600 dark:text-amber-300">
               {motivation}
             </span>
           ))}
         </div>
       </div>
 
-      {/* Core Values */}
-      <div className="bg-gray-800 rounded-lg p-4">
-        <h4 className="font-semibold text-white mb-3 flex items-center gap-2">
-          <span>⭐</span> Core Values
-        </h4>
-        <div className="flex flex-wrap gap-2">
-          {profile.motivationalProfile.coreValues.map((value, i) => (
-            <span
-              key={i}
-              className="text-xs bg-blue-600/30 text-blue-300 px-2 py-1 rounded"
-            >
+      <div className={panelClass}>
+        <div className="flex items-center gap-2">
+          <span className="text-lg">⭐</span>
+          <h4 className="font-semibold text-foreground">Core values</h4>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {profile.motivationalProfile.coreValues.map((value) => (
+            <span key={value} className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-medium text-blue-600 dark:text-blue-300">
               {value}
             </span>
           ))}
         </div>
       </div>
 
-      {/* Communication Style */}
-      <div className="bg-gray-800 rounded-lg p-4">
-        <h4 className="font-semibold text-white mb-3 flex items-center gap-2">
-          <span>💬</span> Communication Style
-        </h4>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <div className="text-xs text-gray-400 mb-1">Directness</div>
-            <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-cyan-500 rounded-full"
-                style={{ width: `${profile.communicationStyle.directness * 100}%` }}
-              />
+      <div className={panelClass}>
+        <h4 className="font-semibold text-foreground">Communication style</h4>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          {[
+            { label: 'Directness', value: profile.communicationStyle.directness, left: 'Indirect', right: 'Direct' },
+            { label: 'Expression', value: profile.communicationStyle.emotionalExpression, left: 'Reserved', right: 'Expressive' },
+          ].map((item) => (
+            <div key={item.label}>
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{item.label}</div>
+              <div className="mt-3 h-2 rounded-full bg-muted/45">
+                <div className="h-2 rounded-full bg-accent" style={{ width: `${item.value * 100}%` }} />
+              </div>
+              <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+                <span>{item.left}</span>
+                <span>{item.right}</span>
+              </div>
             </div>
-            <div className="flex justify-between text-xs text-gray-500 mt-1">
-              <span>Indirect</span>
-              <span>Direct</span>
-            </div>
-          </div>
-          <div>
-            <div className="text-xs text-gray-400 mb-1">Expression</div>
-            <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-cyan-500 rounded-full"
-                style={{ width: `${profile.communicationStyle.emotionalExpression * 100}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-xs text-gray-500 mt-1">
-              <span>Reserved</span>
-              <span>Expressive</span>
-            </div>
-          </div>
+          ))}
         </div>
-        <div className="mt-3">
-          <span className="text-xs text-gray-400">Conflict Style: </span>
-          <span className="text-cyan-400 capitalize">
-            {profile.communicationStyle.conflictStyle}
-          </span>
+        <div className="mt-4 text-sm text-muted-foreground">
+          Conflict style: <span className="font-medium capitalize text-foreground">{profile.communicationStyle.conflictStyle}</span>
         </div>
       </div>
 
-      {/* Attachment Style */}
-      <div className="bg-gray-800 rounded-lg p-4">
-        <h4 className="font-semibold text-white mb-2 flex items-center gap-2">
-          <span>🔗</span> Attachment Style
-        </h4>
-        <div className="text-cyan-400 capitalize text-lg">
-          {profile.attachmentStyle}
+      <div className="grid gap-4">
+        <div className={panelClass}>
+          <h4 className="font-semibold text-foreground">Attachment style</h4>
+          <div className="mt-3 text-lg font-medium capitalize text-foreground">{profile.attachmentStyle}</div>
         </div>
-      </div>
 
-      {/* Emotional Intelligence */}
-      <div className="bg-gray-800 rounded-lg p-4">
-        <h4 className="font-semibold text-white mb-2 flex items-center gap-2">
-          <span>❤️</span> Emotional Intelligence
-        </h4>
-        <div className="flex items-center gap-4">
-          <div className="text-3xl font-bold text-cyan-400">
-            {(profile.emotionalIntelligence * 100).toFixed(0)}%
-          </div>
-          <div className="flex-1 h-3 bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 rounded-full"
-              style={{ width: `${profile.emotionalIntelligence * 100}%` }}
-            />
+        <div className={panelClass}>
+          <h4 className="font-semibold text-foreground">Emotional intelligence</h4>
+          <div className="mt-4 flex items-center gap-4">
+            <div className="text-3xl font-semibold text-accent">{(profile.emotionalIntelligence * 100).toFixed(0)}%</div>
+            <div className="h-3 flex-1 rounded-full bg-muted/45">
+              <div
+                className="h-3 rounded-full bg-gradient-to-r from-accent to-primary"
+                style={{ width: `${profile.emotionalIntelligence * 100}%` }}
+              />
+            </div>
           </div>
         </div>
       </div>

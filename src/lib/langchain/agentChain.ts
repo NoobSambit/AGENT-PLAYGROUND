@@ -3,6 +3,8 @@ import { MemoryChain } from './memoryChain'
 import { ToolExecutor } from './tools'
 import { AgentService } from '@/lib/services/agentService'
 import { PersonalityService } from '@/lib/services/personalityService'
+import { KnowledgeService } from '@/lib/services/knowledgeService'
+import { collectiveIntelligenceService } from '@/lib/services/collectiveIntelligenceService'
 import { BaseMessage } from '@langchain/core/messages'
 
 export interface AgentChainConfig {
@@ -72,7 +74,7 @@ export class AgentChain {
       const memoryMessages = await this.memoryChain.loadMemory()
 
       // Create system prompt with agent personality and memory
-      const systemPrompt = this.createSystemPrompt(agentData, memoryMessages)
+      const systemPrompt = await this.createSystemPrompt(agentData, memoryMessages, userInput)
 
       // Check if tools should be used
       const shouldUseTools = this.config.enableTools &&
@@ -146,7 +148,7 @@ export class AgentChain {
       const memoryMessages = await this.memoryChain.loadMemory()
 
       // Create system prompt
-      const systemPrompt = this.createSystemPrompt(agentData, memoryMessages)
+      const systemPrompt = await this.createSystemPrompt(agentData, memoryMessages, userInput)
 
       // Check if tools should be used
       const shouldUseTools = this.config.enableTools &&
@@ -213,7 +215,7 @@ export class AgentChain {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private createSystemPrompt(_agent: any, memoryMessages: BaseMessage[]): string {
+  private async createSystemPrompt(_agent: any, memoryMessages: BaseMessage[], userInput?: string): Promise<string> {
     const baseChain = this.baseChain
 
     // Get memory context from messages
@@ -223,6 +225,7 @@ export class AgentChain {
 
     // Get personality context
     const personalityContext = this.getPersonalityContext(_agent)
+    const enhancementContext = await this.buildEnhancementContext(_agent, userInput)
 
     return baseChain.createEnhancedSystemPrompt({
       agentName: _agent.name || 'Agent',
@@ -231,7 +234,9 @@ export class AgentChain {
       memoryContext,
       personalityContext,
       linguisticProfile: _agent.linguisticProfile,
-      emotionalState: _agent.emotionalState
+      emotionalState: _agent.emotionalState,
+      psychologicalContext: enhancementContext.psychologicalContext,
+      knowledgeContext: enhancementContext.knowledgeContext
     })
   }
 
@@ -370,7 +375,7 @@ export class AgentChain {
       // Generate response using the processed input
       const finalInput = adjustedInput !== input ? adjustedInput : input
       const response = await this.generateDirectResponse(
-        this.createSystemPrompt(agent, memoryMessages),
+        await this.createSystemPrompt(agent, memoryMessages, finalInput),
         [],
         finalInput
       )
@@ -381,7 +386,7 @@ export class AgentChain {
       console.error('Error using tools:', error)
       // Fallback to direct response
       const response = await this.generateDirectResponse(
-        this.createSystemPrompt(agent, memoryMessages),
+        await this.createSystemPrompt(agent, memoryMessages, input),
         [],
         input
       )
@@ -450,6 +455,48 @@ export class AgentChain {
     } catch (error) {
       console.error('Error applying personality evolution:', error)
       // Don't throw - personality evolution should not break conversation
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async buildEnhancementContext(agent: any, userInput?: string): Promise<{
+    psychologicalContext?: string
+    knowledgeContext?: string
+  }> {
+    const psychologicalContext = agent.psychologicalProfile
+      ? [
+          agent.psychologicalProfile.summary,
+          `Attachment style: ${agent.psychologicalProfile.attachmentStyle}`,
+          `Conflict style: ${agent.psychologicalProfile.communicationStyle.conflictStyle}`,
+          `Emotional intelligence: ${(agent.psychologicalProfile.emotionalIntelligence * 100).toFixed(0)}%`,
+        ].join('\n')
+      : undefined
+
+    if (!userInput || userInput.trim().length < 6) {
+      return { psychologicalContext }
+    }
+
+    try {
+      const [knowledge, allAgents] = await Promise.all([
+        KnowledgeService.getRelevantKnowledge(userInput, this.config.agentId, 4),
+        AgentService.getAllAgents(),
+      ])
+
+      const snapshot = collectiveIntelligenceService.createSnapshot({
+        agents: allAgents,
+        knowledge,
+        broadcasts: [],
+        queryText: userInput,
+        currentAgentId: this.config.agentId,
+      })
+
+      return {
+        psychologicalContext,
+        knowledgeContext: collectiveIntelligenceService.buildPromptContext(snapshot),
+      }
+    } catch (error) {
+      console.error('Error building enhancement context:', error)
+      return { psychologicalContext }
     }
   }
 

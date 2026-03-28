@@ -266,7 +266,9 @@ export class BaseChain {
     memoryContext?: string,
     personalityContext?: string,
     phase1Context?: Phase1Context,
-    agentName?: string
+    agentName?: string,
+    psychologicalContext?: string,
+    knowledgeContext?: string
   ): string {
     let systemPrompt = `You are an AI agent with the following persona: ${agentPersona}
 
@@ -294,6 +296,11 @@ ${linguisticPrompt}`
 ${emotionalPrompt}`
       }
 
+      const microExpressionPrompt = emotionalService.getMicroExpressionPrompt(phase1Context.emotionalState)
+      systemPrompt += `
+
+${microExpressionPrompt}`
+
       // Add full emotional context for more nuanced responses
       const fullEmotionalContext = emotionalService.getFullEmotionalContext(phase1Context.emotionalState)
       systemPrompt += `
@@ -308,6 +315,20 @@ Relevant memories and context from previous interactions:
 ${memoryContext}
 
 Use this information to provide more personalized and contextually aware responses.`
+    }
+
+    if (psychologicalContext) {
+      systemPrompt += `
+
+Psychological profile and relationship tendencies:
+${psychologicalContext}`
+    }
+
+    if (knowledgeContext) {
+      systemPrompt += `
+
+Collective intelligence context:
+${knowledgeContext}`
     }
 
     if (personalityContext) {
@@ -331,6 +352,8 @@ ${personalityContext}`
     personalityContext?: string
     linguisticProfile?: LinguisticProfile
     emotionalState?: EmotionalState
+    psychologicalContext?: string
+    knowledgeContext?: string
   }): string {
     return this.createSystemPrompt(
       params.agentPersona,
@@ -341,7 +364,9 @@ ${personalityContext}`
         linguisticProfile: params.linguisticProfile,
         emotionalState: params.emotionalState
       },
-      params.agentName
+      params.agentName,
+      params.psychologicalContext,
+      params.knowledgeContext
     )
   }
 }

@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { GradientOrb } from '@/components/ui/animated-background'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
 import { SimulationService } from '@/lib/services/simulationService'
-import { Bot, Users, MessageCircle, Plus, Play, Pause, Trash2, X, Sparkles, Clock, ChevronRight } from 'lucide-react'
 import { SimulationRecord } from '@/types/database'
-import { GradientOrb } from '@/components/ui/animated-background'
+import { ArrowRight, MessageCircle, Pause, Play, Plus, Trash2, Users, X } from 'lucide-react'
+import { Textarea } from '@/components/ui/input'
 
 interface SimulationAgent {
   id: string
@@ -17,22 +18,60 @@ interface SimulationAgent {
   color: string
 }
 
-const fadeInUp = {
-  initial: { opacity: 0, y: 20 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -20 },
+interface SimulationViewMetadata {
+  initialPrompt?: string
+  referrals?: Array<{
+    agentId: string
+    agentName: string
+    score: number
+  }>
+  consensus?: Array<{
+    topic: string
+    consensusRating?: number
+    confidence?: number
+    recommendedPosition?: string
+  }>
+  conflicts?: Array<{
+    id: string
+    topic: string
+    tension: number
+    participants: Array<{ agentName: string }>
+    actionItems?: string[]
+  }>
+  broadcasts?: Array<{
+    id: string
+    agentName: string
+    topic: string
+    summary: string
+  }>
 }
 
-const staggerContainer = {
-  animate: {
-    transition: {
-      staggerChildren: 0.05,
-    },
-  },
-}
+const agentColors = [
+  'from-violet-500 to-purple-600',
+  'from-cyan-500 to-sky-600',
+  'from-pink-500 to-rose-600',
+  'from-amber-500 to-orange-600',
+  'from-emerald-500 to-green-600',
+  'from-indigo-500 to-blue-600'
+]
 
-export default function Simulation() {
-  const { agents } = useAgentStore()
+const agentTextColors = [
+  'text-primary',
+  'text-accent',
+  'text-pink-500',
+  'text-amber-500',
+  'text-emerald-500',
+  'text-indigo-500'
+]
+
+const starterTopics = [
+  'Design a better user onboarding experience for an AI product.',
+  'Debate the tradeoffs between deep memory and low operational cost.',
+  'Plan a collaborative product launch for a new AI assistant.',
+]
+
+export default function SimulationPage() {
+  const { agents, fetchAgents } = useAgentStore()
   const { setCurrentRoom } = useMessageStore()
 
   const [simulations, setSimulations] = useState<SimulationRecord[]>([])
@@ -41,30 +80,19 @@ export default function Simulation() {
   const [isRunning, setIsRunning] = useState(false)
   const [maxRounds, setMaxRounds] = useState(6)
   const [showAgentModal, setShowAgentModal] = useState(false)
+  const [simulationTopic, setSimulationTopic] = useState(starterTopics[0])
+  const [uiError, setUiError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Color palette for agents
-  const agentColors = [
-    'from-violet-500 to-purple-600',
-    'from-cyan-500 to-blue-600',
-    'from-pink-500 to-rose-600',
-    'from-amber-500 to-orange-600',
-    'from-emerald-500 to-green-600',
-    'from-indigo-500 to-blue-600'
-  ]
-
-  const agentTextColors = [
-    'text-violet-400',
-    'text-cyan-400',
-    'text-pink-400',
-    'text-amber-400',
-    'text-emerald-400',
-    'text-indigo-400'
-  ]
+  useEffect(() => {
+    void loadSimulations()
+  }, [])
 
   useEffect(() => {
-    loadSimulations()
-  }, [])
+    if (agents.length === 0) {
+      void fetchAgents()
+    }
+  }, [agents.length, fetchAgents])
 
   useEffect(() => {
     if (selectedSimulation) {
@@ -78,18 +106,25 @@ export default function Simulation() {
       setSimulations(sims)
     } catch (error) {
       console.error('Failed to load simulations:', error)
+      setUiError('Recent simulations could not be loaded.')
     }
   }
 
-  const startNewSimulation = () => {
+  const startNewSimulation = async () => {
     if (simulationAgents.length < 2) {
-      alert('Please add at least 2 agents to start a simulation')
+      setUiError('Select at least two agents before starting a simulation.')
       return
     }
 
+    if (!simulationTopic.trim()) {
+      setUiError('Add a simulation topic so the agents have a clear brief.')
+      return
+    }
+
+    setUiError(null)
     setIsRunning(true)
     setSelectedSimulation(null)
-    runSimulation()
+    await runSimulation()
   }
 
   const runSimulation = async () => {
@@ -101,39 +136,41 @@ export default function Simulation() {
         },
         body: JSON.stringify({
           agents: simulationAgents,
-          maxRounds: maxRounds,
-          initialPrompt: 'Start a conversation about improving user experience in AI applications.'
+          maxRounds,
+          initialPrompt: simulationTopic.trim(),
         })
       })
 
-      if (response.ok) {
-        const simulation = await response.json()
-        const now = new Date().toISOString()
-        const simulationRecord: SimulationRecord = {
-          id: simulation.simulationId,
-          agents: simulationAgents.map(agent => ({
-            id: agent.id,
-            name: agent.name,
-            persona: agent.persona,
-            goals: agent.goals
-          })),
-          messages: simulation.messages || [],
-          maxRounds: simulation.maxRounds ?? maxRounds,
-          createdAt: now,
-          isComplete: simulation.isComplete ?? false,
-          finalRound: simulation.currentRound ?? simulation.finalRound ?? 0
-        }
-        setSimulations(prev => [simulationRecord, ...prev])
-        setSelectedSimulation(simulationRecord.id)
-        setIsRunning(false)
-        loadSimulations()
-      } else {
+      if (!response.ok) {
         throw new Error('Failed to run simulation')
       }
+
+      const simulation = await response.json()
+      const now = new Date().toISOString()
+      const simulationRecord: SimulationRecord = {
+        id: simulation.simulationId,
+        agents: simulationAgents.map((agent) => ({
+          id: agent.id,
+          name: agent.name,
+          persona: agent.persona,
+          goals: agent.goals
+        })),
+        messages: simulation.messages || [],
+        maxRounds: simulation.maxRounds ?? maxRounds,
+        createdAt: now,
+        isComplete: simulation.isComplete ?? false,
+        finalRound: simulation.currentRound ?? simulation.finalRound ?? 0,
+        metadata: simulation.metadata ?? undefined
+      }
+
+      setSimulations((prev) => [simulationRecord, ...prev])
+      setSelectedSimulation(simulationRecord.id)
+      setIsRunning(false)
+      await loadSimulations()
     } catch (error) {
       console.error('Simulation error:', error)
       setIsRunning(false)
-      alert('Failed to run simulation. Please try again.')
+      setUiError('Simulation failed. Try fewer agents or a shorter topic and run it again.')
     }
   }
 
@@ -142,6 +179,8 @@ export default function Simulation() {
   }
 
   const addAgentToSimulation = (agent: { id: string; name: string; persona: string; goals: string[] }) => {
+    setUiError(null)
+
     const color = agentColors[simulationAgents.length % agentColors.length]
     const newAgent: SimulationAgent = {
       id: agent.id,
@@ -151,411 +190,495 @@ export default function Simulation() {
       color
     }
 
-    setSimulationAgents(prev => [...prev, newAgent])
+    setSimulationAgents((prev) => [...prev, newAgent])
     setShowAgentModal(false)
   }
 
   const removeAgentFromSimulation = (agentId: string) => {
-    setSimulationAgents(prev => prev.filter(agent => agent.id !== agentId))
+    setSimulationAgents((prev) => prev.filter((agent) => agent.id !== agentId))
   }
 
-  const currentSimulation = simulations.find(s => s.id === selectedSimulation)
+  const currentSimulation = simulations.find((simulation) => simulation.id === selectedSimulation)
+  const currentSimulationMetadata = currentSimulation?.metadata as SimulationViewMetadata | undefined
+  const availableAgents = useMemo(
+    () => agents.filter((agent) => !simulationAgents.some((selected) => selected.id === agent.id)),
+    [agents, simulationAgents]
+  )
 
   return (
-    <div className="relative min-h-screen pt-28 pb-20">
-      {/* Decorative orbs */}
-      <GradientOrb className="w-[600px] h-[600px] -top-[200px] left-1/4 opacity-20" color="cyan" />
-      <GradientOrb className="w-[400px] h-[400px] bottom-0 -right-[100px] opacity-15" color="pink" />
+    <div className="relative min-h-screen pb-20 pt-28">
+      <GradientOrb className="left-1/4 top-0 h-[36rem] w-[36rem] opacity-[0.18]" color="cyan" />
+      <GradientOrb className="-right-14 bottom-0 h-[28rem] w-[28rem] opacity-[0.14]" color="pink" />
 
-      <div className="relative z-10 mx-auto max-w-7xl px-6 space-y-8">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
+      <div className="page-shell space-y-8">
+        <motion.section
+          initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-6"
+          className="page-section px-6 py-7 sm:px-8"
         >
-          <div className="space-y-2">
-            <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
-              <span className="text-foreground">Multi-Agent </span>
-              <span className="gradient-text-vibrant">Simulation</span>
-            </h1>
-            <p className="text-lg text-muted-foreground">
-              Watch AI agents collaborate and interact in real-time
-            </p>
+          <div className="grid gap-8 xl:grid-cols-[1.35fr_0.85fr]">
+            <div className="page-story">
+              <div className="page-kicker">
+                <Users className="h-4 w-4" />
+                Simulation lab
+              </div>
+              <h1 className="text-4xl font-semibold tracking-tight text-foreground md:text-5xl">
+                Watch agents think together.
+              </h1>
+              <p className="page-intro">
+                Use this page to assemble a small cast of agents, define a topic, and review how they collaborate, disagree, or converge over multiple rounds.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <span className="soft-pill">{simulations.length} saved simulations</span>
+                <span className="soft-pill">{agents.length} agents available</span>
+                <span className="soft-pill">{simulationAgents.length} selected for next run</span>
+              </div>
+            </div>
+
+            <div className="rounded-[1.9rem] border border-border/70 bg-background/[0.42] p-5 backdrop-blur-xl">
+              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">How this works</div>
+              <ol className="mt-4 space-y-3 text-sm leading-7 text-muted-foreground">
+                <li>1. Pick at least two agents.</li>
+                <li>2. Describe the discussion topic or decision they should work through.</li>
+                <li>3. Set the round limit and review the resulting transcript.</li>
+              </ol>
+            </div>
           </div>
-        </motion.div>
+        </motion.section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Simulation Controls Sidebar */}
-          <motion.div
-            initial="initial"
-            animate="animate"
-            variants={staggerContainer}
-            className="space-y-6"
-          >
-            {/* Agent Selection */}
-            <motion.div variants={fadeInUp} className="p-6 rounded-2xl premium-card">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="icon-container icon-container-purple">
-                  <Bot className="h-5 w-5" />
+        <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+          <section className="space-y-6">
+            <div className="page-section px-6 py-7">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Configuration</div>
+                  <h2 className="mt-2 text-2xl font-semibold text-foreground">Prepare the next simulation</h2>
                 </div>
-                <h3 className="font-semibold text-foreground">Simulation Setup</h3>
+                <button
+                  onClick={() => setShowAgentModal(true)}
+                  className="inline-flex h-11 items-center gap-2 rounded-full border border-border/70 bg-card/[0.62] px-4 text-sm font-medium text-foreground backdrop-blur-xl transition-all hover:border-primary/20"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add agent
+                </button>
               </div>
 
-              {/* Agent Cards */}
-              <div className="space-y-3 mb-6">
-                <h4 className="text-sm font-medium text-muted-foreground">Selected Agents</h4>
-                <AnimatePresence mode="popLayout">
-                  {simulationAgents.length === 0 ? (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="text-center py-4 text-muted-foreground/60 text-sm"
-                    >
-                      No agents selected
-                    </motion.div>
-                  ) : (
-                    simulationAgents.map((agent) => (
-                      <motion.div
-                        key={agent.id}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.1] transition-colors"
+              <div className="mt-6 space-y-5">
+                <div>
+                  <label className="text-sm font-medium text-foreground">Topic or scenario brief</label>
+                  <Textarea
+                    className="mt-2 min-h-[140px]"
+                    value={simulationTopic}
+                    onChange={(event) => setSimulationTopic(event.target.value)}
+                    placeholder="Describe the discussion, conflict, or collaboration the agents should work through."
+                  />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {starterTopics.map((topic) => (
+                      <button
+                        key={topic}
+                        onClick={() => setSimulationTopic(topic)}
+                        className="soft-pill transition-colors hover:text-foreground"
+                        type="button"
                       >
-                        <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${agent.color} flex items-center justify-center shadow-lg`}>
-                          <span className="text-white font-bold text-xs">
-                            {agent.name.charAt(0)}
-                          </span>
-                        </div>
-                        <span className="flex-1 text-sm font-medium">{agent.name}</span>
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => removeAgentFromSimulation(agent.id)}
-                          className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-all"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </motion.button>
-                      </motion.div>
-                    ))
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Add Agent Button */}
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setShowAgentModal(true)}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-violet-500/30 hover:bg-violet-500/5 transition-all"
-              >
-                <Plus className="h-4 w-4" />
-                Add Agent
-              </motion.button>
-
-              {/* Simulation Controls */}
-              <div className="space-y-4 pt-6 mt-6 border-t border-white/[0.06]">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-muted-foreground">Max Rounds</label>
-                  <select
-                    value={maxRounds}
-                    onChange={(e) => setMaxRounds(parseInt(e.target.value))}
-                    className="px-3 py-1.5 rounded-lg text-sm bg-white/[0.03] border border-white/[0.08] focus:border-violet-500/50 outline-none transition-colors"
-                  >
-                    {[3, 4, 5, 6, 8, 10].map(num => (
-                      <option key={num} value={num}>{num}</option>
+                        {topic}
+                      </button>
                     ))}
-                  </select>
+                  </div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <div>
+                    <label className="text-sm font-medium text-foreground">Selected agents</label>
+                    <div className="mt-2 space-y-3">
+                      {simulationAgents.length === 0 ? (
+                        <div className="rounded-[1.5rem] border border-dashed border-border/70 bg-background/40 px-4 py-6 text-center text-sm text-muted-foreground">
+                          Add at least two agents to begin.
+                        </div>
+                      ) : (
+                        simulationAgents.map((agent) => (
+                          <div
+                            key={agent.id}
+                            className="flex items-start gap-3 rounded-[1.5rem] border border-border/70 bg-background/40 p-4"
+                          >
+                            <div className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br ${agent.color} text-sm font-semibold text-white shadow-lg`}>
+                              {agent.name.charAt(0)}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="font-medium text-foreground">{agent.name}</div>
+                              <div className="line-clamp-2 text-sm leading-6 text-muted-foreground">{agent.persona}</div>
+                            </div>
+                            <button
+                              onClick={() => removeAgentFromSimulation(agent.id)}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-border/70 bg-card/[0.58] text-muted-foreground transition-all hover:border-destructive/30 hover:text-destructive"
+                              type="button"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-foreground">Max rounds</label>
+                    <select
+                      value={maxRounds}
+                      onChange={(event) => setMaxRounds(parseInt(event.target.value, 10))}
+                      className="mt-2 h-12 rounded-full border border-border/70 bg-card/[0.62] px-4 text-sm text-foreground outline-none backdrop-blur-xl transition-all focus:border-primary/25"
+                    >
+                      {[3, 4, 5, 6, 8, 10].map((num) => (
+                        <option key={num} value={num}>
+                          {num} rounds
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {uiError && (
+                  <div className="rounded-[1.35rem] border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                    {uiError}
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-3 sm:flex-row">
                   {!isRunning ? (
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={startNewSimulation}
+                    <button
+                      onClick={() => void startNewSimulation()}
                       disabled={simulationAgents.length < 2}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 text-white font-medium shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-5 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)] transition-all hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                      type="button"
                     >
                       <Play className="h-4 w-4" />
-                      Start
-                    </motion.button>
+                      Start simulation
+                    </button>
                   ) : (
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
+                    <button
                       onClick={stopSimulation}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 text-white font-medium"
+                      className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-rose-500 to-red-500 px-5 text-sm font-semibold text-white"
+                      type="button"
                     >
                       <Pause className="h-4 w-4" />
                       Stop
-                    </motion.button>
+                    </button>
                   )}
-                </div>
 
-                {isRunning && (
-                  <div className="flex items-center justify-center gap-2 py-2 px-4 rounded-full bg-violet-500/10 text-violet-400 text-sm">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
-                    </span>
-                    Running simulation...
+                  <button
+                    onClick={() => setShowAgentModal(true)}
+                    className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-border/70 bg-card/[0.62] px-5 text-sm font-semibold text-foreground backdrop-blur-xl transition-all hover:border-primary/20 hover:bg-card/[0.82]"
+                    type="button"
+                  >
+                    Add more agents
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="page-section px-6 py-7">
+              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Recent runs</div>
+              <div className="mt-4 space-y-3">
+                {simulations.length === 0 ? (
+                  <div className="rounded-[1.5rem] border border-dashed border-border/70 bg-background/40 px-4 py-8 text-center text-sm text-muted-foreground">
+                    No simulations have been saved yet.
                   </div>
+                ) : (
+                  simulations.slice(0, 6).map((simulation) => (
+                    <button
+                      key={simulation.id}
+                      onClick={() => setSelectedSimulation(simulation.id)}
+                      className={`block w-full rounded-[1.5rem] border px-4 py-4 text-left transition-all ${
+                        selectedSimulation === simulation.id
+                          ? 'border-primary/20 bg-primary/10'
+                          : 'border-border/70 bg-background/40 hover:border-primary/20 hover:bg-background/70'
+                      }`}
+                      type="button"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="font-medium text-foreground">Simulation {simulation.id.slice(-6)}</div>
+                          <div className="mt-1 text-sm text-muted-foreground">
+                            {simulation.agents?.length ?? 0} agents • {simulation.messages.length} messages
+                          </div>
+                        </div>
+                        <span className="soft-pill">
+                          {simulation.isComplete ? 'complete' : 'in progress'}
+                        </span>
+                      </div>
+                    </button>
+                  ))
                 )}
               </div>
-            </motion.div>
+            </div>
+          </section>
 
-            {/* Recent Simulations */}
-            <motion.div variants={fadeInUp} className="p-6 rounded-2xl premium-card">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="icon-container icon-container-cyan">
-                  <MessageCircle className="h-5 w-5" />
-                </div>
-                <h3 className="font-semibold text-foreground">Recent</h3>
-              </div>
-
-              {simulations.length === 0 ? (
-                <div className="text-center py-4 text-muted-foreground/60 text-sm">
-                  No simulations yet
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {simulations.slice(0, 5).map((simulation) => (
-                    <motion.button
-                      key={simulation.id}
-                      whileHover={{ x: 4 }}
-                      onClick={() => setSelectedSimulation(simulation.id)}
-                      className={`w-full text-left p-3 rounded-xl border transition-all ${
-                        selectedSimulation === simulation.id
-                          ? 'border-violet-500/50 bg-violet-500/10'
-                          : 'border-white/[0.06] hover:border-white/[0.1] hover:bg-white/[0.02]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium">
-                          {simulation.agents?.length ?? 0} agents
-                        </span>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        {new Date(simulation.createdAt).toLocaleDateString()}
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          </motion.div>
-
-          {/* Main Simulation Area */}
-          <div className="lg:col-span-3">
+          <section className="page-section overflow-hidden">
             {selectedSimulation && currentSimulation ? (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="h-[700px] flex flex-col rounded-2xl premium-card overflow-hidden"
-              >
-                {/* Header */}
-                <div className="p-6 border-b border-white/[0.06]">
-                  <div className="flex items-center justify-between mb-4">
+              <div className="flex h-full min-h-[46rem] flex-col">
+                <div className="border-b border-border/60 px-6 py-6 sm:px-8">
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                     <div>
-                      <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
-                        <Sparkles className="h-5 w-5 text-violet-400" />
-                        Simulation #{currentSimulation.id.slice(-6)}
+                      <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Transcript</div>
+                      <h2 className="mt-2 text-2xl font-semibold text-foreground">
+                        Simulation {currentSimulation.id.slice(-6)}
                       </h2>
-                      <p className="text-sm text-muted-foreground">
-                        {currentSimulation.agents.length} agents - {currentSimulation.messages.length} messages
+                      <p className="mt-2 text-sm leading-7 text-muted-foreground">
+                        {currentSimulation.agents.length} agents, {currentSimulation.messages.length} messages, round {currentSimulation.finalRound}/{currentSimulation.maxRounds}
                       </p>
+                      {currentSimulationMetadata?.initialPrompt && (
+                        <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground">
+                          {currentSimulationMetadata.initialPrompt}
+                        </p>
+                      )}
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-muted-foreground">
-                        Round {currentSimulation.finalRound}/{currentSimulation.maxRounds}
-                      </span>
-                      <div className={`w-3 h-3 rounded-full ${
-                        currentSimulation.isComplete
-                          ? 'bg-emerald-400 shadow-lg shadow-emerald-400/50'
-                          : 'bg-amber-400 shadow-lg shadow-amber-400/50 animate-pulse'
-                      }`} />
-                    </div>
-                  </div>
 
-                  {/* Agent Avatars */}
-                  <div className="flex gap-4">
-                    {currentSimulation.agents.map((agent, index) => (
-                      <motion.div
-                        key={agent.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                        className="flex flex-col items-center gap-2"
-                      >
-                        <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${agentColors[index % agentColors.length]} flex items-center justify-center shadow-lg`}>
-                          <span className="text-white font-bold">
+                    <div className="flex flex-wrap gap-3">
+                      {currentSimulation.agents.map((agent, index) => (
+                        <div key={agent.id} className="flex items-center gap-2 rounded-full border border-border/70 bg-background/40 px-3 py-2">
+                          <div className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${agentColors[index % agentColors.length]} text-xs font-semibold text-white`}>
                             {agent.name.charAt(0)}
-                          </span>
+                          </div>
+                          <span className={`text-sm font-medium ${agentTextColors[index % agentTextColors.length]}`}>{agent.name}</span>
                         </div>
-                        <span className={`text-xs font-medium ${agentTextColors[index % agentTextColors.length]}`}>
-                          {agent.name}
-                        </span>
-                      </motion.div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                <div className="flex-1 overflow-y-auto px-6 py-6 sm:px-8">
                   {currentSimulation.messages.length === 0 ? (
-                    <div className="flex items-center justify-center h-full">
-                      <div className="text-center space-y-4">
-                        <MessageCircle className="h-16 w-16 text-muted-foreground/30 mx-auto" />
-                        <p className="text-muted-foreground">No messages yet</p>
+                    <div className="flex h-full items-center justify-center text-center">
+                      <div>
+                        <MessageCircle className="mx-auto h-14 w-14 text-muted-foreground/35" />
+                        <p className="mt-4 text-sm text-muted-foreground">This simulation has no transcript yet.</p>
                       </div>
                     </div>
                   ) : (
-                    <AnimatePresence>
-                      {currentSimulation.messages.map((message, index) => {
-                        const agentIndex = currentSimulation.agents.findIndex(a => a.id === message.agentId)
+                    <div className="space-y-6">
+                      {currentSimulationMetadata && (
+                        <div className="space-y-4">
+                          <div className="grid gap-4 md:grid-cols-4">
+                            <InsightCard label="Referrals" value={currentSimulationMetadata.referrals?.length ?? 0} />
+                            <InsightCard label="Consensus" value={currentSimulationMetadata.consensus?.length ?? 0} />
+                            <InsightCard label="Conflicts" value={currentSimulationMetadata.conflicts?.length ?? 0} />
+                            <InsightCard label="Broadcasts" value={currentSimulationMetadata.broadcasts?.length ?? 0} />
+                          </div>
 
+                          <div className="grid gap-4 xl:grid-cols-3">
+                            <InsightPanel title="Expert Referrals">
+                              {(currentSimulationMetadata.referrals?.length ?? 0) === 0 ? (
+                                <p className="text-sm text-muted-foreground">No specialist referrals were needed for this run.</p>
+                              ) : (
+                                currentSimulationMetadata.referrals?.map((referral) => (
+                                  <div key={referral.agentId} className="rounded-2xl border border-border/60 bg-background/45 p-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="font-medium text-foreground">{referral.agentName}</span>
+                                      <span className="text-sm font-semibold text-primary">{(referral.score * 100).toFixed(0)}%</span>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </InsightPanel>
+
+                            <InsightPanel title="Consensus Signals">
+                              {(currentSimulationMetadata.consensus?.length ?? 0) === 0 ? (
+                                <p className="text-sm text-muted-foreground">The agents did not produce a strong consensus signal.</p>
+                              ) : (
+                                currentSimulationMetadata.consensus?.map((item) => {
+                                  const confidence = item.consensusRating ?? item.confidence ?? 0
+                                  return (
+                                    <div key={item.topic} className="rounded-2xl border border-border/60 bg-background/45 p-3">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span className="font-medium text-foreground">{item.topic}</span>
+                                        <span className="text-sm font-semibold text-emerald-500">{(confidence * 100).toFixed(0)}%</span>
+                                      </div>
+                                      {item.recommendedPosition && (
+                                        <p className="mt-2 text-sm text-muted-foreground">{item.recommendedPosition}</p>
+                                      )}
+                                    </div>
+                                  )
+                                })
+                              )}
+                            </InsightPanel>
+
+                            <InsightPanel title="Conflicts & Broadcasts">
+                              {(currentSimulationMetadata.conflicts?.length ?? 0) > 0 ? (
+                                currentSimulationMetadata.conflicts?.slice(0, 2).map((conflict) => (
+                                  <div key={conflict.id} className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="font-medium text-foreground">{conflict.topic}</span>
+                                      <span className="text-sm font-semibold text-rose-500">{(conflict.tension * 100).toFixed(0)}%</span>
+                                    </div>
+                                    <p className="mt-2 text-sm text-muted-foreground">
+                                      {conflict.participants.map((participant) => participant.agentName).join(' vs ')}
+                                    </p>
+                                    {conflict.actionItems?.[0] && (
+                                      <p className="mt-2 text-sm text-muted-foreground">{conflict.actionItems[0]}</p>
+                                    )}
+                                  </div>
+                                ))
+                              ) : (
+                                <p className="text-sm text-muted-foreground">No high-tension conflict was persisted from this run.</p>
+                              )}
+
+                              {(currentSimulationMetadata.broadcasts?.length ?? 0) > 0 && (
+                                <div className="space-y-3">
+                                  {currentSimulationMetadata.broadcasts?.slice(0, 1).map((broadcast) => (
+                                    <div key={broadcast.id} className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-3">
+                                      <div className="font-medium text-foreground">{broadcast.topic}</div>
+                                      <p className="mt-2 text-sm text-muted-foreground">{broadcast.summary}</p>
+                                      <p className="mt-2 text-xs text-muted-foreground">Broadcast by {broadcast.agentName}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </InsightPanel>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-4">
+                      {currentSimulation.messages.map((message, index) => {
+                        const agentIndex = currentSimulation.agents.findIndex((agent) => agent.id === message.agentId)
+                        const messageMetadata = message.metadata as {
+                          toolsUsed?: string[]
+                          referrals?: Array<{ agentId: string }>
+                          consensus?: { topic: string; confidence: number }
+                        } | undefined
                         return (
                           <motion.div
                             key={message.id}
-                            initial={{ opacity: 0, y: 20 }}
+                            initial={{ opacity: 0, y: 12 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: index * 0.05 }}
-                            className="flex gap-3"
+                            transition={{ delay: index * 0.03 }}
+                            className="flex items-start gap-3"
                           >
-                            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${agentColors[agentIndex % agentColors.length]} flex items-center justify-center flex-shrink-0 shadow-lg`}>
-                              <span className="text-white font-bold text-sm">
-                                {message.agentName.charAt(0)}
-                              </span>
+                            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${agentColors[agentIndex % agentColors.length]} text-sm font-semibold text-white shadow-lg`}>
+                              {message.agentName.charAt(0)}
                             </div>
 
-                            <div className="flex-1 p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className={`font-medium text-sm ${agentTextColors[agentIndex % agentTextColors.length]}`}>
-                                  {message.agentName}
-                                </span>
-                                <span className="text-xs text-muted-foreground/60">
-                                  Round {message.round}
-                                </span>
+                            <div className="flex-1 rounded-[1.5rem] border border-border/70 bg-background/45 p-4">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className={`text-sm font-semibold ${agentTextColors[agentIndex % agentTextColors.length]}`}>{message.agentName}</span>
+                                <span className="text-xs text-muted-foreground">Round {message.round}</span>
+                                {(messageMetadata?.toolsUsed?.length ?? 0) > 0 && (
+                                  <span className="soft-pill">{messageMetadata?.toolsUsed?.length} tools</span>
+                                )}
+                                {(messageMetadata?.referrals?.length ?? 0) > 0 && (
+                                  <span className="soft-pill">{messageMetadata?.referrals?.length} referrals</span>
+                                )}
+                                {messageMetadata?.consensus?.topic && (
+                                  <span className="soft-pill">{messageMetadata.consensus.topic}</span>
+                                )}
                               </div>
-                              <p className="text-sm text-foreground/90 leading-relaxed">
-                                {message.content}
-                              </p>
+                              <p className="mt-3 text-sm leading-7 text-foreground/[0.92]">{message.content}</p>
                             </div>
                           </motion.div>
                         )
                       })}
-                    </AnimatePresence>
+                      </div>
+                      <div ref={messagesEndRef} />
+                    </div>
                   )}
-                  <div ref={messagesEndRef} />
                 </div>
-              </motion.div>
+              </div>
             ) : (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="h-[700px] flex items-center justify-center rounded-2xl premium-card"
-              >
-                <div className="text-center space-y-6">
-                  <motion.div
-                    animate={{ y: [0, -10, 0] }}
-                    transition={{ duration: 3, repeat: Infinity }}
-                    className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-2xl shadow-cyan-500/30"
-                  >
-                    <Users className="h-10 w-10 text-white" />
-                  </motion.div>
-                  <div className="space-y-2">
-                    <h3 className="text-xl font-semibold text-foreground">No Simulation Selected</h3>
-                    <p className="text-muted-foreground max-w-md">
-                      Select a simulation from the sidebar or start a new one
-                    </p>
+              <div className="flex min-h-[46rem] items-center justify-center px-6 py-10 text-center sm:px-8">
+                <div className="max-w-lg">
+                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.8rem] bg-gradient-to-br from-accent to-primary text-white shadow-[0_18px_44px_-24px_rgba(109,77,158,0.68)]">
+                    <Users className="h-9 w-9" />
                   </div>
+                  <h2 className="mt-6 text-2xl font-semibold text-foreground">Transcript area</h2>
+                  <p className="mt-3 text-sm leading-7 text-muted-foreground">
+                    Start a new simulation or open a previous one to review how the selected agents responded, argued, coordinated, and reached conclusions.
+                  </p>
                 </div>
-              </motion.div>
+              </div>
             )}
-          </div>
+          </section>
         </div>
 
-        {/* Agent Selection Modal */}
         <AnimatePresence>
           {showAgentModal && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 z-50"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-md"
               onClick={() => setShowAgentModal(false)}
             >
               <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="w-full max-w-2xl p-6 rounded-2xl premium-card"
-                onClick={(e) => e.stopPropagation()}
+                initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 16, scale: 0.98 }}
+                className="page-section max-h-[80vh] w-full max-w-3xl overflow-hidden"
+                onClick={(event) => event.stopPropagation()}
               >
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <div className="icon-container icon-container-purple">
-                      <Bot className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-foreground">Add Agent</h3>
-                      <p className="text-sm text-muted-foreground">Select an agent for the simulation</p>
-                    </div>
+                <div className="flex items-center justify-between border-b border-border/60 px-6 py-5">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Roster</div>
+                    <h3 className="mt-2 text-2xl font-semibold text-foreground">Add agents to the simulation</h3>
                   </div>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
+                  <button
                     onClick={() => setShowAgentModal(false)}
-                    className="p-2 rounded-lg hover:bg-white/[0.05] text-muted-foreground hover:text-foreground transition-colors"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border/70 bg-card/[0.62] text-muted-foreground transition-all hover:border-primary/20 hover:text-foreground"
+                    type="button"
                   >
-                    <X className="h-5 w-5" />
-                  </motion.button>
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
 
-                <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                  {agents.map((agent, index) => {
-                    const alreadySelected = simulationAgents.some(sa => sa.id === agent.id)
-                    return (
-                      <motion.button
-                        key={agent.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.05 }}
-                        onClick={() => !alreadySelected && addAgentToSimulation(agent)}
-                        disabled={alreadySelected}
-                        className={`w-full flex items-center gap-4 p-4 rounded-xl border text-left transition-all ${
-                          alreadySelected
-                            ? 'border-white/[0.04] bg-white/[0.01] opacity-50 cursor-not-allowed'
-                            : 'border-white/[0.06] hover:border-violet-500/30 hover:bg-violet-500/5'
-                        }`}
-                      >
-                        <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${agentColors[index % agentColors.length]} flex items-center justify-center shadow-lg`}>
-                          <span className="text-white font-bold">
+                <div className="max-h-[calc(80vh-6.5rem)] overflow-y-auto px-6 py-5">
+                  {availableAgents.length === 0 ? (
+                    <div className="rounded-[1.5rem] border border-dashed border-border/70 bg-background/40 px-4 py-8 text-center text-sm text-muted-foreground">
+                      All agents are already selected.
+                    </div>
+                  ) : (
+                    <div className="grid gap-3">
+                      {availableAgents.map((agent, index) => (
+                        <button
+                          key={agent.id}
+                          onClick={() => addAgentToSimulation(agent)}
+                          className="flex items-start gap-4 rounded-[1.5rem] border border-border/70 bg-background/40 p-4 text-left transition-all hover:border-primary/20 hover:bg-background/70"
+                          type="button"
+                        >
+                          <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${agentColors[index % agentColors.length]} text-sm font-semibold text-white shadow-lg`}>
                             {agent.name.charAt(0)}
-                          </span>
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-medium text-foreground">{agent.name}</div>
-                          <div className="text-sm text-muted-foreground line-clamp-1">{agent.persona}</div>
-                        </div>
-                        {alreadySelected && (
-                          <span className="text-xs text-muted-foreground px-3 py-1 rounded-full bg-white/[0.05]">
-                            Added
-                          </span>
-                        )}
-                      </motion.button>
-                    )
-                  })}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-foreground">{agent.name}</div>
+                            <div className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">{agent.persona}</div>
+                          </div>
+                          <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+    </div>
+  )
+}
+
+function InsightCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[1.4rem] border border-border/70 bg-background/45 p-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">{label}</div>
+      <div className="mt-3 text-3xl font-semibold text-foreground">{value}</div>
+    </div>
+  )
+}
+
+function InsightPanel({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="rounded-[1.5rem] border border-border/70 bg-background/45 p-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">{title}</div>
+      <div className="mt-3 space-y-3">{children}</div>
     </div>
   )
 }

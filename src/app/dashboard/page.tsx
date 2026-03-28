@@ -4,206 +4,125 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { useAgentStore } from '@/stores/agentStore'
-import { Plus, Bot, Zap, MessageCircle, TrendingUp, Clock, ChevronRight, Sparkles, Users, type LucideIcon } from 'lucide-react'
+import { ArrowRight, Bot, Brain, MessageCircle, Plus, Sparkles, Users, Zap, type LucideIcon } from 'lucide-react'
 import { GradientOrb } from '@/components/ui/animated-background'
 
 const fadeInUp = {
-  initial: { opacity: 0, y: 20 },
+  initial: { opacity: 0, y: 18 },
   animate: { opacity: 1, y: 0 },
 }
 
-const staggerContainer = {
-  animate: {
-    transition: {
-      staggerChildren: 0.08,
-    },
-  },
-}
-
-// Stat card component with animated number
 function StatCard({
   icon: Icon,
   label,
   value,
-  subtext,
-  gradient,
-  delay = 0,
+  detail,
+  accent,
 }: {
   icon: LucideIcon
   label: string
   value: string | number
-  subtext: string
-  gradient: string
-  delay?: number
+  detail: string
+  accent: 'purple' | 'cyan' | 'pink'
 }) {
   return (
-    <motion.div
-      variants={fadeInUp}
-      whileHover={{ y: -4, transition: { duration: 0.2 } }}
-      className={`stat-card stat-card-${gradient}`}
-    >
-      <div className="flex items-start justify-between mb-4">
-        <div className={`icon-container icon-container-${gradient}`}>
-          <Icon className="h-6 w-6" />
+    <motion.div variants={fadeInUp} className={`stat-card stat-card-${accent}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className={`icon-container icon-container-${accent}`}>
+          <Icon className="h-5 w-5" />
         </div>
-        <div className="flex items-center gap-1 text-xs text-emerald-400">
-          <TrendingUp className="h-3 w-3" />
-          <span>+12%</span>
-        </div>
+        <span className="soft-pill">Live signal</span>
       </div>
-      <div>
-        <motion.div
-          initial={{ opacity: 0, scale: 0.5 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: delay + 0.2, type: 'spring', stiffness: 200 }}
-          className="text-4xl font-bold text-foreground mb-1"
-        >
-          {value}
-        </motion.div>
-        <div className="text-sm text-muted-foreground">{label}</div>
-        <div className="text-xs text-muted-foreground/60 mt-1">{subtext}</div>
+      <div className="mt-6">
+        <div className="text-4xl font-semibold tracking-tight text-foreground">{value}</div>
+        <div className="mt-2 text-sm font-medium text-foreground">{label}</div>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">{detail}</p>
       </div>
     </motion.div>
   )
 }
 
-// Agent card component
-function AgentCard({
+function AgentSnapshot({
   agent,
-  onClick,
+  onOpen,
 }: {
-  agent: { id: string; name: string; persona: string; status: string; goals: string[]; createdAt: string }
-  onClick: () => void
+  agent: { id: string; name: string; persona: string; status: string; goals: string[]; memoryCount?: number | null; stats?: { totalMessages?: number } | null }
+  onOpen: () => void
 }) {
-  const statusColors = {
-    active: { bg: 'bg-emerald-500', glow: 'shadow-emerald-500/50' },
-    training: { bg: 'bg-amber-500', glow: 'shadow-amber-500/50' },
-    inactive: { bg: 'bg-gray-500', glow: '' },
-  }
-  const status = statusColors[agent.status as keyof typeof statusColors] || statusColors.inactive
-
   return (
-    <motion.div
+    <motion.button
       variants={fadeInUp}
-      whileHover={{ y: -8, transition: { duration: 0.3 } }}
-      onClick={onClick}
-      className="group relative p-6 rounded-2xl premium-card cursor-pointer"
+      whileHover={{ y: -4 }}
+      onClick={onOpen}
+      className="group rounded-[1.75rem] border border-border/70 bg-card/[0.68] p-6 text-left shadow-[0_24px_60px_-38px_rgba(109,77,158,0.32)] backdrop-blur-2xl transition-all hover:border-primary/20 hover:bg-card/[0.84]"
     >
-      {/* Animated gradient border on hover */}
-      <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-violet-500 via-purple-500 to-pink-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-xl -z-10" />
-
-      {/* Header */}
-      <div className="flex items-start justify-between mb-4">
+      <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-              <Bot className="h-6 w-6 text-white" />
-            </div>
-            {/* Status indicator */}
-            <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full ${status.bg} ${status.glow} border-2 border-[#0a0a0f] shadow-lg`} />
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-[0_18px_40px_-26px_rgba(109,77,158,0.6)]">
+            <Bot className="h-5 w-5" />
           </div>
           <div>
-            <h3 className="font-semibold text-foreground group-hover:text-white transition-colors">
-              {agent.name}
-            </h3>
-            <span className="text-xs text-muted-foreground capitalize">{agent.status}</span>
+            <h3 className="text-lg font-semibold text-foreground">{agent.name}</h3>
+            <div className="mt-1 inline-flex items-center gap-2 text-xs capitalize text-muted-foreground">
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${
+                  agent.status === 'active'
+                    ? 'bg-emerald-400'
+                    : agent.status === 'training'
+                      ? 'bg-amber-400'
+                      : 'bg-zinc-400'
+                }`}
+              />
+              {agent.status}
+            </div>
           </div>
         </div>
-        <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 group-hover:text-violet-400 transition-all transform group-hover:translate-x-1" />
+
+        <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" />
       </div>
 
-      {/* Description */}
-      <p className="text-sm text-muted-foreground mb-4 line-clamp-2 leading-relaxed">
-        {agent.persona}
+      <p className="mt-5 line-clamp-3 text-sm leading-6 text-muted-foreground">{agent.persona}</p>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {agent.goals.slice(0, 2).map((goal) => (
+          <span key={goal} className="soft-pill max-w-full truncate">
+            {goal}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-6 grid grid-cols-2 gap-3 rounded-[1.35rem] bg-background/45 p-4">
+        <div>
+          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Messages</div>
+          <div className="mt-2 text-2xl font-semibold text-foreground">{agent.stats?.totalMessages || 0}</div>
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Memories</div>
+          <div className="mt-2 text-2xl font-semibold text-foreground">{agent.memoryCount || 0}</div>
+        </div>
+      </div>
+    </motion.button>
+  )
+}
+
+function EmptyState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="rounded-[2rem] border border-dashed border-border/70 bg-card/[0.54] px-6 py-12 text-center backdrop-blur-xl sm:px-10">
+      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-[0_18px_40px_-24px_rgba(109,77,158,0.6)]">
+        <Sparkles className="h-9 w-9" />
+      </div>
+      <h2 className="mt-6 text-2xl font-semibold text-foreground">Start with one agent</h2>
+      <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-muted-foreground">
+        The dashboard becomes useful once you have a roster to compare, simulate, and evolve. Create an agent first, then return here to monitor the system.
       </p>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between pt-4 border-t border-white/[0.06]">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-violet-400 font-medium">{agent.goals.length}</span>
-          <span className="text-muted-foreground">goals</span>
-        </div>
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Clock className="h-3 w-3" />
-          <span>{new Date(agent.createdAt).toLocaleDateString()}</span>
-        </div>
-      </div>
-    </motion.div>
-  )
-}
-
-// Loading skeleton
-function AgentCardSkeleton() {
-  return (
-    <div className="p-6 rounded-2xl premium-card">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-12 h-12 rounded-xl skeleton" />
-        <div className="space-y-2">
-          <div className="h-4 w-24 skeleton" />
-          <div className="h-3 w-16 skeleton" />
-        </div>
-      </div>
-      <div className="space-y-2 mb-4">
-        <div className="h-3 w-full skeleton" />
-        <div className="h-3 w-3/4 skeleton" />
-      </div>
-      <div className="flex justify-between pt-4 border-t border-white/[0.06]">
-        <div className="h-3 w-16 skeleton" />
-        <div className="h-3 w-20 skeleton" />
-      </div>
+      <button
+        onClick={onCreate}
+        className="mt-6 inline-flex h-12 items-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-5 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)]"
+      >
+        Create Agent
+        <ArrowRight className="h-4 w-4" />
+      </button>
     </div>
-  )
-}
-
-// Empty state
-function EmptyState({ onCreateClick }: { onCreateClick: () => void }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="col-span-full relative overflow-hidden rounded-3xl p-12 text-center"
-    >
-      {/* Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 via-purple-500/5 to-pink-500/5 rounded-3xl" />
-      <div className="absolute inset-[1px] bg-[#0a0a0f]/80 rounded-3xl backdrop-blur-xl" />
-
-      <div className="relative z-10 space-y-6">
-        <motion.div
-          animate={{
-            y: [0, -10, 0],
-          }}
-          transition={{
-            duration: 3,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
-          className="w-24 h-24 mx-auto rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-2xl shadow-violet-500/30"
-        >
-          <Bot className="h-12 w-12 text-white" />
-        </motion.div>
-
-        <div className="space-y-2">
-          <h3 className="text-2xl font-bold text-foreground">No agents yet</h3>
-          <p className="text-muted-foreground max-w-md mx-auto">
-            Create your first AI agent to get started with intelligent conversations and task automation
-          </p>
-        </div>
-
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={onCreateClick}
-          className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-gradient-to-r from-violet-500 to-purple-600 text-white font-semibold shadow-2xl shadow-violet-500/30 hover:shadow-violet-500/50 transition-all"
-        >
-          <Sparkles className="h-5 w-5" />
-          Create Your First Agent
-        </motion.button>
-      </div>
-
-      {/* Decorative */}
-      <div className="absolute top-0 right-0 w-64 h-64 bg-violet-500/10 rounded-full blur-3xl" />
-      <div className="absolute bottom-0 left-0 w-64 h-64 bg-pink-500/10 rounded-full blur-3xl" />
-    </motion.div>
   )
 }
 
@@ -212,176 +131,243 @@ export default function Dashboard() {
   const { agents, loading, fetchAgents } = useAgentStore()
 
   useEffect(() => {
-    fetchAgents()
+    void fetchAgents()
   }, [fetchAgents])
 
   const stats = {
     totalAgents: agents.length,
-    activeAgents: agents.filter(a => a.status === 'active').length,
-    totalMessages: agents.reduce((sum, a) => sum + (a.memoryCount || 0) * 5, 0) || 247,
+    activeAgents: agents.filter((agent) => agent.status === 'active').length,
+    totalMessages: agents.reduce((sum, agent) => sum + (agent.stats?.totalMessages || 0), 0),
+    totalMemories: agents.reduce((sum, agent) => sum + (agent.memoryCount || 0), 0),
   }
 
-  return (
-    <div className="relative min-h-screen pt-28 pb-20">
-      {/* Decorative orbs */}
-      <GradientOrb className="w-[600px] h-[600px] -top-[200px] -right-[200px] opacity-20" color="violet" />
-      <GradientOrb className="w-[400px] h-[400px] top-1/2 -left-[200px] opacity-15" color="cyan" />
+  const topAgents = agents.slice(0, 4)
 
-      <div className="relative z-10 mx-auto max-w-7xl px-6 space-y-10">
-        {/* Header */}
-        <motion.div
+  return (
+    <div className="relative min-h-screen pb-20 pt-28">
+      <GradientOrb className="-right-24 -top-10 h-[34rem] w-[34rem] opacity-20" color="violet" />
+      <GradientOrb className="-left-16 top-[40%] h-[28rem] w-[28rem] opacity-15" color="cyan" />
+
+      <div className="page-shell space-y-8">
+        <motion.section
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-6"
+          className="page-section overflow-hidden px-6 py-7 sm:px-8 sm:py-8"
         >
-          <div className="space-y-2">
-            <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
-              <span className="text-foreground">Agent </span>
-              <span className="gradient-text-vibrant">Dashboard</span>
-            </h1>
-            <p className="text-lg text-muted-foreground">
-              Manage and interact with your AI agents
-            </p>
+          <div className="grid gap-8 xl:grid-cols-[1.45fr_0.85fr]">
+            <div className="page-story">
+              <div className="page-kicker">
+                <Zap className="h-4 w-4" />
+                Dashboard
+              </div>
+              <div>
+                <h1 className="text-4xl font-semibold tracking-tight text-foreground md:text-5xl">
+                  Operate your agent system from one surface.
+                </h1>
+                <p className="page-intro mt-4">
+                  Use this page to check roster health, jump into active agents, and decide whether the next step is training, simulation, or another creation pass.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <span className="soft-pill">{stats.totalAgents} total agents</span>
+                <span className="soft-pill">{stats.activeAgents} currently active</span>
+                <span className="soft-pill">{stats.totalMessages.toLocaleString()} total messages</span>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  onClick={() => router.push('/agents/new')}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-5 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)] transition-all hover:-translate-y-0.5"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create a new agent
+                </button>
+                <button
+                  onClick={() => router.push('/simulation')}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-border/70 bg-card/[0.62] px-5 text-sm font-semibold text-foreground backdrop-blur-xl transition-all hover:border-primary/20 hover:bg-card/[0.82]"
+                >
+                  Open simulation lab
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+              {[
+                {
+                  title: 'What this page answers',
+                  detail: 'Which agents are active, which ones need attention, and where to go next.',
+                },
+                {
+                  title: 'Best next action',
+                  detail: agents.length > 0
+                    ? 'Open an agent workspace to inspect memory, learning, and relationship state.'
+                    : 'Create the first agent, then return here for oversight and simulations.',
+                },
+              ].map((item) => (
+                <div key={item.title} className="rounded-[1.75rem] border border-border/70 bg-background/40 p-5 backdrop-blur-xl">
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">{item.title}</div>
+                  <p className="mt-3 text-sm leading-7 text-muted-foreground">{item.detail}</p>
+                </div>
+              ))}
+            </div>
           </div>
+        </motion.section>
 
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => router.push('/agents/new')}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 text-white font-medium shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-shadow w-fit"
-          >
-            <Plus className="h-5 w-5" />
-            Create Agent
-          </motion.button>
-        </motion.div>
-
-        {/* Stats */}
-        <motion.div
+        <motion.section
           initial="initial"
           animate="animate"
-          variants={staggerContainer}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+          variants={{ animate: { transition: { staggerChildren: 0.08 } } }}
+          className="grid gap-5 md:grid-cols-2 xl:grid-cols-4"
         >
-          <StatCard
-            icon={Bot}
-            label="Total Agents"
-            value={stats.totalAgents}
-            subtext="All time created"
-            gradient="purple"
-            delay={0}
-          />
-          <StatCard
-            icon={Zap}
-            label="Active Agents"
-            value={stats.activeAgents}
-            subtext="Currently online"
-            gradient="cyan"
-            delay={0.1}
-          />
-          <StatCard
-            icon={MessageCircle}
-            label="Total Messages"
-            value={stats.totalMessages.toLocaleString()}
-            subtext="Across all agents"
-            gradient="pink"
-            delay={0.2}
-          />
-        </motion.div>
+          <StatCard icon={Bot} label="Roster size" value={stats.totalAgents} detail="All personalities created in the workspace." accent="purple" />
+          <StatCard icon={Zap} label="Active agents" value={stats.activeAgents} detail="Agents ready for direct chat, planning, and simulation." accent="cyan" />
+          <StatCard icon={MessageCircle} label="Conversation volume" value={stats.totalMessages.toLocaleString()} detail="A quick signal for system usage and agent activity." accent="pink" />
+          <StatCard icon={Brain} label="Stored memories" value={stats.totalMemories.toLocaleString()} detail="Long-term context accumulated across the roster." accent="purple" />
+        </motion.section>
 
-        {/* Agents Section */}
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-foreground">Your Agents</h2>
-              <p className="text-sm text-muted-foreground">Click on an agent to view details and chat</p>
-            </div>
-            {agents.length > 0 && (
-              <motion.button
-                whileHover={{ x: 4 }}
-                className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                View All
-                <ChevronRight className="h-4 w-4" />
-              </motion.button>
-            )}
-          </div>
-
+        <section className="grid gap-6 xl:grid-cols-[1.35fr_0.9fr]">
           <motion.div
-            initial="initial"
-            animate="animate"
-            variants={staggerContainer}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-          >
-            {loading ? (
-              // Loading skeletons
-              Array.from({ length: 6 }).map((_, i) => (
-                <AgentCardSkeleton key={i} />
-              ))
-            ) : agents.length > 0 ? (
-              agents.map((agent) => (
-                <AgentCard
-                  key={agent.id}
-                  agent={agent}
-                  onClick={() => router.push(`/agents/${agent.id}`)}
-                />
-              ))
-            ) : (
-              <EmptyState onCreateClick={() => router.push('/agents/new')} />
-            )}
-          </motion.div>
-        </div>
-
-        {/* Quick Actions */}
-        {agents.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 22 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="grid grid-cols-1 md:grid-cols-2 gap-6"
+            transition={{ delay: 0.12 }}
+            className="page-section px-6 py-7 sm:px-8"
           >
-            <motion.div
-              whileHover={{ y: -4 }}
-              onClick={() => router.push('/simulation')}
-              className="group p-6 rounded-2xl premium-card cursor-pointer"
-            >
-              <div className="flex items-center gap-4">
-                <div className="icon-container icon-container-cyan">
-                  <Users className="h-6 w-6" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-foreground group-hover:text-cyan-400 transition-colors">
-                    Multi-Agent Simulation
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Watch your agents collaborate and interact
-                  </p>
-                </div>
-                <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-cyan-400 group-hover:translate-x-1 transition-all" />
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Roster</div>
+                <h2 className="mt-2 text-2xl font-semibold text-foreground">Agent workspaces</h2>
+                <p className="mt-2 text-sm leading-7 text-muted-foreground">
+                  Open an agent to inspect memory, emotional state, planning, relationships, and new enhancement modules from the same workspace.
+                </p>
               </div>
-            </motion.div>
 
-            <motion.div
-              whileHover={{ y: -4 }}
-              onClick={() => router.push('/agents/new')}
-              className="group p-6 rounded-2xl premium-card cursor-pointer"
-            >
-              <div className="flex items-center gap-4">
-                <div className="icon-container icon-container-pink">
-                  <Sparkles className="h-6 w-6" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-foreground group-hover:text-pink-400 transition-colors">
-                    Create New Agent
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Design an AI agent with custom personality
-                  </p>
-                </div>
-                <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-pink-400 group-hover:translate-x-1 transition-all" />
+              {agents.length > 0 && (
+                <button
+                  onClick={() => router.push('/agents')}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-primary transition-colors hover:text-accent"
+                >
+                  View full directory
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="page-divider my-6" />
+
+            {loading ? (
+              <div className="grid gap-5 md:grid-cols-2">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="rounded-[1.75rem] border border-border/60 bg-card/[0.6] p-6">
+                    <div className="flex items-center gap-3">
+                      <div className="skeleton h-12 w-12 rounded-2xl" />
+                      <div className="space-y-2">
+                        <div className="skeleton h-4 w-24" />
+                        <div className="skeleton h-3 w-20" />
+                      </div>
+                    </div>
+                    <div className="mt-5 space-y-2">
+                      <div className="skeleton h-3 w-full" />
+                      <div className="skeleton h-3 w-3/4" />
+                    </div>
+                  </div>
+                ))}
               </div>
-            </motion.div>
+            ) : topAgents.length > 0 ? (
+              <motion.div
+                initial="initial"
+                animate="animate"
+                variants={{ animate: { transition: { staggerChildren: 0.08 } } }}
+                className="grid gap-5 md:grid-cols-2"
+              >
+                {topAgents.map((agent) => (
+                  <AgentSnapshot key={agent.id} agent={agent} onOpen={() => router.push(`/agents/${agent.id}`)} />
+                ))}
+              </motion.div>
+            ) : (
+              <EmptyState onCreate={() => router.push('/agents/new')} />
+            )}
           </motion.div>
-        )}
+
+          <motion.aside
+            initial={{ opacity: 0, y: 22 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.18 }}
+            className="space-y-6"
+          >
+            <div className="page-section px-6 py-7">
+              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Workflows</div>
+              <div className="mt-4 space-y-4">
+                {[
+                  {
+                    title: 'Create and profile',
+                    text: 'Generate a new personality, goals, psychology profile, and linguistic profile.',
+                    action: 'Build agent',
+                    onClick: () => router.push('/agents/new'),
+                  },
+                  {
+                    title: 'Run a simulation',
+                    text: 'Select multiple agents, set the topic, and review the generated conversation.',
+                    action: 'Open simulation',
+                    onClick: () => router.push('/simulation'),
+                  },
+                  {
+                    title: 'Inspect the roster',
+                    text: 'Filter the full directory to compare enhancements and activity across agents.',
+                    action: 'View agents',
+                    onClick: () => router.push('/agents'),
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.title}
+                    onClick={item.onClick}
+                    className="group block w-full rounded-[1.5rem] border border-border/[0.65] bg-background/45 p-5 text-left transition-all hover:border-primary/20 hover:bg-background/70"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="text-base font-semibold text-foreground">{item.title}</h3>
+                        <p className="mt-2 text-sm leading-7 text-muted-foreground">{item.text}</p>
+                      </div>
+                      <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" />
+                    </div>
+                    <div className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">{item.action}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="page-section px-6 py-7">
+              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Coverage</div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+                <div className="rounded-[1.5rem] bg-background/45 p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="icon-container icon-container-cyan">
+                      <Users className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-foreground">Simulation ready</div>
+                      <div className="text-sm text-muted-foreground">
+                        {Math.max(agents.length, 0)} agents available for multi-agent scenarios.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-[1.5rem] bg-background/45 p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="icon-container icon-container-pink">
+                      <Sparkles className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-foreground">Enhancement modules</div>
+                      <div className="text-sm text-muted-foreground">Relationships, planning, learning, journaling, and knowledge are all surfaced in the agent workspace.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.aside>
+        </section>
       </div>
     </div>
   )

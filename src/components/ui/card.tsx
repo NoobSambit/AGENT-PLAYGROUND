@@ -9,30 +9,30 @@ const Card = React.forwardRef<
 >(({ className, variant = 'default', ...props }, ref) => {
   const variants = {
     default: [
-      "bg-[#12121a]/90 backdrop-blur-xl",
-      "border border-white/[0.06]",
-      "shadow-xl shadow-black/20",
-      "hover:border-white/[0.1] hover:shadow-2xl hover:shadow-violet-500/5",
+      "bg-card/[0.72] backdrop-blur-2xl",
+      "border border-border/70",
+      "shadow-[0_24px_70px_-36px_rgba(109,77,158,0.35)]",
+      "hover:border-primary/20 hover:bg-card/[0.86]",
     ],
     glass: [
-      "bg-white/[0.02] backdrop-blur-2xl",
-      "border border-white/[0.08]",
-      "shadow-2xl shadow-black/30",
-      "hover:bg-white/[0.04] hover:border-violet-500/20",
+      "bg-card/[0.58] backdrop-blur-2xl",
+      "border border-border/60",
+      "shadow-[0_20px_60px_-34px_rgba(109,77,158,0.28)]",
+      "hover:bg-card/[0.76] hover:border-primary/20",
     ],
     gradient: [
       "relative overflow-hidden",
-      "bg-gradient-to-br from-[#12121a] to-[#0a0a0f]",
-      "border border-white/[0.06]",
-      "before:absolute before:inset-0 before:bg-gradient-to-br before:from-violet-500/10 before:to-pink-500/5 before:opacity-0 before:transition-opacity",
+      "bg-[linear-gradient(160deg,rgba(255,255,255,0.14)_0%,rgba(255,255,255,0.02)_100%),var(--surface)]",
+      "border border-border/70",
+      "before:absolute before:inset-0 before:bg-gradient-to-br before:from-primary/14 before:via-accent/8 before:to-pink-500/8 before:opacity-0 before:transition-opacity",
       "hover:before:opacity-100",
     ],
     bordered: [
       "relative",
-      "bg-[#0a0a0f]/80 backdrop-blur-xl",
-      "border-2 border-violet-500/20",
-      "shadow-lg shadow-violet-500/5",
-      "hover:border-violet-500/40 hover:shadow-violet-500/10",
+      "bg-card/[0.76] backdrop-blur-xl",
+      "border-2 border-primary/[0.18]",
+      "shadow-[0_18px_44px_-30px_rgba(109,77,158,0.32)]",
+      "hover:border-primary/35 hover:shadow-[0_24px_54px_-34px_rgba(109,77,158,0.4)]",
     ],
   }
 

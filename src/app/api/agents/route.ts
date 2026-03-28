@@ -3,8 +3,35 @@ import { AgentService } from '@/lib/services/agentService'
 import { CreateAgentData, UpdateAgentData } from '@/types/database'
 
 // GET /api/agents - Fetch all agents
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    const status = searchParams.get('status') as 'active' | 'inactive' | 'training' | null
+
+    if (id) {
+      const agent = await AgentService.getAgentById(id)
+      if (!agent) {
+        return NextResponse.json(
+          { success: false, error: 'Agent not found' },
+          { status: 404 }
+        )
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: agent
+      })
+    }
+
+    if (status) {
+      const agents = await AgentService.getAgentsByStatus(status)
+      return NextResponse.json({
+        success: true,
+        data: agents
+      })
+    }
+
     const agents = await AgentService.getAllAgents()
     return NextResponse.json({
       success: true,

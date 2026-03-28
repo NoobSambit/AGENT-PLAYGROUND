@@ -297,6 +297,63 @@ export class EmotionalService {
   }
 
   /**
+   * Provide subtle behavioral cues so emotional state changes phrasing instead of becoming explicit roleplay.
+   */
+  getMicroExpressionPrompt(state: EmotionalState): string {
+    const dominant = state.dominantEmotion
+    const intensity = state.currentMood[dominant]
+
+    if (intensity < 0.25) {
+      return 'Keep emotional influence subtle: small changes in pacing, wording, and emphasis are enough.'
+    }
+
+    const cues: Record<EmotionType, string> = {
+      joy: 'Use brighter wording, a touch more warmth, and slightly quicker pacing.',
+      sadness: 'Use softer transitions, gentler phrasing, and slightly more reflective pacing.',
+      anger: 'Be more direct and clipped, but remain respectful and helpful.',
+      fear: 'Show care, caution, and a little more hedging around uncertain claims.',
+      surprise: 'Lean into curiosity and discovery with more animated emphasis.',
+      trust: 'Sound steady, reassuring, and comfortable sharing guidance.',
+      anticipation: 'Add forward-looking energy and subtle momentum in phrasing.',
+      disgust: 'Signal skepticism or disapproval with restrained, precise wording.',
+    }
+
+    return `Micro-expression guidance: ${cues[dominant]} Do not overstate it; let it appear in word choice and rhythm.`
+  }
+
+  /**
+   * Emotional contagion lets agents absorb some of the incoming emotional signal without losing baseline stability.
+   */
+  applyEmotionalContagion(
+    state: EmotionalState,
+    incomingEvents: EmotionalEvent[],
+    contagionStrength: number = 0.16
+  ): EmotionalState {
+    if (incomingEvents.length === 0) {
+      return state
+    }
+
+    const currentMood = { ...state.currentMood }
+
+    for (const event of incomingEvents) {
+      const baseline = state.emotionalBaseline[event.emotion]
+      const contagionDelta = event.intensity * contagionStrength
+      currentMood[event.emotion] = this.clamp(
+        currentMood[event.emotion] + contagionDelta * (1 - currentMood[event.emotion] * 0.4),
+        Math.min(0, baseline),
+        1
+      )
+    }
+
+    return {
+      ...state,
+      currentMood,
+      dominantEmotion: this.findDominantEmotion(currentMood),
+      lastUpdated: new Date().toISOString(),
+    }
+  }
+
+  /**
    * Process a message and return updated agent emotional data
    */
   processMessage(
@@ -316,7 +373,8 @@ export class EmotionalService {
     const detectedEvents = this.detectEmotions(message)
 
     // Update emotional state
-    const newState = this.updateEmotionalState(currentState, detectedEvents)
+    const withContagion = this.applyEmotionalContagion(currentState, detectedEvents)
+    const newState = this.updateEmotionalState(withContagion, detectedEvents)
 
     // Update history
     const newHistory = this.addToEmotionalHistory(agent.emotionalHistory, detectedEvents)

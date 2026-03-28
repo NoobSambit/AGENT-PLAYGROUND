@@ -33,7 +33,9 @@ function firestoreDocToSimulation(doc: { id: string; data: () => Record<string, 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     isComplete: (data as any).isComplete || false,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    finalRound: (data as any).finalRound || 0
+    finalRound: (data as any).finalRound || 0,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    metadata: (data as any).metadata || undefined
   }
 }
 
@@ -45,6 +47,7 @@ function simulationToFirestoreDoc(simulation: Omit<SimulationDocument, 'createdA
     maxRounds: simulation.maxRounds,
     isComplete: simulation.isComplete,
     finalRound: simulation.finalRound,
+    metadata: simulation.metadata,
     createdAt: Timestamp.now()
   }
 }

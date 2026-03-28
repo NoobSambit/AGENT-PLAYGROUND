@@ -20,6 +20,7 @@ export async function GET(
     const maxNodes = parseInt(searchParams.get('maxNodes') || '100')
     const minLinkStrength = parseFloat(searchParams.get('minLinkStrength') || '0.2')
     const insights = searchParams.get('insights') === 'true'
+    const contradictions = searchParams.get('contradictions') !== 'false'
 
     // Get concept insights if requested
     if (insights) {
@@ -35,10 +36,14 @@ export async function GET(
     })
 
     // Get the raw memory graph
-    const memoryGraph = await MemoryGraphService.getMemoryGraph(agentId)
+    const [memoryGraph, contradictionInsights] = await Promise.all([
+      MemoryGraphService.getMemoryGraph(agentId),
+      contradictions ? MemoryGraphService.detectContradictions(agentId) : Promise.resolve([])
+    ])
 
     return NextResponse.json({
       graphData,
+      contradictions: contradictionInsights,
       stats: memoryGraph?.stats || {
         totalConcepts: 0,
         totalLinks: 0,

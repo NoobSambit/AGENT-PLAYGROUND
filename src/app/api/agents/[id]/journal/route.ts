@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/firebase'
 import { doc, getDoc, collection, addDoc, getDocs, query, orderBy, limit, where } from 'firebase/firestore'
 import { journalService } from '@/lib/services/journalService'
+import { agentProgressService } from '@/lib/services/agentProgressService'
 import { JournalEntryType, AgentRecord, JournalEntry, MemoryRecord, AgentRelationship } from '@/types/database'
 import { getGeminiModel, getGroqModel } from '@/lib/llmConfig'
 
@@ -199,8 +200,10 @@ Your previous response was ${journalEntry.wordCount} words. Rewrite it to be bet
     }
 
     // Save to Firestore
-    const { id: _id, ...journalData } = journalEntry
+    const { id, ...journalData } = journalEntry
+    void id
     const docRef = await addDoc(journalsRef, journalData)
+    await agentProgressService.recordJournalEntry(agentId)
 
     // Return the journal entry
     const savedEntry = { ...journalEntry, id: docRef.id }

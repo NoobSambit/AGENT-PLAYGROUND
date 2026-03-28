@@ -10,17 +10,17 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         type={type}
         className={cn(
           "flex h-12 w-full rounded-xl",
-          "bg-[#12121a]/80 backdrop-blur-sm",
-          "border border-white/[0.08]",
+          "bg-card/[0.72] backdrop-blur-xl",
+          "border border-border/70",
           "px-4 py-3 text-sm text-foreground",
           "ring-offset-background",
           "file:border-0 file:bg-transparent file:text-sm file:font-medium",
           "placeholder:text-muted-foreground/60",
           "transition-all duration-300",
-          "focus:outline-none focus:border-violet-500/50",
-          "focus:ring-4 focus:ring-violet-500/10",
-          "focus:bg-[#12121a]",
-          "hover:border-white/[0.12]",
+          "focus:outline-none focus:border-primary/40",
+          "focus:ring-4 focus:ring-primary/10",
+          "focus:bg-card/[0.88]",
+          "hover:border-primary/[0.18]",
           "disabled:cursor-not-allowed disabled:opacity-50",
           className
         )}
@@ -41,16 +41,16 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
       <textarea
         className={cn(
           "flex min-h-[120px] w-full rounded-xl",
-          "bg-[#12121a]/80 backdrop-blur-sm",
-          "border border-white/[0.08]",
+          "bg-card/[0.72] backdrop-blur-xl",
+          "border border-border/70",
           "px-4 py-3 text-sm text-foreground",
           "ring-offset-background",
           "placeholder:text-muted-foreground/60",
           "transition-all duration-300",
-          "focus:outline-none focus:border-violet-500/50",
-          "focus:ring-4 focus:ring-violet-500/10",
-          "focus:bg-[#12121a]",
-          "hover:border-white/[0.12]",
+          "focus:outline-none focus:border-primary/40",
+          "focus:ring-4 focus:ring-primary/10",
+          "focus:bg-card/[0.88]",
+          "hover:border-primary/[0.18]",
           "disabled:cursor-not-allowed disabled:opacity-50",
           "resize-none",
           className

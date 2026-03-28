@@ -16,6 +16,7 @@ import { AgentRecord, AgentDocument, CreateAgentData, UpdateAgentData } from '@/
 import { PersonalityService } from './personalityService'
 import { achievementService } from './achievementService'
 import { emotionalService } from './emotionalService'
+import { psychologicalProfileService } from './psychologicalProfileService'
 
 const AGENTS_COLLECTION = 'agents'
 
@@ -59,7 +60,8 @@ function firestoreDocToAgent(doc: { id: string; data: () => Record<string, unkno
     dreamCount: data.dreamCount as AgentRecord['dreamCount'],
     journalCount: data.journalCount as AgentRecord['journalCount'],
     challengesCompleted: data.challengesCompleted as AgentRecord['challengesCompleted'],
-    challengeWins: data.challengeWins as AgentRecord['challengeWins']
+    challengeWins: data.challengeWins as AgentRecord['challengeWins'],
+    mentorshipStats: data.mentorshipStats as AgentRecord['mentorshipStats']
   }
 }
 
@@ -79,7 +81,15 @@ function agentUpdatesToFirestoreDoc(agent: UpdateAgentData): Partial<AgentDocume
     emotionalState: agent.emotionalState,
     emotionalHistory: agent.emotionalHistory,
     progress: agent.progress,
-    stats: agent.stats
+    stats: agent.stats,
+    psychologicalProfile: agent.psychologicalProfile,
+    relationshipCount: agent.relationshipCount,
+    creativeWorks: agent.creativeWorks,
+    dreamCount: agent.dreamCount,
+    journalCount: agent.journalCount,
+    challengesCompleted: agent.challengesCompleted,
+    challengeWins: agent.challengeWins,
+    mentorshipStats: 'mentorshipStats' in agent ? agent.mentorshipStats : undefined
   })
 }
 
@@ -121,10 +131,35 @@ export class AgentService {
     try {
       // Generate initial personality traits based on persona
       const personality = PersonalityService.generateInitialPersonality(agentData.persona)
+      const linguisticProfile = PersonalityService.generateLinguisticProfile(
+        agentData.persona,
+        agentData.goals || [],
+        personality.coreTraits
+      )
       const emotionalBaseline = emotionalService.generateBaselineFromTraits(personality.coreTraits)
       const emotionalState = emotionalService.createDefaultEmotionalState(emotionalBaseline)
       const progress = achievementService.createDefaultProgress()
       const stats = achievementService.createDefaultStats()
+      const psychologicalProfile = psychologicalProfileService.generateProfile({
+        id: 'pending',
+        name: agentData.name,
+        persona: agentData.persona,
+        goals: agentData.goals || [],
+        status: agentData.status || 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userId: agentData.userId,
+        settings: agentData.settings,
+        coreTraits: personality.coreTraits,
+        dynamicTraits: personality.dynamicTraits,
+        memoryCount: 0,
+        totalInteractions: 0,
+        linguisticProfile,
+        emotionalState,
+        emotionalHistory: [],
+        progress,
+        stats,
+      })
 
       const docData = stripUndefinedFields({
         name: agentData.name,
@@ -137,15 +172,29 @@ export class AgentService {
         dynamicTraits: personality.dynamicTraits,
         memoryCount: 0,
         totalInteractions: 0,
+        linguisticProfile,
         emotionalState,
         emotionalHistory: [],
         progress,
         stats,
+        psychologicalProfile,
+        relationshipCount: 0,
+        creativeWorks: 0,
+        dreamCount: 0,
+        journalCount: 0,
+        challengesCompleted: 0,
+        challengeWins: 0,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now()
       })
 
       const docRef = await addDoc(collection(db, AGENTS_COLLECTION), docData)
+      await updateDoc(docRef, {
+        psychologicalProfile: {
+          ...psychologicalProfile,
+          agentId: docRef.id
+        }
+      })
       return await this.getAgentById(docRef.id)
     } catch (error) {
       console.error('Error creating agent:', error)

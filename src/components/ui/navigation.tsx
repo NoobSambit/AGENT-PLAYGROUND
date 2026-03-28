@@ -1,177 +1,151 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Bot, LayoutDashboard, Users, Sparkles, Menu, X, Plus } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ArrowUpRight, Bot, Menu, Sparkles, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 const navItems = [
-  { href: '/', label: 'Home', icon: Sparkles },
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/simulation', label: 'Simulation', icon: Users },
+  { href: '/', label: 'Home', description: 'Product overview and entry point' },
+  { href: '/agents', label: 'Agents', description: 'Directory of all active personalities' },
+  { href: '/dashboard', label: 'Dashboard', description: 'System health, roster, and quick actions' },
+  { href: '/simulation', label: 'Simulation', description: 'Run and review multi-agent conversations' },
 ]
 
 export function Navigation() {
   const pathname = usePathname()
-  const [scrolled, setScrolled] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const isHome = pathname === '/'
 
-  useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 20)
-    }
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
+  const currentItem = navItems.find((item) =>
+    item.href === '/' ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`)
+  )
+
+  if (isHome) return null
 
   return (
-    <>
-      <motion.header
-        initial={{ y: -100, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
-        className={cn(
-          'fixed top-0 left-0 right-0 z-50 transition-all duration-500',
-          scrolled ? 'py-3' : 'py-5'
-        )}
-      >
-        <div className="mx-auto max-w-7xl px-6">
-          <nav
-            className={cn(
-              'flex items-center justify-between rounded-2xl px-6 py-3 transition-all duration-500',
-              scrolled
-                ? 'glass border border-white/[0.08] shadow-2xl'
-                : 'bg-transparent'
-            )}
-          >
-            {/* Logo */}
-            <Link href="/" className="flex items-center gap-3 group">
-              <motion.div
-                whileHover={{ scale: 1.05, rotate: 5 }}
-                whileTap={{ scale: 0.95 }}
-                className="relative"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-cyan-500 rounded-xl blur-lg opacity-50 group-hover:opacity-75 transition-opacity" />
-                <div className="relative p-2.5 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600">
-                  <Bot className="h-6 w-6 text-white" />
-                </div>
-              </motion.div>
-              <span className="font-bold text-lg tracking-tight hidden sm:block">
-                <span className="gradient-text-vibrant">Agent</span>
-                <span className="text-foreground/80">Playground</span>
-              </span>
-            </Link>
-
-            {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center gap-1 p-1.5 rounded-xl bg-white/[0.03] border border-white/[0.05]">
-              {navItems.map((item) => {
-                const isActive = pathname === item.href
-                const Icon = item.icon
-                return (
-                  <Link key={item.href} href={item.href}>
-                    <motion.div
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className={cn(
-                        'relative px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2',
-                        isActive
-                          ? 'text-white'
-                          : 'text-muted-foreground hover:text-foreground'
-                      )}
-                    >
-                      {isActive && (
-                        <motion.div
-                          layoutId="activeTab"
-                          className="absolute inset-0 rounded-lg bg-gradient-to-r from-violet-500 to-purple-600"
-                          transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                        />
-                      )}
-                      <Icon className="h-4 w-4 relative z-10" />
-                      <span className="relative z-10">{item.label}</span>
-                    </motion.div>
-                  </Link>
-                )
-              })}
+    <header className="sticky top-0 z-[100] px-4 pt-4 sm:px-6">
+      <div className="page-shell px-0">
+        <div className="page-section flex min-h-16 items-center gap-4 px-4 py-3 sm:px-5">
+          <Link href="/" className="group flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-[0_18px_40px_-24px_rgba(109,77,158,0.6)] transition-transform duration-300 group-hover:scale-[1.03]">
+              <Bot className="h-5 w-5" />
             </div>
-
-            {/* Create Agent Button */}
-            <div className="flex items-center gap-3">
-              <Link href="/agents/new">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="hidden sm:flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 text-white font-medium text-sm shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-shadow"
-                >
-                  <Plus className="h-4 w-4" />
-                  Create Agent
-                </motion.button>
-              </Link>
-
-              {/* Mobile Menu Button */}
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="md:hidden p-2.5 rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground"
-              >
-                {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-              </motion.button>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold uppercase tracking-[0.24em] text-primary/80">
+                Agent Playground
+              </p>
+              <p className="truncate text-sm text-muted-foreground">
+                Personality-driven AI workspace
+              </p>
             </div>
-          </nav>
-        </div>
-      </motion.header>
+          </Link>
 
-      {/* Mobile Menu */}
-      <AnimatePresence>
-        {mobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-x-0 top-20 z-40 md:hidden px-6"
-          >
-            <div className="glass rounded-2xl border border-white/[0.08] p-4 space-y-2">
+          <nav className="hidden flex-1 items-center justify-center lg:flex">
+            <div className="tab-nav">
               {navItems.map((item) => {
-                const isActive = pathname === item.href
-                const Icon = item.icon
+                const isActive = item.href === '/'
+                  ? pathname === item.href
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`)
+
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    onClick={() => setMobileMenuOpen(false)}
+                    className={cn('tab-item relative', isActive && 'tab-item-active')}
                   >
-                    <motion.div
-                      whileTap={{ scale: 0.98 }}
-                      className={cn(
-                        'flex items-center gap-3 px-4 py-3 rounded-xl transition-colors',
-                        isActive
-                          ? 'bg-gradient-to-r from-violet-500 to-purple-600 text-white'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.05]'
-                      )}
-                    >
-                      <Icon className="h-5 w-5" />
-                      <span className="font-medium">{item.label}</span>
-                    </motion.div>
+                    {item.label}
                   </Link>
                 )
               })}
-              <div className="pt-2 border-t border-white/[0.08]">
-                <Link href="/agents/new" onClick={() => setMobileMenuOpen(false)}>
-                  <motion.div
-                    whileTap={{ scale: 0.98 }}
-                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 text-white font-medium"
-                  >
-                    <Plus className="h-5 w-5" />
-                    Create Agent
-                  </motion.div>
-                </Link>
+            </div>
+          </nav>
+
+          <div className="ml-auto hidden items-center gap-3 lg:flex">
+            {currentItem && pathname !== '/' && (
+              <div className="soft-pill max-w-xs">
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                <span className="truncate">{currentItem.description}</span>
               </div>
+            )}
+
+            <ThemeToggle />
+
+            <Link
+              href="/agents/new"
+              className="inline-flex h-11 items-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-4 text-sm font-semibold text-primary-foreground shadow-[0_20px_50px_-26px_rgba(109,77,158,0.7)] transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_60px_-28px_rgba(109,77,158,0.78)]"
+            >
+              Create Agent
+              <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2 lg:hidden">
+            <ThemeToggle />
+            <button
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-border/60 bg-card/[0.65] text-muted-foreground backdrop-blur-xl transition-all hover:border-primary/25 hover:text-foreground"
+              onClick={() => setMobileMenuOpen((open) => !open)}
+            >
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            className="page-shell mt-3 px-0 lg:hidden"
+          >
+            <div className="page-section overflow-hidden px-4 py-4">
+              <div className="space-y-2">
+                {navItems.map((item) => {
+                  const isActive = item.href === '/'
+                    ? pathname === item.href
+                    : pathname === item.href || pathname.startsWith(`${item.href}/`)
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={cn(
+                        'flex items-start justify-between rounded-2xl px-4 py-3 transition-all',
+                        isActive
+                          ? 'bg-primary/10 text-foreground'
+                          : 'bg-transparent text-muted-foreground hover:bg-card/70 hover:text-foreground'
+                      )}
+                    >
+                      <div>
+                        <div className="font-medium">{item.label}</div>
+                        <div className="mt-1 text-xs leading-5 text-muted-foreground">{item.description}</div>
+                      </div>
+                      <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0" />
+                    </Link>
+                  )
+                })}
+              </div>
+
+              <div className="page-divider my-4" />
+
+              <Link
+                href="/agents/new"
+                onClick={() => setMobileMenuOpen(false)}
+                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent text-sm font-semibold text-primary-foreground shadow-[0_18px_48px_-28px_rgba(109,77,158,0.72)]"
+              >
+                Create Agent
+                <ArrowUpRight className="h-4 w-4" />
+              </Link>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </header>
   )
 }

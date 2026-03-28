@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/firebase'
 import { doc, getDoc, collection, addDoc, getDocs, query, where, orderBy, limit } from 'firebase/firestore'
 import { creativityService } from '@/lib/services/creativityService'
+import { agentProgressService } from '@/lib/services/agentProgressService'
 import { CreativeWorkType, CreativeWorkStyle, AgentRecord, CreativeWork } from '@/types/database'
 import { getGeminiModel, getGroqModel } from '@/lib/llmConfig'
 import { stripUndefinedFields } from '@/lib/firestoreUtils'
@@ -159,8 +160,10 @@ You have been asked to create something. Be creative, authentic to your personal
     )
 
     // Save to Firestore
-    const { id: _id, ...creativeData } = creativeWork
+    const { id, ...creativeData } = creativeWork
+    void id
     const docRef = await addDoc(worksRef, stripUndefinedFields(creativeData))
+    await agentProgressService.recordCreativeWork(agentId)
 
     // Return the creative work with Firestore ID
     const savedWork = { ...creativeWork, id: docRef.id }

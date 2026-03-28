@@ -15,6 +15,7 @@ import {
   collection
 } from 'firebase/firestore'
 import { relationshipService } from '@/lib/services/relationshipService'
+import { agentProgressService } from '@/lib/services/agentProgressService'
 import { AgentRelationship } from '@/types/database'
 
 export async function GET(request: NextRequest) {
@@ -93,6 +94,8 @@ export async function POST(request: NextRequest) {
 
     let relationship: AgentRelationship
 
+    const isNewRelationship = !existingSnap.exists()
+
     if (existingSnap.exists()) {
       relationship = { id: existingSnap.id, ...existingSnap.data() } as AgentRelationship
     } else {
@@ -114,13 +117,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Save to Firestore (both directions for easy querying)
-    const { id: _id, ...relationshipData } = relationship
+    const { id, ...relationshipData } = relationship
+    void id
     await setDoc(relationshipDoc, relationshipData)
 
     // Also save in the other agent's relationships
     const reverseRelationshipsRef = collection(db, 'agents', agentId2, 'relationships')
     const reverseDoc = doc(reverseRelationshipsRef, agentId1)
     await setDoc(reverseDoc, relationshipData)
+
+    if (isNewRelationship) {
+      await Promise.all([
+        agentProgressService.recordRelationship(agentId1),
+        agentProgressService.recordRelationship(agentId2)
+      ])
+    }
 
     // Get summary for response
     const summary = relationshipService.getRelationshipSummary(relationship)

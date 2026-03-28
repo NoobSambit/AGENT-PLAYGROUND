@@ -20,8 +20,8 @@ const buttonVariants = cva(
           "hover:shadow-red-500/40 hover:brightness-110",
         ],
         outline: [
-          "border border-white/[0.08] bg-white/[0.02] backdrop-blur-sm",
-          "hover:bg-white/[0.05] hover:border-white/[0.12]",
+          "border border-border/70 bg-card/[0.62] backdrop-blur-xl",
+          "hover:bg-card/[0.84] hover:border-primary/20",
           "text-foreground",
         ],
         secondary: [
@@ -30,7 +30,7 @@ const buttonVariants = cva(
         ],
         ghost: [
           "text-muted-foreground",
-          "hover:bg-white/[0.05] hover:text-foreground",
+          "hover:bg-card/[0.72] hover:text-foreground",
         ],
         link: "text-violet-400 underline-offset-4 hover:underline hover:text-violet-300",
         glow: [
@@ -41,9 +41,9 @@ const buttonVariants = cva(
           "hover:before:opacity-60",
         ],
         glass: [
-          "bg-white/[0.03] backdrop-blur-xl border border-white/[0.08]",
+          "bg-card/[0.62] backdrop-blur-xl border border-border/70",
           "text-foreground",
-          "hover:bg-white/[0.06] hover:border-violet-500/30",
+          "hover:bg-card/[0.82] hover:border-primary/25",
           "hover:shadow-lg hover:shadow-violet-500/10",
         ],
       },

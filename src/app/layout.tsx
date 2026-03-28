@@ -3,6 +3,8 @@ import "./globals.css";
 import { Navigation } from "@/components/ui/navigation";
 import { AnimatedBackground } from "@/components/ui/animated-background";
 
+import { ThemeProvider } from "@/components/theme-provider";
+
 export const metadata: Metadata = {
   title: "AI Agent Playground",
   description: "Create, manage, and interact with intelligent AI agents in a professional environment designed for seamless collaboration",
@@ -21,13 +23,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
-        <AnimatedBackground variant="default" />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <AnimatedBackground variant="default" />
         <Navigation />
         <main className="relative z-10">
           {children}
         </main>
+        </ThemeProvider>
       </body>
     </html>
   );

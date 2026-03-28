@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/firebase'
 import { doc, getDoc, collection, addDoc, getDocs, query, orderBy, limit, where } from 'firebase/firestore'
 import { dreamService } from '@/lib/services/dreamService'
+import { agentProgressService } from '@/lib/services/agentProgressService'
 import { DreamType, AgentRecord, Dream, MemoryRecord, EmotionType } from '@/types/database'
 import { getGeminiModel, getGroqModel } from '@/lib/llmConfig'
 
@@ -178,8 +179,10 @@ ${agent.persona}`
     const analysis = dreamService.analyzeDream(dream)
 
     // Save to Firestore
-    const { id: _id, ...dreamData } = dream
+    const { id, ...dreamData } = dream
+    void id
     const docRef = await addDoc(dreamsRef, dreamData)
+    await agentProgressService.recordDream(agentId)
 
     // Return the dream with analysis
     const savedDream = { ...dream, id: docRef.id }

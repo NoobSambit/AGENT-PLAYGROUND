@@ -21,7 +21,7 @@ function FloatingOrbs() {
         }}
         className="absolute top-1/4 left-1/4 w-[600px] h-[600px] rounded-full"
         style={{
-          background: 'radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, var(--glow-primary) 0%, transparent 70%)',
           filter: 'blur(60px)',
         }}
       />
@@ -40,7 +40,7 @@ function FloatingOrbs() {
         }}
         className="absolute top-1/2 right-1/4 w-[500px] h-[500px] rounded-full"
         style={{
-          background: 'radial-gradient(circle, rgba(6, 182, 212, 0.12) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, var(--glow-accent) 0%, transparent 70%)',
           filter: 'blur(60px)',
         }}
       />
@@ -59,7 +59,7 @@ function FloatingOrbs() {
         }}
         className="absolute bottom-1/4 left-1/3 w-[400px] h-[400px] rounded-full"
         style={{
-          background: 'radial-gradient(circle, rgba(236, 72, 153, 0.1) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, var(--glow-pink) 0%, transparent 70%)',
           filter: 'blur(60px)',
         }}
       />
@@ -75,8 +75,8 @@ function GridPattern() {
         className="absolute inset-0"
         style={{
           backgroundImage: `
-            linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px)
+            linear-gradient(var(--grid-line) 1px, transparent 1px),
+            linear-gradient(90deg, var(--grid-line) 1px, transparent 1px)
           `,
           backgroundSize: '60px 60px',
           maskImage: 'radial-gradient(ellipse 80% 60% at 50% 50%, black 20%, transparent 100%)',
@@ -211,7 +211,7 @@ export function AnimatedBackground({ variant = 'default' }: { variant?: 'default
       <div
         className="fixed inset-0 z-[-2]"
         style={{
-          background: 'linear-gradient(180deg, #0a0a0f 0%, #0d0d14 50%, #0a0a0f 100%)',
+          background: 'linear-gradient(180deg, var(--canvas-start) 0%, var(--canvas-mid) 50%, var(--canvas-end) 100%)',
         }}
       />
 
@@ -231,7 +231,7 @@ export function AnimatedBackground({ variant = 'default' }: { variant?: 'default
       <div
         className="fixed inset-0 pointer-events-none z-[50]"
         style={{
-          background: 'radial-gradient(ellipse at center, transparent 0%, rgba(0, 0, 0, 0.3) 100%)',
+          background: 'radial-gradient(ellipse at center, transparent 0%, var(--vignette) 100%)',
         }}
       />
     </>
@@ -250,7 +250,7 @@ export function Spotlight({ className }: { className?: string }) {
       <div
         className="absolute inset-0"
         style={{
-          background: 'radial-gradient(ellipse 50% 80% at 50% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 60%)',
+          background: 'radial-gradient(ellipse 50% 80% at 50% 20%, var(--glow-primary) 0%, transparent 60%)',
         }}
       />
     </motion.div>
@@ -260,9 +260,9 @@ export function Spotlight({ className }: { className?: string }) {
 // Gradient orb for decorative purposes
 export function GradientOrb({ className, color = 'violet' }: { className?: string; color?: 'violet' | 'cyan' | 'pink' }) {
   const colors = {
-    violet: 'rgba(139, 92, 246, 0.4)',
-    cyan: 'rgba(6, 182, 212, 0.4)',
-    pink: 'rgba(236, 72, 153, 0.4)',
+    violet: 'var(--glow-primary)',
+    cyan: 'var(--glow-accent)',
+    pink: 'var(--glow-pink)',
   }
 
   return (

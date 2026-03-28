@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { KnowledgeGraphData, KnowledgeGraphNode, ConceptCategory } from '@/types/database'
+import { ContradictionInsight } from '@/types/enhancements'
 
 interface KnowledgeGraphProps {
   agentId: string
@@ -37,6 +38,7 @@ interface SimulatedNode extends KnowledgeGraphNode {
 
 export function KnowledgeGraph({ agentId, onNodeClick }: KnowledgeGraphProps) {
   const [graphData, setGraphData] = useState<KnowledgeGraphData | null>(null)
+  const [contradictions, setContradictions] = useState<ContradictionInsight[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [hoveredNode, setHoveredNode] = useState<string | null>(null)
@@ -53,7 +55,8 @@ export function KnowledgeGraph({ agentId, onNodeClick }: KnowledgeGraphProps) {
     async function fetchGraph() {
       try {
         setLoading(true)
-        const response = await fetch(`/api/agents/${agentId}/memory-graph`)
+        setError(null)
+        const response = await fetch(`/api/agents/${agentId}/memory-graph?contradictions=true`)
 
         if (!response.ok) {
           throw new Error('Failed to fetch knowledge graph')
@@ -61,10 +64,12 @@ export function KnowledgeGraph({ agentId, onNodeClick }: KnowledgeGraphProps) {
 
         const data = await response.json()
         setGraphData(data.graphData || { nodes: [], edges: [] })
+        setContradictions(data.contradictions || [])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
         // Set empty data on error
         setGraphData({ nodes: [], edges: [] })
+        setContradictions([])
       } finally {
         setLoading(false)
       }
@@ -255,7 +260,7 @@ export function KnowledgeGraph({ agentId, onNodeClick }: KnowledgeGraphProps) {
         </label>
 
         <div className="ml-auto text-sm text-gray-500">
-          {simulatedNodes.length} nodes, {visibleEdges.length} connections
+          {simulatedNodes.length} nodes, {visibleEdges.length} connections, {contradictions.length} contradictions
         </div>
       </div>
 
@@ -337,6 +342,47 @@ export function KnowledgeGraph({ agentId, onNodeClick }: KnowledgeGraphProps) {
           ))}
         </div>
       </div>
+
+      {contradictions.length > 0 && (
+        <div className="border-t bg-amber-50/70 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h4 className="font-semibold text-amber-900">Contradiction Detection</h4>
+              <p className="text-sm text-amber-700">
+                Potentially conflicting memories that may need reconciliation.
+              </p>
+            </div>
+            <div className="text-sm font-medium text-amber-800">
+              {contradictions.length} flagged
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {contradictions.slice(0, 4).map((item) => (
+              <div key={item.id} className="rounded-lg border border-amber-200 bg-white/80 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm text-slate-700">{item.summary}</p>
+                  <div className="shrink-0 text-xs font-semibold text-amber-700">
+                    {(item.confidence * 100).toFixed(0)}%
+                  </div>
+                </div>
+                {item.topicOverlap.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {item.topicOverlap.map((topic) => (
+                      <span
+                        key={topic}
+                        className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-800"
+                      >
+                        {topic}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Hovered node details */}
       {hoveredNode && (

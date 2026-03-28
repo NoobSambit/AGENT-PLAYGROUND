@@ -1,13 +1,6 @@
 'use client'
 
-/**
- * Relationship Network Graph Component - Phase 2
- *
- * Displays an interactive network graph of agent relationships
- * using SVG for cross-platform compatibility.
- */
-
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { AgentRelationship, RelationshipType } from '@/types/database'
 
 interface Node {
@@ -38,11 +31,11 @@ interface RelationshipGraphProps {
 }
 
 const RELATIONSHIP_COLORS = {
-  friendship: '#32CD32',
-  rivalry: '#FF4500',
-  mentorship: '#9932CC',
-  professional: '#4169E1',
-  acquaintance: '#808080',
+  friendship: '#58c78d',
+  rivalry: '#ef6464',
+  mentorship: '#9b7eeb',
+  professional: '#6db6d7',
+  acquaintance: '#9aa1b4',
 }
 
 export function RelationshipGraph({
@@ -59,7 +52,6 @@ export function RelationshipGraph({
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null)
   const [selectedRelationship, setSelectedRelationship] = useState<AgentRelationship | null>(null)
 
-  // Initialize nodes and edges
   useEffect(() => {
     const connectionCounts: Record<string, number> = {}
 
@@ -68,9 +60,8 @@ export function RelationshipGraph({
       connectionCounts[rel.agentId2] = (connectionCounts[rel.agentId2] || 0) + 1
     }
 
-    // Create nodes with initial positions
-    const newNodes: Node[] = agents.map((agent, i) => {
-      const angle = (2 * Math.PI * i) / agents.length
+    const newNodes: Node[] = agents.map((agent, index) => {
+      const angle = (2 * Math.PI * index) / Math.max(agents.length, 1)
       const radius = Math.min(width, height) * 0.35
       return {
         id: agent.id,
@@ -83,13 +74,12 @@ export function RelationshipGraph({
       }
     })
 
-    // Create edges
-    const newEdges: Edge[] = relationships.map(rel => {
+    const newEdges: Edge[] = relationships.map((rel) => {
       const avgMetric = (rel.metrics.trust + rel.metrics.respect + rel.metrics.affection) / 3
       let color = RELATIONSHIP_COLORS.acquaintance
 
       if (rel.status === 'broken') {
-        color = '#DC143C'
+        color = '#d94e62'
       } else if (rel.relationshipTypes.includes('friendship')) {
         color = RELATIONSHIP_COLORS.friendship
       } else if (rel.relationshipTypes.includes('rivalry')) {
@@ -113,28 +103,24 @@ export function RelationshipGraph({
     setEdges(newEdges)
   }, [relationships, agents, width, height])
 
-  // Simple force simulation
   useEffect(() => {
     if (nodes.length < 2) return
 
     const interval = setInterval(() => {
-      setNodes(prevNodes => {
-        const newNodes = prevNodes.map(node => ({ ...node }))
+      setNodes((prevNodes) => {
+        const nextNodes = prevNodes.map((node) => ({ ...node }))
 
-        // Apply forces
-        for (let i = 0; i < newNodes.length; i++) {
-          const node = newNodes[i]
+        for (let i = 0; i < nextNodes.length; i++) {
+          const node = nextNodes[i]
 
-          // Center gravity
           const dx = width / 2 - node.x
           const dy = height / 2 - node.y
           node.vx += dx * 0.001
           node.vy += dy * 0.001
 
-          // Repulsion from other nodes
-          for (let j = 0; j < newNodes.length; j++) {
+          for (let j = 0; j < nextNodes.length; j++) {
             if (i === j) continue
-            const other = newNodes[j]
+            const other = nextNodes[j]
             const diffX = node.x - other.x
             const diffY = node.y - other.y
             const dist = Math.sqrt(diffX * diffX + diffY * diffY) || 1
@@ -143,13 +129,12 @@ export function RelationshipGraph({
             node.vy += (diffY / dist) * force
           }
 
-          // Attraction along edges
           for (const edge of edges) {
             let other: Node | undefined
             if (edge.source === node.id) {
-              other = newNodes.find(n => n.id === edge.target)
+              other = nextNodes.find((n) => n.id === edge.target)
             } else if (edge.target === node.id) {
-              other = newNodes.find(n => n.id === edge.source)
+              other = nextNodes.find((n) => n.id === edge.source)
             }
 
             if (other) {
@@ -163,22 +148,19 @@ export function RelationshipGraph({
             }
           }
 
-          // Apply velocity with damping
           node.x += node.vx * 0.1
           node.y += node.vy * 0.1
           node.vx *= 0.9
           node.vy *= 0.9
 
-          // Keep within bounds
           node.x = Math.max(30, Math.min(width - 30, node.x))
           node.y = Math.max(30, Math.min(height - 30, node.y))
         }
 
-        return newNodes
+        return nextNodes
       })
     }, 50)
 
-    // Stop after stabilization
     const timeout = setTimeout(() => clearInterval(interval), 3000)
 
     return () => {
@@ -187,109 +169,93 @@ export function RelationshipGraph({
     }
   }, [nodes.length, edges, width, height])
 
-  const getNodeById = useCallback((id: string) => nodes.find(n => n.id === id), [nodes])
-
-  const getEdgeKey = (edge: Edge) => `${edge.source}-${edge.target}`
+  const getNodeById = useCallback((id: string) => nodes.find((node) => node.id === id), [nodes])
 
   const handleEdgeClick = (edge: Edge) => {
-    const rel = relationships.find(
-      r => (r.agentId1 === edge.source && r.agentId2 === edge.target) ||
-           (r.agentId1 === edge.target && r.agentId2 === edge.source)
+    const relationship = relationships.find(
+      (rel) =>
+        (rel.agentId1 === edge.source && rel.agentId2 === edge.target) ||
+        (rel.agentId1 === edge.target && rel.agentId2 === edge.source)
     )
-    if (rel) {
-      setSelectedRelationship(rel)
-      onRelationshipClick?.(rel)
+    if (relationship) {
+      setSelectedRelationship(relationship)
+      onRelationshipClick?.(relationship)
     }
   }
 
   if (nodes.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-64 text-gray-500">
-        No relationships to display
-      </div>
-    )
+    return <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">No relationships to display</div>
   }
 
   return (
     <div className="relative">
-      <svg width={width} height={height} className="bg-gray-900 rounded-lg">
-        {/* Edges */}
-        {edges.map(edge => {
+      <svg width={width} height={height} className="w-full rounded-[1.6rem] bg-background/40">
+        {edges.map((edge) => {
           const sourceNode = getNodeById(edge.source)
           const targetNode = getNodeById(edge.target)
           if (!sourceNode || !targetNode) return null
 
-          const key = getEdgeKey(edge)
+          const key = `${edge.source}-${edge.target}`
           const isHovered = hoveredEdge === key
 
           return (
-            <g key={key}>
-              <line
-                x1={sourceNode.x}
-                y1={sourceNode.y}
-                x2={targetNode.x}
-                y2={targetNode.y}
-                stroke={edge.color}
-                strokeWidth={isHovered ? 4 : 2 + edge.strength * 3}
-                strokeOpacity={isHovered ? 1 : 0.6}
-                className="cursor-pointer transition-all"
-                onMouseEnter={() => setHoveredEdge(key)}
-                onMouseLeave={() => setHoveredEdge(null)}
-                onClick={() => handleEdgeClick(edge)}
-              />
-            </g>
+            <line
+              key={key}
+              x1={sourceNode.x}
+              y1={sourceNode.y}
+              x2={targetNode.x}
+              y2={targetNode.y}
+              stroke={edge.color}
+              strokeWidth={isHovered ? 4 : 2 + edge.strength * 3}
+              strokeOpacity={isHovered ? 1 : 0.55}
+              className="cursor-pointer transition-all"
+              onMouseEnter={() => setHoveredEdge(key)}
+              onMouseLeave={() => setHoveredEdge(null)}
+              onClick={() => handleEdgeClick(edge)}
+            />
           )
         })}
 
-        {/* Nodes */}
-        {nodes.map(node => {
+        {nodes.map((node) => {
           const isHovered = hoveredNode === node.id
           const isCurrent = node.id === currentAgentId
           const radius = 12 + node.connectionCount * 3
 
           return (
             <g key={node.id}>
-              {/* Node circle */}
               <circle
                 cx={node.x}
                 cy={node.y}
                 r={isHovered ? radius + 4 : radius}
-                fill={isCurrent ? '#FFD700' : '#4A90E2'}
-                stroke={isHovered ? '#fff' : '#2A2A2A'}
+                fill={isCurrent ? '#f7b267' : '#9b7eeb'}
+                stroke={isHovered ? '#ffffff' : 'rgba(255,255,255,0.16)'}
                 strokeWidth={2}
                 className="cursor-pointer transition-all"
                 onMouseEnter={() => setHoveredNode(node.id)}
                 onMouseLeave={() => setHoveredNode(null)}
               />
 
-              {/* Node label */}
               <text
                 x={node.x}
                 y={node.y + radius + 16}
                 textAnchor="middle"
-                fill="#fff"
+                fill="var(--foreground)"
                 fontSize="12"
-                fontWeight={isHovered ? 'bold' : 'normal'}
+                fontWeight={isHovered ? '700' : '500'}
               >
                 {node.name}
               </text>
 
-              {/* Connection count badge */}
               {node.connectionCount > 0 && (
                 <g>
-                  <circle
-                    cx={node.x + radius - 4}
-                    cy={node.y - radius + 4}
-                    r={8}
-                    fill="#FF6B6B"
-                  />
+                  <circle cx={node.x + radius - 4} cy={node.y - radius + 4} r={8} fill="#f089b6" />
                   <text
                     x={node.x + radius - 4}
                     y={node.y - radius + 8}
                     textAnchor="middle"
-                    fill="#fff"
+                    fill="#ffffff"
                     fontSize="10"
-                    fontWeight="bold"
+                    fontWeight="700"
                   >
                     {node.connectionCount}
                   </text>
@@ -300,90 +266,57 @@ export function RelationshipGraph({
         })}
       </svg>
 
-      {/* Legend */}
-      <div className="absolute bottom-4 left-4 bg-gray-800 rounded-lg p-3 text-xs">
-        <div className="text-gray-400 mb-2">Relationship Types</div>
-        <div className="space-y-1">
+      <div className="absolute bottom-4 left-4 rounded-[1.2rem] border border-border/70 bg-card/[0.74] p-3 text-xs backdrop-blur-xl">
+        <div className="mb-2 font-semibold uppercase tracking-[0.18em] text-muted-foreground">Relationship types</div>
+        <div className="space-y-1.5">
           {Object.entries(RELATIONSHIP_COLORS).map(([type, color]) => (
             <div key={type} className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded" style={{ backgroundColor: color }} />
-              <span className="text-gray-300 capitalize">{type}</span>
+              <div className="h-3 w-3 rounded" style={{ backgroundColor: color }} />
+              <span className="capitalize text-muted-foreground">{type}</span>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Relationship details popup */}
       {selectedRelationship && (
-        <div className="absolute top-4 right-4 bg-gray-800 rounded-lg p-4 max-w-xs">
-          <div className="flex justify-between items-start mb-2">
-            <h4 className="font-semibold text-white">
-              Relationship Details
-            </h4>
+        <div className="absolute right-4 top-4 max-w-xs rounded-[1.4rem] border border-border/70 bg-card/[0.76] p-4 backdrop-blur-xl">
+          <div className="flex items-start justify-between gap-4">
+            <h4 className="font-semibold text-foreground">Relationship details</h4>
             <button
               onClick={() => setSelectedRelationship(null)}
-              className="text-gray-400 hover:text-white"
+              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+              type="button"
             >
-              ✕
+              Close
             </button>
           </div>
-          <div className="text-sm space-y-2">
+
+          <div className="mt-4 space-y-3 text-sm">
             <div>
-              <span className="text-gray-400">Type:</span>
-              <span className="ml-2 text-white capitalize">
-                {selectedRelationship.relationshipTypes.join(', ')}
-              </span>
+              <span className="text-muted-foreground">Type:</span>
+              <span className="ml-2 capitalize text-foreground">{selectedRelationship.relationshipTypes.join(', ')}</span>
             </div>
             <div>
-              <span className="text-gray-400">Status:</span>
-              <span className="ml-2 text-white capitalize">
-                {selectedRelationship.status}
-              </span>
+              <span className="text-muted-foreground">Status:</span>
+              <span className="ml-2 capitalize text-foreground">{selectedRelationship.status}</span>
             </div>
-            <div className="space-y-1">
-              <div className="flex justify-between">
-                <span className="text-gray-400">Trust:</span>
-                <span className="text-green-400">
-                  {(selectedRelationship.metrics.trust * 100).toFixed(0)}%
-                </span>
+            {[
+              ['Trust', selectedRelationship.metrics.trust, '#58c78d'],
+              ['Respect', selectedRelationship.metrics.respect, '#6db6d7'],
+              ['Affection', selectedRelationship.metrics.affection, '#f089b6'],
+            ].map(([label, value, color]) => (
+              <div key={label}>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className="text-foreground">{Math.round((value as number) * 100)}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-muted/45">
+                  <div className="h-1.5 rounded-full" style={{ width: `${(value as number) * 100}%`, backgroundColor: color as string }} />
+                </div>
               </div>
-              <div className="w-full bg-gray-700 rounded-full h-1.5">
-                <div
-                  className="bg-green-500 h-1.5 rounded-full"
-                  style={{ width: `${selectedRelationship.metrics.trust * 100}%` }}
-                />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <div className="flex justify-between">
-                <span className="text-gray-400">Respect:</span>
-                <span className="text-blue-400">
-                  {(selectedRelationship.metrics.respect * 100).toFixed(0)}%
-                </span>
-              </div>
-              <div className="w-full bg-gray-700 rounded-full h-1.5">
-                <div
-                  className="bg-blue-500 h-1.5 rounded-full"
-                  style={{ width: `${selectedRelationship.metrics.respect * 100}%` }}
-                />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <div className="flex justify-between">
-                <span className="text-gray-400">Affection:</span>
-                <span className="text-pink-400">
-                  {(selectedRelationship.metrics.affection * 100).toFixed(0)}%
-                </span>
-              </div>
-              <div className="w-full bg-gray-700 rounded-full h-1.5">
-                <div
-                  className="bg-pink-500 h-1.5 rounded-full"
-                  style={{ width: `${selectedRelationship.metrics.affection * 100}%` }}
-                />
-              </div>
-            </div>
-            <div className="text-gray-400 text-xs mt-2">
-              {selectedRelationship.interactionCount} interactions
+            ))}
+            <div className="pt-2 text-xs text-muted-foreground">
+              {selectedRelationship.interactionCount} interactions tracked.
             </div>
           </div>
         </div>

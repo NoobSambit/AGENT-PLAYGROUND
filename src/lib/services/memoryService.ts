@@ -10,7 +10,8 @@ import {
   where,
   orderBy,
   limit,
-  Timestamp
+  Timestamp,
+  increment
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import {
@@ -77,6 +78,16 @@ function isMissingIndexError(error: unknown): boolean {
 }
 
 export class MemoryService {
+  private static async updateAgentMemoryCount(agentId: string, delta: number): Promise<void> {
+    try {
+      await updateDoc(doc(db, 'agents', agentId), {
+        memoryCount: increment(delta)
+      })
+    } catch (error) {
+      console.error('Error updating agent memory count:', error)
+    }
+  }
+
   // Get all memories for an agent
   static async getAllMemoriesForAgent(agentId: string): Promise<MemoryRecord[]> {
     try {
@@ -131,6 +142,7 @@ export class MemoryService {
       }
 
       const docRef = await addDoc(collection(db, MEMORIES_COLLECTION), docData)
+      await this.updateAgentMemoryCount(memoryData.agentId, 1)
       return await this.getMemoryById(docRef.id)
     } catch (error) {
       console.error('Error creating memory:', error)
@@ -154,8 +166,13 @@ export class MemoryService {
   // Soft delete memory (mark as inactive)
   static async deleteMemory(id: string): Promise<boolean> {
     try {
+      const existingMemory = await this.getMemoryById(id)
+      if (!existingMemory || existingMemory.isActive === false) {
+        return false
+      }
       const docRef = doc(db, MEMORIES_COLLECTION, id)
       await updateDoc(docRef, { isActive: false })
+      await this.updateAgentMemoryCount(existingMemory.agentId, -1)
       return true
     } catch (error) {
       console.error('Error deleting memory:', error)
@@ -166,7 +183,11 @@ export class MemoryService {
   // Hard delete memory (permanent deletion)
   static async hardDeleteMemory(id: string): Promise<boolean> {
     try {
+      const existingMemory = await this.getMemoryById(id)
       await deleteDoc(doc(db, MEMORIES_COLLECTION, id))
+      if (existingMemory && existingMemory.isActive !== false) {
+        await this.updateAgentMemoryCount(existingMemory.agentId, -1)
+      }
       return true
     } catch (error) {
       console.error('Error hard deleting memory:', error)

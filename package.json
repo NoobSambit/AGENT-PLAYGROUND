@@ -4,19 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
+    "build": "next build --experimental-build-mode compile && next build --experimental-build-mode generate",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:reset": "node --env-file=.env.local scripts/reset-firestore.mjs"
   },
   "dependencies": {
     "@langchain/community": "^0.3.57",
     "@langchain/core": "^0.3.78",
     "@langchain/google-genai": "^0.2.18",
     "@langchain/groq": "^0.2.4",
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.5.0",
-    "@react-three/postprocessing": "^3.0.4",
-    "@types/three": "^0.182.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "firebase": "^12.3.0",
@@ -24,11 +21,10 @@
     "langchain": "^0.3.35",
     "lucide-react": "^0.544.0",
     "next": "15.5.4",
-    "postprocessing": "^6.38.2",
+    "next-themes": "^0.4.6",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "tailwind-merge": "^3.3.1",
-    "three": "^0.182.0",
     "zustand": "^5.0.8"
   },
   "devDependencies": {

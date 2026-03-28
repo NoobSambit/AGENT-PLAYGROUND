@@ -14,6 +14,7 @@ import {
   KnowledgeGraphEdge,
   ConceptCategory
 } from '@/types/database'
+import { ContradictionInsight } from '@/types/enhancements'
 import { ConceptService } from './conceptService'
 import { MemoryService } from './memoryService'
 
@@ -37,6 +38,17 @@ const MEMORY_TYPE_COLORS: Record<MemoryRecord['type'], string> = {
 }
 
 export class MemoryGraphService {
+  private static OPPOSING_TERMS: Array<[string, string]> = [
+    ['always', 'never'],
+    ['possible', 'impossible'],
+    ['safe', 'dangerous'],
+    ['helps', 'harms'],
+    ['beneficial', 'harmful'],
+    ['true', 'false'],
+    ['good', 'bad'],
+    ['support', 'oppose']
+  ]
+
   /**
    * Get or create memory graph for an agent
    */
@@ -611,5 +623,74 @@ export class MemoryGraphService {
       recentlyActive,
       suggestions
     }
+  }
+
+  /**
+   * Detect contradictory memories that overlap on topic but diverge in stance.
+   */
+  static async detectContradictions(agentId: string): Promise<ContradictionInsight[]> {
+    const memories = await MemoryService.getAllMemoriesForAgent(agentId)
+    const contradictions: ContradictionInsight[] = []
+
+    for (let i = 0; i < memories.length; i++) {
+      for (let j = i + 1; j < memories.length; j++) {
+        const left = memories[i]
+        const right = memories[j]
+        const overlap = left.keywords.filter((keyword) => right.keywords.includes(keyword)).slice(0, 4)
+
+        if (overlap.length === 0) {
+          continue
+        }
+
+        const contradictionScore = this.estimateContradictionScore(left, right)
+        if (contradictionScore < 0.55) {
+          continue
+        }
+
+        contradictions.push({
+          id: `contradiction_${left.id}_${right.id}`,
+          memoryId1: left.id,
+          memoryId2: right.id,
+          summary: `Potential contradiction around ${overlap.join(', ')} between "${left.summary}" and "${right.summary}".`,
+          confidence: contradictionScore,
+          topicOverlap: overlap,
+        })
+      }
+    }
+
+    return contradictions
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 8)
+  }
+
+  private static estimateContradictionScore(left: MemoryRecord, right: MemoryRecord): number {
+    const leftText = `${left.content} ${left.summary}`.toLowerCase()
+    const rightText = `${right.content} ${right.summary}`.toLowerCase()
+    let score = 0
+
+    const hasNegationMismatch = (leftText.includes(' not ') && !rightText.includes(' not '))
+      || (rightText.includes(' not ') && !leftText.includes(' not '))
+      || (leftText.includes("n't") && !rightText.includes("n't"))
+      || (rightText.includes("n't") && !leftText.includes("n't"))
+
+    if (hasNegationMismatch) {
+      score += 0.35
+    }
+
+    for (const [positive, negative] of this.OPPOSING_TERMS) {
+      const leftHasPositive = leftText.includes(positive)
+      const leftHasNegative = leftText.includes(negative)
+      const rightHasPositive = rightText.includes(positive)
+      const rightHasNegative = rightText.includes(negative)
+
+      if ((leftHasPositive && rightHasNegative) || (leftHasNegative && rightHasPositive)) {
+        score += 0.22
+      }
+    }
+
+    const keywordOverlap = left.keywords.filter((keyword) => right.keywords.includes(keyword)).length
+    score += Math.min(keywordOverlap * 0.08, 0.24)
+
+    return Math.min(score, 1)
   }
 }

@@ -173,46 +173,8 @@ export interface TimelineFilters {
 }
 
 // ============================================
-// PHASE 1: Neural Visualization Types
+// PHASE 1: Emotion Types
 // ============================================
-
-export interface Vector3 {
-  x: number
-  y: number
-  z: number
-}
-
-export interface MemoryVisualization {
-  id: string
-  position: Vector3
-  importance: number
-  activated: boolean
-  activationStrength: number
-  label?: string
-}
-
-export interface EmotionVisualization {
-  emotion: EmotionType
-  intensity: number
-  color: string
-}
-
-export interface ThoughtFlow {
-  from: Vector3
-  to: Vector3
-  progress: number
-  type: 'input' | 'processing' | 'output'
-}
-
-export interface VisualizationData {
-  memories: MemoryVisualization[]
-  emotionalState: EmotionVisualization[]
-  thoughtFlow: ThoughtFlow[]
-  attentionFocus: {
-    position: Vector3
-    radius: number
-  } | null
-}
 
 // Emotion color mapping for visualization
 export const EMOTION_COLORS: Record<EmotionType, string> = {
@@ -267,6 +229,11 @@ export interface AgentRecord {
   journalCount?: number
   challengesCompleted?: number
   challengeWins?: number
+  mentorshipStats?: {
+    asMentor: number
+    asMentee: number
+    effectiveness: number
+  }
 }
 
 export interface MemoryRecord {
@@ -331,11 +298,13 @@ export interface SimulationRecord {
     content: string
     timestamp: string
     round: number
+    metadata?: Record<string, unknown>
   }>
   maxRounds: number
   createdAt: string // ISO timestamp
   isComplete: boolean
   finalRound: number
+  metadata?: Record<string, unknown>
 }
 
 export type SimulationDocument = Omit<SimulationRecord, 'id'>
@@ -392,6 +361,18 @@ export interface UpdateAgentData {
   emotionalHistory?: EmotionalEvent[]
   progress?: AgentProgress
   stats?: AgentStats
+  psychologicalProfile?: PsychologicalProfile
+  relationshipCount?: number
+  creativeWorks?: number
+  dreamCount?: number
+  journalCount?: number
+  challengesCompleted?: number
+  challengeWins?: number
+  mentorshipStats?: {
+    asMentor: number
+    asMentee: number
+    effectiveness: number
+  }
 }
 
 export interface CreateMemoryData {

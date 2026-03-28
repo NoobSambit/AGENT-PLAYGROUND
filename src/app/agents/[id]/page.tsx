@@ -7,11 +7,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
-import { MemoryRecord, MessageRecord, AgentRecord } from '@/types/database'
-import { ArrowLeft, Send, Bot, User, Settings, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star, Award, Heart, Clock, Sparkles, Palette, Moon, BookOpen, Target, Swords, Network, Library, GraduationCap } from 'lucide-react'
+import { MemoryRecord, MessageRecord, AgentRecord, AgentRelationship } from '@/types/database'
+import { ArrowLeft, Send, Bot, User, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star, Award, Heart, Clock, Palette, Moon, BookOpen, Target, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { GradientOrb } from '@/components/ui/animated-background'
 import { getCurrentLLMModel } from '@/utils/llm'
+import { MetaLearningState, SkillProgression } from '@/types/metaLearning'
 
 // Phase 1 Components
 import { EmotionRadar, EmotionBars } from '@/components/emotions/EmotionRadar'
@@ -19,7 +20,6 @@ import { EmotionTimeline } from '@/components/emotions/EmotionTimeline'
 import { AchievementCard, LevelProgress } from '@/components/achievements/AchievementBadge'
 import { AchievementNotification, useAchievementNotifications } from '@/components/achievements/AchievementNotification'
 import { TimelineExplorer } from '@/components/timeline/TimelineExplorer'
-import { NeuralViz, NeuralViz2D } from '@/components/visualizations/NeuralViz'
 
 // Phase 2 Components
 import { CreativePortfolio } from '@/components/creative/CreativePortfolio'
@@ -27,31 +27,101 @@ import { DreamJournal } from '@/components/dreams/DreamJournal'
 import { JournalViewer } from '@/components/journal/JournalViewer'
 import { ProfileViewer } from '@/components/profile/ProfileViewer'
 import { ChallengeHub } from '@/components/challenges/ChallengeHub'
+import { RelationshipGraph } from '@/components/relationships/RelationshipGraph'
+import { RelationshipCard } from '@/components/relationships/RelationshipCard'
+import { MetaLearningDashboard } from '@/components/learning/MetaLearningDashboard'
+import { FuturePlanningView } from '@/components/planning/FuturePlanningView'
+import { ParallelRealityExplorer } from '@/components/parallel/ParallelRealityExplorer'
+import { LinguisticProfileCard } from '@/components/linguistic/LinguisticProfileCard'
+import { VoiceConsole } from '@/components/chat/VoiceConsole'
 
 // Phase 3 Components
 import { KnowledgeGraph } from '@/components/knowledge/KnowledgeGraph'
 import { SharedKnowledgeLibrary } from '@/components/knowledge/SharedKnowledgeLibrary'
 import { MentorshipHub } from '@/components/mentorship/MentorshipHub'
+import { CollectiveIntelligencePanel } from '@/components/collective/CollectiveIntelligencePanel'
+import { ConflictResolutionPanel } from '@/components/relationships/ConflictResolutionPanel'
+import { NeuralActivityView } from '@/components/neural/NeuralActivityView'
 
 // Phase 1 Services
 import { emotionalService } from '@/lib/services/emotionalService'
 import { achievementService } from '@/lib/services/achievementService'
 import { timelineService } from '@/lib/services/timelineService'
+import { futurePlanningService, FuturePlan } from '@/lib/services/futurePlanningService'
+import { parallelRealityService, ParallelRealityExtended } from '@/lib/services/parallelRealityService'
 import { ACHIEVEMENTS } from '@/lib/constants/achievements'
 
-type TabType = 'chat' | 'memory' | 'emotions' | 'achievements' | 'timeline' | 'neural' | 'relationships' | 'creative' | 'dreams' | 'journal' | 'profile' | 'challenges' | 'knowledge-graph' | 'knowledge-library' | 'mentorship'
+type TabType =
+  | 'chat'
+  | 'memory'
+  | 'emotions'
+  | 'neural'
+  | 'achievements'
+  | 'timeline'
+  | 'relationships'
+  | 'learning'
+  | 'planning'
+  | 'scenarios'
+  | 'creative'
+  | 'dreams'
+  | 'journal'
+  | 'profile'
+  | 'challenges'
+  | 'knowledge-graph'
+  | 'knowledge-library'
+  | 'collective'
+  | 'mentorship'
+
+interface RelationshipApiStats {
+  totalRelationships: number
+  strongBonds: number
+  averageTrust: number
+  averageRespect: number
+  averageAffection: number
+  brokenBonds: number
+  mostConnectedAgent: string | null
+}
+
+const TAB_CONFIG = [
+  { id: 'chat', icon: MessageCircle, label: 'Chat', description: 'Direct conversations and model responses.' },
+  { id: 'emotions', icon: Heart, label: 'Emotions', description: 'Current emotional signals and recent shifts.' },
+  { id: 'neural', icon: Brain, label: 'Neural', description: 'Live thought flow, attention, and emotional activity.' },
+  { id: 'achievements', icon: Award, label: 'Achievements', description: 'Progression, levels, and earned milestones.' },
+  { id: 'timeline', icon: Clock, label: 'Timeline', description: 'A chronological view of important events.' },
+  { id: 'memory', icon: Brain, label: 'Memory', description: 'Stored memories, trait evolution, and retention stats.' },
+  { id: 'relationships', icon: Users, label: 'Relationships', description: 'Trust, bonds, and long-term social state.' },
+  { id: 'learning', icon: TrendingUp, label: 'Learning', description: 'Patterns, recommendations, and meta-learning signals.' },
+  { id: 'planning', icon: Calendar, label: 'Planning', description: 'Projected goals, risks, and future actions.' },
+  { id: 'scenarios', icon: Sparkles, label: 'Scenarios', description: 'What-if branches and alternate trajectories.' },
+  { id: 'creative', icon: Palette, label: 'Creative', description: 'Creative works generated by the agent.' },
+  { id: 'dreams', icon: Moon, label: 'Dreams', description: 'Dream generation and subconscious motifs.' },
+  { id: 'journal', icon: BookOpen, label: 'Journal', description: 'Private reflections, streaks, and recurring insights.' },
+  { id: 'profile', icon: Languages, label: 'Profile', description: 'Psychological and linguistic personality models.' },
+  { id: 'challenges', icon: Swords, label: 'Challenges', description: 'Collaborative and competitive multi-agent exercises.' },
+  { id: 'knowledge-graph', icon: Network, label: 'Knowledge', description: 'Concept structure and memory relationships.' },
+  { id: 'knowledge-library', icon: Library, label: 'Library', description: 'Shared knowledge contributed across the ecosystem.' },
+  { id: 'collective', icon: Users, label: 'Collective', description: 'Expert referrals, consensus signals, and network broadcasts.' },
+  { id: 'mentorship', icon: GraduationCap, label: 'Mentorship', description: 'Teaching, coaching, and growth connections.' },
+] as const satisfies ReadonlyArray<{
+  id: TabType
+  icon: typeof Bot
+  label: string
+  description: string
+}>
 
 export default function AgentDetail() {
   const params = useParams()
   const router = useRouter()
   const agentId = params.id as string
+  const scenarioTemplates = parallelRealityService.getScenarioTemplates()
 
-  const { agents, currentAgent, setCurrentAgent } = useAgentStore()
+  const { agents, currentAgent, setCurrentAgent, fetchAgentById, fetchAgents } = useAgentStore()
   const { messages, sendMessage, fetchMessagesByAgentId, loading: messagesLoading } = useMessageStore()
 
   const [newMessage, setNewMessage] = useState('')
   const [currentModel, setCurrentModel] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabType>('chat')
+  const [agentResolved, setAgentResolved] = useState(false)
   const [memories, setMemories] = useState<MemoryRecord[]>([])
   const [memoryStats, setMemoryStats] = useState<{
     totalMemories: number
@@ -65,6 +135,16 @@ export default function AgentDetail() {
     averageImportance: 0
   })
   const [loadingMemories, setLoadingMemories] = useState(false)
+  const [relationships, setRelationships] = useState<AgentRelationship[]>([])
+  const [relationshipAgents, setRelationshipAgents] = useState<Array<{ id: string; name: string }>>([])
+  const [relationshipStats, setRelationshipStats] = useState<RelationshipApiStats | null>(null)
+  const [loadingRelationships, setLoadingRelationships] = useState(false)
+  const [learningState, setLearningState] = useState<MetaLearningState | null>(null)
+  const [learningSkills, setLearningSkills] = useState<SkillProgression[]>([])
+  const [loadingLearning, setLoadingLearning] = useState(false)
+  const [futurePlan, setFuturePlan] = useState<FuturePlan | null>(null)
+  const [parallelReality, setParallelReality] = useState<ParallelRealityExtended | null>(null)
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>(scenarioTemplates[0]?.id || '')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Phase 1: Achievement notifications
@@ -78,14 +158,30 @@ export default function AgentDetail() {
   const agentStats = currentAgent?.stats || achievementService.createDefaultStats()
   const agentEmotionalState = currentAgent?.emotionalState || emotionalService.createDefaultEmotionalState()
   const agentEmotionalHistory = currentAgent?.emotionalHistory || []
+  const activeTabConfig = TAB_CONFIG.find((tab) => tab.id === activeTab) || TAB_CONFIG[0]
 
   useEffect(() => {
-    // Find the current agent
-    const agent = agents.find(a => a.id === agentId)
-    if (agent) {
-      setCurrentAgent(agent)
+    const loadCurrentAgent = async () => {
+      const cachedAgent = agents.find(a => a.id === agentId)
+      if (cachedAgent) {
+        setCurrentAgent(cachedAgent)
+        setAgentResolved(true)
+        return
+      }
+
+      const fetchedAgent = await fetchAgentById(agentId)
+      setCurrentAgent(fetchedAgent)
+      setAgentResolved(true)
     }
-  }, [agentId, agents, setCurrentAgent])
+
+    void loadCurrentAgent()
+  }, [agentId, agents, setCurrentAgent, fetchAgentById])
+
+  useEffect(() => {
+    if (agents.length === 0) {
+      void fetchAgents()
+    }
+  }, [agents.length, fetchAgents])
 
   // Fetch messages for this agent
   useEffect(() => {
@@ -113,8 +209,10 @@ export default function AgentDetail() {
   }, [messages, currentModel])
 
   // Load memories when switching to memory tab
-  const loadMemories = async () => {
-    if (!currentAgent || memories.length > 0) return
+  const loadMemories = async (forceRefresh = false) => {
+    if (!currentAgent || (!forceRefresh && memories.length > 0)) {
+      return memories
+    }
 
     setLoadingMemories(true)
     try {
@@ -124,29 +222,189 @@ export default function AgentDetail() {
       ])
       setMemories(memoriesData)
       setMemoryStats(statsData)
+      return memoriesData
     } catch (error) {
       console.error('Failed to load memories:', error)
+      return []
     } finally {
       setLoadingMemories(false)
     }
   }
 
+  const loadRelationships = async () => {
+    if (!currentAgent) {
+      return []
+    }
+
+    setLoadingRelationships(true)
+    try {
+      const response = await fetch(`/api/relationships?agentId=${encodeURIComponent(currentAgent.id)}`)
+      if (!response.ok) {
+        return []
+      }
+
+      const data = await response.json()
+      const loadedRelationships = (data.relationships || []) as AgentRelationship[]
+      const loadedAgents = (data.graphData?.nodes || []).map((node: { id: string; name: string }) => ({
+        id: node.id,
+        name: node.name
+      }))
+
+      setRelationships(loadedRelationships)
+      setRelationshipAgents(loadedAgents)
+      setRelationshipStats(data.stats || null)
+      return loadedRelationships
+    } catch (error) {
+      console.error('Failed to load relationships:', error)
+      return []
+    } finally {
+      setLoadingRelationships(false)
+    }
+  }
+
+  const loadLearningData = async () => {
+    if (!currentAgent) {
+      return null
+    }
+
+    setLoadingLearning(true)
+    try {
+      const fetchState = async () => {
+        const response = await fetch(`/api/agents/${currentAgent.id}/learning`)
+        if (!response.ok) {
+          return null
+        }
+
+        return response.json()
+      }
+
+      let data = await fetchState()
+      const learningMessages = messages
+        .filter(message => message.agentId === currentAgent.id && (message.type === 'user' || message.type === 'agent'))
+        .slice(-12)
+        .map(message => ({
+          content: message.content,
+          type: message.type === 'agent' ? 'agent' as const : 'user' as const,
+          timestamp: message.timestamp
+        }))
+
+      if (
+        data?.state &&
+        learningMessages.length >= 4 &&
+        data.state.activePatterns.length === 0 &&
+        data.state.activeGoals.length === 0
+      ) {
+        await fetch(`/api/agents/${currentAgent.id}/learning`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'analyze_conversation',
+            messages: learningMessages
+          })
+        })
+
+        await fetch(`/api/agents/${currentAgent.id}/learning`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'generate_goals'
+          })
+        })
+
+        data = await fetchState()
+      }
+
+      if (data?.state) {
+        setLearningState(data.state as MetaLearningState)
+        setLearningSkills((data.skills || []) as SkillProgression[])
+        return data.state as MetaLearningState
+      }
+
+      return null
+    } catch (error) {
+      console.error('Failed to load learning state:', error)
+      return null
+    } finally {
+      setLoadingLearning(false)
+    }
+  }
+
+  const loadPlanningData = async () => {
+    if (!currentAgent) {
+      return
+    }
+
+    const loadedMemories = memories.length > 0 ? memories : await loadMemories()
+    const loadedTimeline = timelineEvents.length > 0
+      ? timelineEvents
+      : await timelineService.aggregateEvents(
+          currentAgent as AgentRecord,
+          loadedMemories,
+          messages as unknown as MessageRecord[]
+        )
+    const currentLearningState = learningState || await loadLearningData()
+
+    setTimelineEvents(loadedTimeline)
+    setFuturePlan(
+      futurePlanningService.generateFuturePlan(
+        currentAgent as AgentRecord,
+        currentLearningState?.activeGoals || [],
+        loadedTimeline,
+        'short_term'
+      )
+    )
+  }
+
+  const loadParallelReality = async () => {
+    if (!currentAgent || !selectedScenarioId) {
+      return
+    }
+
+    const loadedRelationships = relationships.length > 0 ? relationships : await loadRelationships()
+    const selectedScenario = scenarioTemplates.find(scenario => scenario.id === selectedScenarioId) || scenarioTemplates[0]
+
+    if (!selectedScenario) {
+      return
+    }
+
+    setParallelReality(
+      parallelRealityService.createParallelReality(
+        currentAgent as AgentRecord,
+        selectedScenario,
+        loadedRelationships
+      )
+    )
+  }
+
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab)
     if (tab === 'memory' && memories.length === 0) {
-      loadMemories()
+      void loadMemories()
     }
     if (tab === 'timeline' && timelineEvents.length === 0 && currentAgent) {
-      loadTimelineEvents()
+      void loadTimelineEvents()
+    }
+    if (tab === 'relationships' && relationships.length === 0) {
+      void loadRelationships()
+    }
+    if (tab === 'learning' && !learningState) {
+      void loadLearningData()
+    }
+    if (tab === 'planning' && !futurePlan) {
+      void loadPlanningData()
+    }
+    if (tab === 'scenarios' && !parallelReality) {
+      void loadParallelReality()
     }
   }
 
   const loadTimelineEvents = async () => {
     if (!currentAgent) return
     try {
+      const loadedMemories = memories.length > 0 ? memories : await loadMemories()
       const events = await timelineService.aggregateEvents(
         currentAgent as unknown as AgentRecord,
-        memories,
+        loadedMemories,
         messages as unknown as MessageRecord[]
       )
       setTimelineEvents(events)
@@ -209,9 +467,72 @@ export default function AgentDetail() {
       }
 
       setNewMessage('')
+
+      if (activeTab === 'memory') {
+        await loadMemories(true)
+      }
+
+      if (activeTab === 'timeline' || activeTab === 'planning') {
+        await loadTimelineEvents()
+        if (activeTab === 'planning') {
+          await loadPlanningData()
+        }
+      }
+
+      if (activeTab === 'learning') {
+        await loadLearningData()
+      }
     } catch (error) {
       console.error('Failed to send message:', error)
     }
+  }
+
+  const handleDeleteMemory = async (memoryId: string) => {
+    const deleted = await useAgentStore.getState().deleteMemory(memoryId)
+    if (!deleted) {
+      return
+    }
+
+    setMemories(prev => prev.filter(memory => memory.id !== memoryId))
+    setMemoryStats(prev => ({
+      ...prev,
+      totalMemories: Math.max((prev.totalMemories || 0) - 1, 0)
+    }))
+
+    if (currentAgent) {
+      setCurrentAgent({
+        ...currentAgent,
+        memoryCount: Math.max((currentAgent.memoryCount || 0) - 1, 0)
+      })
+    }
+
+    if (activeTab === 'timeline' || activeTab === 'planning') {
+      await loadTimelineEvents()
+      if (activeTab === 'planning') {
+        await loadPlanningData()
+      }
+    }
+  }
+
+  if (!currentAgent && !agentResolved) {
+    return (
+      <div className="relative min-h-screen pt-28 pb-20">
+        <GradientOrb className="w-[600px] h-[600px] -top-[200px] -right-[200px] opacity-20" color="violet" />
+        <div className="relative z-10 mx-auto max-w-4xl px-6">
+          <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-2xl">
+            <CardContent className="p-8 text-center space-y-4">
+              <div className="mx-auto h-12 w-12 animate-pulse rounded-full bg-primary/15" />
+              <div>
+                <h3 className="text-lg font-semibold">Loading agent workspace</h3>
+                <p className="text-muted-foreground">
+                  Rehydrating the agent state, memories, and enhancement modules.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   if (!currentAgent) {
@@ -242,99 +563,110 @@ export default function AgentDetail() {
       <GradientOrb className="w-[400px] h-[400px] top-1/2 -left-[200px] opacity-15" color="cyan" />
 
       <div className="relative z-10 mx-auto max-w-7xl px-6 space-y-8">
-        {/* Header */}
-        <motion.div
+        <motion.section
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-6"
+          className="page-section overflow-hidden px-6 py-7 sm:px-8"
         >
-          <motion.button
-            whileHover={{ x: -4 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => router.back()}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/[0.05] transition-all"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </motion.button>
-          <div className="flex-1 space-y-2">
-            <div className="flex items-center gap-4">
-              <motion.div
-                animate={{ rotate: [0, 5, -5, 0] }}
-                transition={{ duration: 6, repeat: Infinity }}
-                className="w-14 h-14 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-2xl shadow-violet-500/30"
-              >
-                <Bot className="h-7 w-7 text-white" />
-              </motion.div>
-              <div>
-                <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-                  <span className="gradient-text-vibrant">{currentAgent.name}</span>
-                </h1>
-                <p className="text-muted-foreground text-base mt-1 line-clamp-1 max-w-lg">
-                  {currentAgent.persona}
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                <motion.button
+                  whileHover={{ x: -4 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => router.back()}
+                  className="inline-flex h-11 items-center gap-2 rounded-full border border-border/70 bg-card/[0.62] px-4 text-sm font-medium text-muted-foreground backdrop-blur-xl transition-all hover:border-primary/20 hover:text-foreground"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </motion.button>
+
+                <div className="flex items-start gap-4">
+                  <motion.div
+                    animate={{ rotate: [0, 4, -4, 0] }}
+                    transition={{ duration: 6, repeat: Infinity }}
+                    className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[1.6rem] bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-[0_20px_48px_-24px_rgba(109,77,158,0.72)]"
+                  >
+                    <Bot className="h-8 w-8" />
+                  </motion.div>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Agent workspace</div>
+                      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
+                        {currentAgent.name}
+                      </h1>
+                      <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground">
+                        {currentAgent.persona}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <span className="soft-pill capitalize">status: {currentAgent.status}</span>
+                      <span className="soft-pill">model: {currentModel || getCurrentLLMModel()}</span>
+                      <span className="soft-pill">{currentAgent.memoryCount || 0} memories</span>
+                      <span className="soft-pill">{currentAgent.relationshipCount || 0} relationships</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  onClick={() => router.push('/agents')}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-border/70 bg-card/[0.62] px-4 text-sm font-medium text-foreground backdrop-blur-xl transition-all hover:border-primary/20 hover:bg-card/[0.82]"
+                >
+                  All agents
+                </button>
+                <button
+                  onClick={() => router.push('/simulation')}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-4 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)]"
+                >
+                  Open simulation lab
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                <div className="rounded-[1.7rem] border border-border/70 bg-background/45 p-5">
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">What this page is for</div>
+                  <p className="mt-3 text-sm leading-7 text-muted-foreground">
+                  This workspace combines the agent&apos;s live conversation surface with memory, emotions, neural activity, relationships, learning, planning, creativity, journaling, collective knowledge, and mentorship systems.
+                </p>
+              </div>
+              <div className="rounded-[1.7rem] border border-border/70 bg-background/45 p-5">
+                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Current focus</div>
+                <p className="mt-3 text-sm leading-7 text-muted-foreground">
+                  {activeTabConfig.description}
                 </p>
               </div>
             </div>
           </div>
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/[0.08] text-muted-foreground hover:text-foreground hover:bg-white/[0.05] transition-all"
-          >
-            <Settings className="h-4 w-4" />
-            Settings
-          </motion.button>
-        </motion.div>
+        </motion.section>
 
-        {/* Tab Navigation */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="flex gap-1 p-1.5 rounded-2xl bg-white/[0.02] border border-white/[0.06] w-fit overflow-x-auto backdrop-blur-sm"
+          className="page-section px-3 py-3 sm:px-4"
         >
-          {[
-            { id: 'chat', icon: MessageCircle, label: 'Chat' },
-            { id: 'emotions', icon: Heart, label: 'Emotions' },
-            { id: 'achievements', icon: Award, label: 'Achievements' },
-            { id: 'timeline', icon: Clock, label: 'Timeline' },
-            { id: 'neural', icon: Sparkles, label: 'Neural' },
-            { id: 'memory', icon: Brain, label: 'Memory' },
-            { id: 'creative', icon: Palette, label: 'Creative' },
-            { id: 'dreams', icon: Moon, label: 'Dreams' },
-            { id: 'journal', icon: BookOpen, label: 'Journal' },
-            { id: 'profile', icon: Target, label: 'Profile' },
-            { id: 'challenges', icon: Swords, label: 'Challenges' },
-            { id: 'knowledge-graph', icon: Network, label: 'Knowledge' },
-            { id: 'knowledge-library', icon: Library, label: 'Library' },
-            { id: 'mentorship', icon: GraduationCap, label: 'Mentorship' },
-          ].map((tab) => {
-            const Icon = tab.icon
-            const isActive = activeTab === tab.id
-            return (
-              <motion.button
-                key={tab.id}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => handleTabChange(tab.id as TabType)}
-                className={`relative px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 whitespace-nowrap flex items-center gap-2 ${
-                  isActive
-                    ? 'text-white'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.05]'
-                }`}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="activeTab"
-                    className="absolute inset-0 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 shadow-lg shadow-violet-500/30"
-                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                  />
-                )}
-                <Icon className="h-4 w-4 relative z-10" />
-                <span className="relative z-10">{tab.label}</span>
-              </motion.button>
-            )
-          })}
+          <div className="tab-nav overflow-x-auto">
+            {TAB_CONFIG.map((tab) => {
+              const Icon = tab.icon
+              const isActive = activeTab === tab.id
+              return (
+                <motion.button
+                  key={tab.id}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => handleTabChange(tab.id)}
+                  className={isActive ? 'tab-item tab-item-active' : 'tab-item'}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span>{tab.label}</span>
+                </motion.button>
+              )
+            })}
+          </div>
         </motion.div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -369,12 +701,16 @@ export default function AgentDetail() {
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium text-muted-foreground">Goals</h4>
                   <ul className="space-y-2">
-                    {currentAgent.goals.map((goal, index) => (
+                    {currentAgent.goals.length > 0 ? currentAgent.goals.map((goal, index) => (
                       <li key={index} className="text-sm flex items-start gap-3 p-2 rounded-lg bg-muted/30">
                         <span className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                         <span className="leading-relaxed">{goal}</span>
                       </li>
-                    ))}
+                    )) : (
+                      <li className="text-sm text-muted-foreground p-2 rounded-lg bg-muted/30">
+                        No explicit goals set yet.
+                      </li>
+                    )}
                   </ul>
                 </div>
 
@@ -431,7 +767,6 @@ export default function AgentDetail() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center p-0">
-                <NeuralViz2D agent={currentAgent as unknown as AgentRecord} className="w-32 h-32" />
                 <div className="mt-3 text-center">
                   <div className="text-lg font-medium capitalize">
                     {agentEmotionalState.dominantEmotion}
@@ -462,6 +797,14 @@ export default function AgentDetail() {
                     <div className="text-3xl font-bold text-cyan-400 mb-1">{agentStats.conversationCount}</div>
                     <div className="text-sm text-muted-foreground">Sessions</div>
                   </div>
+                  <div className="text-center p-4 rounded-xl bg-emerald-500/10">
+                    <div className="text-3xl font-bold text-emerald-400 mb-1">{currentAgent.relationshipCount || 0}</div>
+                    <div className="text-sm text-muted-foreground">Relationships</div>
+                  </div>
+                  <div className="text-center p-4 rounded-xl bg-amber-500/10">
+                    <div className="text-3xl font-bold text-amber-400 mb-1">{currentAgent.memoryCount || 0}</div>
+                    <div className="text-sm text-muted-foreground">Memories</div>
+                  </div>
                 </div>
               </CardContent>
             </div>
@@ -471,123 +814,132 @@ export default function AgentDetail() {
           <div className="lg:col-span-2">
             {activeTab === 'chat' ? (
               /* Chat Interface */
-              <>
-            <Card className="h-[650px] flex flex-col backdrop-blur-sm bg-card/80 border-0 shadow-2xl">
-              <CardHeader className="border-b border-border/50 space-y-4">
-                <CardTitle className="flex items-center gap-3 text-2xl">
-                  <div className="p-2 rounded-xl bg-primary/10">
-                    <Bot className="h-6 w-6 text-primary" />
-                  </div>
-                  Chat with {currentAgent.name}
-                </CardTitle>
-                <CardDescription className="text-base leading-relaxed">
-                  Start a conversation with your AI agent
-                </CardDescription>
-              </CardHeader>
+              <div className="space-y-4">
+                <Card className="h-[650px] flex flex-col backdrop-blur-sm bg-card/80 border-0 shadow-2xl">
+                  <CardHeader className="border-b border-border/50 space-y-4">
+                    <CardTitle className="flex items-center gap-3 text-2xl">
+                      <div className="p-2 rounded-xl bg-primary/10">
+                        <Bot className="h-6 w-6 text-primary" />
+                      </div>
+                      Chat with {currentAgent.name}
+                    </CardTitle>
+                    <CardDescription className="text-base leading-relaxed">
+                      Start a conversation with your AI agent
+                    </CardDescription>
+                  </CardHeader>
 
-              {/* Messages */}
-              <CardContent className="flex-1 overflow-y-auto p-6 space-y-6">
-                {messages.length === 0 && !messagesLoading ? (
-                  <div className="flex items-center justify-center h-full text-center">
-                    <div className="space-y-4">
-                      <div className="p-4 rounded-full bg-primary/10 mx-auto w-fit">
-                        <MessageCircle className="h-16 w-16 text-primary" />
-                      </div>
-                      <div className="space-y-2">
-                        <h3 className="text-xl font-semibold text-foreground">Start a conversation</h3>
-                        <p className="text-muted-foreground max-w-md">
-                          Send a message to begin chatting with {currentAgent.name}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    {messages.map((message, index) => (
-                      <div
-                        key={message.id}
-                        className={`flex gap-4 ${
-                          message.type === 'user' ? 'justify-end' : 'justify-start'
-                        }`}
-                        style={{
-                          animationDelay: `${index * 100}ms`,
-                          animation: 'fadeIn 0.4s ease-out forwards'
-                        }}
-                      >
-                        {message.type === 'agent' && (
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <Bot className="h-5 w-5 text-primary-foreground" />
+                  {/* Messages */}
+                  <CardContent className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {messages.length === 0 && !messagesLoading ? (
+                      <div className="flex items-center justify-center h-full text-center">
+                        <div className="space-y-4">
+                          <div className="p-4 rounded-full bg-primary/10 mx-auto w-fit">
+                            <MessageCircle className="h-16 w-16 text-primary" />
                           </div>
-                        )}
+                          <div className="space-y-2">
+                            <h3 className="text-xl font-semibold text-foreground">Start a conversation</h3>
+                            <p className="text-muted-foreground max-w-md">
+                              Send a message to begin chatting with {currentAgent.name}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {messages.map((message, index) => (
+                          <div
+                            key={message.id}
+                            className={`flex gap-4 ${
+                              message.type === 'user' ? 'justify-end' : 'justify-start'
+                            }`}
+                            style={{
+                              animationDelay: `${index * 100}ms`,
+                              animation: 'fadeIn 0.4s ease-out forwards'
+                            }}
+                          >
+                            {message.type === 'agent' && (
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center flex-shrink-0 shadow-lg">
+                                <Bot className="h-5 w-5 text-primary-foreground" />
+                              </div>
+                            )}
 
-                        <div
-                          className={`max-w-[75%] rounded-2xl px-5 py-3 shadow-sm ${
-                            message.type === 'user'
-                              ? 'bg-gradient-to-br from-primary to-primary/90 text-primary-foreground rounded-br-md'
-                              : 'bg-gradient-to-br from-muted to-muted/80 text-card-foreground rounded-bl-md'
-                          }`}
-                        >
-                          <p className="text-sm leading-relaxed">{message.content}</p>
-                          <div className={`text-xs mt-2 flex items-center gap-2 ${
-                            message.type === 'user'
-                              ? 'text-primary-foreground/70'
-                              : 'text-muted-foreground'
-                          }`}>
-                            {new Date(message.timestamp).toLocaleTimeString()}
-                            {message.metadata?.langchain === true && (
-                              <div className="group relative">
-                                <div className="flex items-center gap-1 text-xs bg-accent/20 px-2 py-1 rounded-full">
-                                  <span className="text-accent">🧩</span>
-                                  <span>LangChain</span>
-                                </div>
-                                {(() => {
-                                  const toolsUsed = message.metadata?.toolsUsed as string[] | undefined;
-                                  return toolsUsed && toolsUsed.length > 0 && (
-                                    <div className="absolute bottom-full left-0 mb-1 px-2 py-1 bg-popover text-popover-foreground text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                                      Tools: {toolsUsed.join(', ')}
+                            <div
+                              className={`max-w-[75%] rounded-2xl px-5 py-3 shadow-sm ${
+                                message.type === 'user'
+                                  ? 'bg-gradient-to-br from-primary to-primary/90 text-primary-foreground rounded-br-md'
+                                  : 'bg-gradient-to-br from-muted to-muted/80 text-card-foreground rounded-bl-md'
+                              }`}
+                            >
+                              <p className="text-sm leading-relaxed">{message.content}</p>
+                              <div className={`text-xs mt-2 flex items-center gap-2 ${
+                                message.type === 'user'
+                                  ? 'text-primary-foreground/70'
+                                  : 'text-muted-foreground'
+                              }`}>
+                                {new Date(message.timestamp).toLocaleTimeString()}
+                                {message.metadata?.langchain === true && (
+                                  <div className="group relative">
+                                    <div className="flex items-center gap-1 text-xs bg-accent/20 px-2 py-1 rounded-full">
+                                      <span className="text-accent">🧩</span>
+                                      <span>LangChain</span>
                                     </div>
-                                  );
-                                })()}
+                                    {(() => {
+                                      const toolsUsed = message.metadata?.toolsUsed as string[] | undefined
+                                      return toolsUsed && toolsUsed.length > 0 && (
+                                        <div className="absolute bottom-full left-0 mb-1 px-2 py-1 bg-popover text-popover-foreground text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                                          Tools: {toolsUsed.join(', ')}
+                                        </div>
+                                      )
+                                    })()}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {message.type === 'user' && (
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-secondary to-secondary/80 flex items-center justify-center flex-shrink-0 shadow-lg">
+                                <User className="h-5 w-5 text-secondary-foreground" />
                               </div>
                             )}
                           </div>
-                        </div>
+                        ))}
 
-                        {message.type === 'user' && (
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-secondary to-secondary/80 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <User className="h-5 w-5 text-secondary-foreground" />
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                        <div ref={messagesEndRef} />
+                      </>
+                    )}
+                  </CardContent>
 
-                    <div ref={messagesEndRef} />
-                  </>
-                )}
-              </CardContent>
+                  {/* Message Input */}
+                  <div className="border-t border-border/50 p-6 bg-card/50">
+                    <form onSubmit={handleSendMessage} className="flex gap-4">
+                      <Input
+                        placeholder={`Message ${currentAgent.name}...`}
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        className="flex-1 h-12 px-4 text-base border-2 focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all duration-200"
+                        disabled={messagesLoading}
+                      />
+                      <Button
+                        type="submit"
+                        disabled={!newMessage.trim() || messagesLoading}
+                        className="gap-2 px-6 py-3 text-base font-medium rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                      >
+                        <Send className="h-5 w-5" />
+                        Send
+                      </Button>
+                    </form>
+                  </div>
+                </Card>
 
-              {/* Message Input */}
-              <div className="border-t border-border/50 p-6 bg-card/50">
-                <form onSubmit={handleSendMessage} className="flex gap-4">
-                  <Input
-                    placeholder={`Message ${currentAgent.name}...`}
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    className="flex-1 h-12 px-4 text-base border-2 focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all duration-200"
-                    disabled={messagesLoading}
-                  />
-                  <Button
-                    type="submit"
-                    disabled={!newMessage.trim() || messagesLoading}
-                    className="gap-2 px-6 py-3 text-base font-medium rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
-                  >
-                    <Send className="h-5 w-5" />
-                    Send
-                  </Button>
-                </form>
+                <VoiceConsole
+                  agentName={currentAgent.name}
+                  messages={messages}
+                  value={newMessage}
+                  onChange={setNewMessage}
+                  linguisticProfile={currentAgent.linguisticProfile}
+                  emotionalState={currentAgent.emotionalState}
+                />
               </div>
-            </Card>
-            </>
             ) : activeTab === 'memory' ? (
               /* Memory & Growth Interface */
               <div className="space-y-6">
@@ -704,7 +1056,7 @@ export default function AgentDetail() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => useAgentStore.getState().deleteMemory(memory.id)}
+                                    onClick={() => handleDeleteMemory(memory.id)}
                                     className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
                                   >
                                     <Trash2 className="h-3 w-3" />
@@ -811,6 +1163,23 @@ export default function AgentDetail() {
                   </CardContent>
                 </Card>
               </div>
+            ) : activeTab === 'neural' ? (
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-violet-500/10">
+                      <Brain className="h-6 w-6 text-violet-500" />
+                    </div>
+                    Neural Activity
+                  </CardTitle>
+                  <CardDescription>
+                    Visualize current attention, memory activation, and emotional flow for {currentAgent.name}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <NeuralActivityView agentId={currentAgent.id} />
+                </CardContent>
+              </Card>
             ) : activeTab === 'achievements' ? (
               /* Achievements Tab */
               <div className="space-y-6">
@@ -906,72 +1275,190 @@ export default function AgentDetail() {
                   <TimelineExplorer events={timelineEvents} />
                 </CardContent>
               </Card>
-            ) : activeTab === 'neural' ? (
-              /* Neural Visualization Tab */
+            ) : activeTab === 'relationships' ? (
               <div className="space-y-6">
                 <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                   <CardHeader className="space-y-4">
                     <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-xl bg-indigo-500/10">
-                        <Sparkles className="h-6 w-6 text-indigo-500" />
+                      <div className="p-2 rounded-xl bg-emerald-500/10">
+                        <Users className="h-6 w-6 text-emerald-500" />
                       </div>
-                      Neural Visualization
+                      Relationship Network
                     </CardTitle>
                     <CardDescription>
-                      A 3D visualization of {currentAgent.name}&apos;s mind, memories, and emotional state
+                      Social dynamics, trust, and long-term bonds for {currentAgent.name}
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="p-0">
-                    <NeuralViz agent={currentAgent as unknown as AgentRecord} height={500} />
+                  <CardContent className="space-y-6">
+                    {loadingRelationships ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                      </div>
+                    ) : relationships.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-border/60 p-8 text-center text-muted-foreground">
+                        No persistent relationships yet. Run simulations, challenges, or mentorship sessions to build this network.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid gap-4 md:grid-cols-3">
+                          <div className="rounded-2xl bg-emerald-500/10 p-4">
+                            <div className="text-sm text-muted-foreground">Connections</div>
+                            <div className="mt-2 text-3xl font-bold text-emerald-400">
+                              {relationshipStats?.totalRelationships || relationships.length}
+                            </div>
+                          </div>
+                          <div className="rounded-2xl bg-violet-500/10 p-4">
+                            <div className="text-sm text-muted-foreground">Strong Bonds</div>
+                            <div className="mt-2 text-3xl font-bold text-violet-400">
+                              {relationshipStats?.strongBonds || 0}
+                            </div>
+                          </div>
+                          <div className="rounded-2xl bg-cyan-500/10 p-4">
+                            <div className="text-sm text-muted-foreground">Average Trust</div>
+                            <div className="mt-2 text-3xl font-bold text-cyan-400">
+                              {Math.round((relationshipStats?.averageTrust || 0) * 100)}%
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="overflow-x-auto rounded-2xl border border-border/50 bg-background/45 p-4">
+                          <RelationshipGraph
+                            relationships={relationships}
+                            agents={relationshipAgents.length > 0 ? relationshipAgents : [{ id: currentAgent.id, name: currentAgent.name }]}
+                            currentAgentId={currentAgent.id}
+                          />
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {relationships.map((relationship) => {
+                            const otherAgentId = relationship.agentId1 === currentAgent.id
+                              ? relationship.agentId2
+                              : relationship.agentId1
+                            const otherAgentName = relationshipAgents.find(agent => agent.id === otherAgentId)?.name
+                              || agents.find(agent => agent.id === otherAgentId)?.name
+                              || 'Unknown agent'
+
+                            return (
+                              <RelationshipCard
+                                key={relationship.id}
+                                relationship={relationship}
+                                otherAgentName={otherAgentName}
+                              />
+                            )
+                          })}
+                        </div>
+                      </>
+                    )}
                   </CardContent>
                 </Card>
 
-                <div className="grid md:grid-cols-2 gap-6">
-                  <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                    <CardHeader>
-                      <CardTitle className="text-lg">Memory Network</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        <div className="flex justify-between">
-                          <span className="text-sm text-muted-foreground">Total Memories</span>
-                          <span className="font-medium">{currentAgent.memoryCount || 0}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm text-muted-foreground">Active Memories</span>
-                          <span className="font-medium">{Math.floor((currentAgent.memoryCount || 0) * 0.3)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm text-muted-foreground">Connections</span>
-                          <span className="font-medium">{Math.floor((currentAgent.memoryCount || 0) * 0.5)}</span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                    <CardHeader>
-                      <CardTitle className="text-lg">Cognitive State</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        <div className="flex justify-between">
-                          <span className="text-sm text-muted-foreground">Dominant Emotion</span>
-                          <span className="font-medium capitalize">{agentEmotionalState.dominantEmotion}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm text-muted-foreground">Personality Level</span>
-                          <span className="font-medium">Level {agentProgress.level}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm text-muted-foreground">Total Interactions</span>
-                          <span className="font-medium">{currentAgent.totalInteractions || 0}</span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
+                <ConflictResolutionPanel
+                  currentAgent={currentAgent as AgentRecord}
+                  agents={agents as unknown as AgentRecord[]}
+                />
               </div>
+            ) : activeTab === 'learning' ? (
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-cyan-500/10">
+                      <TrendingUp className="h-6 w-6 text-cyan-500" />
+                    </div>
+                    Meta-Learning Dashboard
+                  </CardTitle>
+                  <CardDescription>
+                    How {currentAgent.name} adapts, discovers patterns, and sets new learning goals
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loadingLearning ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    </div>
+                  ) : learningState ? (
+                    <MetaLearningDashboard state={learningState} skills={learningSkills} />
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-border/60 p-8 text-center text-muted-foreground">
+                      Learning patterns will appear after enough conversation history is available.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ) : activeTab === 'planning' ? (
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-amber-500/10">
+                      <Calendar className="h-6 w-6 text-amber-500" />
+                    </div>
+                    Future Planning
+                  </CardTitle>
+                  <CardDescription>
+                    Predicted trajectories, milestones, and next actions for {currentAgent.name}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {futurePlan ? (
+                    <FuturePlanningView plan={futurePlan} />
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-border/60 p-8 text-center text-muted-foreground">
+                      Planning insights need a little history first. Conversations, timeline events, and learning goals feed this forecast.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ) : activeTab === 'scenarios' ? (
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-violet-500/10">
+                      <Sparkles className="h-6 w-6 text-violet-500" />
+                    </div>
+                    Parallel Realities
+                  </CardTitle>
+                  <CardDescription>
+                    Explore what-if branches using emotional, social, and progress data from the live agent
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="flex flex-wrap gap-2">
+                    {scenarioTemplates.map((scenario) => (
+                      <button
+                        key={scenario.id}
+                        onClick={() => {
+                          setSelectedScenarioId(scenario.id)
+                          setParallelReality(
+                            parallelRealityService.createParallelReality(
+                              currentAgent as AgentRecord,
+                              scenario,
+                              relationships
+                            )
+                          )
+                        }}
+                        className={`rounded-full px-4 py-2 text-sm transition-colors ${
+                          selectedScenarioId === scenario.id
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {scenario.title}
+                      </button>
+                    ))}
+                  </div>
+
+                  {parallelReality ? (
+                    <ParallelRealityExplorer
+                      reality={parallelReality}
+                      onExplore={() => void loadParallelReality()}
+                      onReset={() => setParallelReality(null)}
+                    />
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-border/60 p-8 text-center text-muted-foreground">
+                      Choose a scenario template to compare the current trajectory against an alternate path.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             ) : activeTab === 'creative' ? (
               /* Phase 2: Creative Portfolio Tab */
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
@@ -1027,23 +1514,46 @@ export default function AgentDetail() {
                 </CardContent>
               </Card>
             ) : activeTab === 'profile' ? (
-              /* Phase 2: Psychological Profile Tab */
-              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                <CardHeader className="space-y-4">
-                  <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-cyan-500/10">
-                      <Target className="h-6 w-6 text-cyan-500" />
-                    </div>
-                    Psychological Profile
-                  </CardTitle>
-                  <CardDescription>
-                    {currentAgent.name}&apos;s personality assessments (Big Five, MBTI, Enneagram)
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ProfileViewer agentId={currentAgent.id} agentName={currentAgent.name} />
-                </CardContent>
-              </Card>
+              <div className="space-y-6">
+                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                  <CardHeader className="space-y-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 rounded-xl bg-cyan-500/10">
+                        <Target className="h-6 w-6 text-cyan-500" />
+                      </div>
+                      Psychological Profile
+                    </CardTitle>
+                    <CardDescription>
+                      {currentAgent.name}&apos;s personality assessments (Big Five, MBTI, Enneagram)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ProfileViewer agentId={currentAgent.id} agentName={currentAgent.name} />
+                  </CardContent>
+                </Card>
+
+                {currentAgent.linguisticProfile && (
+                  <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                    <CardHeader className="space-y-4">
+                      <CardTitle className="flex items-center gap-3 text-xl">
+                        <div className="p-2 rounded-xl bg-violet-500/10">
+                          <Languages className="h-6 w-6 text-violet-500" />
+                        </div>
+                        Linguistic Personality
+                      </CardTitle>
+                      <CardDescription>
+                        Communication style, vocabulary bias, and expressive tendencies generated from the persona definition
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <LinguisticProfileCard
+                        profile={currentAgent.linguisticProfile}
+                        agentName={currentAgent.name}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
             ) : activeTab === 'challenges' ? (
               /* Phase 2: Challenges Tab */
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
@@ -1099,6 +1609,26 @@ export default function AgentDetail() {
                     agentId={currentAgent.id}
                     agentName={currentAgent.name}
                     showContribute={true}
+                  />
+                </CardContent>
+              </Card>
+            ) : activeTab === 'collective' ? (
+              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
+                <CardHeader className="space-y-4">
+                  <CardTitle className="flex items-center gap-3 text-xl">
+                    <div className="p-2 rounded-xl bg-cyan-500/10">
+                      <Users className="h-6 w-6 text-cyan-500" />
+                    </div>
+                    Collective Intelligence
+                  </CardTitle>
+                  <CardDescription>
+                    Discover who knows what, validate shared knowledge, and broadcast new findings across the agent network
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <CollectiveIntelligencePanel
+                    agentId={currentAgent.id}
+                    agentName={currentAgent.name}
                   />
                 </CardContent>
               </Card>

@@ -1,40 +1,13 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import {
-  CreateAgentData,
+  AgentRecord,
   MemoryRecord,
+  CreateAgentData,
   CreateMemoryData,
-  AgentProgress,
-  AgentStats,
-  EmotionalState,
-  EmotionalEvent,
-  LinguisticProfile
 } from '@/types/database'
 
-export interface Agent {
-  id: string
-  name: string
-  persona: string
-  goals: string[]
-  createdAt: string
-  updatedAt?: string
-  status: 'active' | 'inactive' | 'training'
-  coreTraits?: Record<string, number> // Immutable personality traits
-  dynamicTraits?: Record<string, number> // Learned personality traits
-  memoryCount?: number // Number of memories stored
-  totalInteractions?: number // Total interactions for personality evolution
-
-  // Phase 1: Linguistic Personality System
-  linguisticProfile?: LinguisticProfile
-
-  // Phase 1: Achievement & Progress System
-  progress?: AgentProgress
-  stats?: AgentStats
-
-  // Phase 1: Emotional State System
-  emotionalState?: EmotionalState
-  emotionalHistory?: EmotionalEvent[]
-}
+export type Agent = AgentRecord
 
 interface AgentState {
   agents: Agent[]
@@ -51,14 +24,15 @@ interface AgentState {
 
   // Firestore-backed functions
   fetchAgents: () => Promise<void>
-  createAgent: (agentData: CreateAgentData) => Promise<void>
+  fetchAgentById: (id: string) => Promise<Agent | null>
+  createAgent: (agentData: CreateAgentData) => Promise<Agent | null>
   updateAgentStatus: (id: string, status: Agent['status']) => Promise<void>
   deleteAgentAsync: (id: string) => Promise<void>
 
   // Memory and personality functions
   fetchAgentMemories: (agentId: string) => Promise<MemoryRecord[]>
   addMemory: (agentId: string, memoryData: CreateMemoryData) => Promise<void>
-  deleteMemory: (memoryId: string) => Promise<void>
+  deleteMemory: (memoryId: string) => Promise<boolean>
   getMemoryStats: (agentId: string) => Promise<{
     totalMemories: number
     memoriesByType: Record<string, number>
@@ -115,6 +89,34 @@ export const useAgentStore = create<AgentState>()(
         }
       },
 
+      fetchAgentById: async (id) => {
+        set({ loading: true })
+        try {
+          const response = await fetch(`/api/agents?id=${encodeURIComponent(id)}`)
+          if (!response.ok) {
+            return null
+          }
+
+          const data = await response.json()
+          if (data?.data) {
+            const agent = data.data as Agent
+            const existing = get().agents.find((current) => current.id === agent.id)
+            if (existing) {
+              get().updateAgent(agent.id, agent)
+            } else {
+              get().addAgent(agent)
+            }
+            return agent
+          }
+          return null
+        } catch (error) {
+          console.error('Failed to fetch agent:', error)
+          return null
+        } finally {
+          set({ loading: false })
+        }
+      },
+
       createAgent: async (agentData) => {
         set({ loading: true })
         try {
@@ -127,10 +129,13 @@ export const useAgentStore = create<AgentState>()(
             const data = await response.json()
             if (data?.data) {
               get().addAgent(data.data)
+              return data.data as Agent
             }
           }
+          return null
         } catch (error) {
           console.error('Failed to create agent:', error)
+          return null
         } finally {
           set({ loading: false })
         }

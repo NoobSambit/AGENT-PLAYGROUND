@@ -19,6 +19,7 @@ import {
   limit,
 } from 'firebase/firestore'
 import { challengeService } from '@/lib/services/challengeService'
+import { agentProgressService } from '@/lib/services/agentProgressService'
 import { Challenge, ChallengeStatus, AgentRecord } from '@/types/database'
 import { getGeminiModel, getGroqModel } from '@/lib/llmConfig'
 import { stripUndefinedFields } from '@/lib/firestoreUtils'
@@ -109,7 +110,8 @@ export async function POST(request: NextRequest) {
 
         // Save to Firestore
         const challengesRef = collection(db, 'challenges')
-        const { id: _id, ...challengeData } = challenge
+        const { id, ...challengeData } = challenge
+        void id
         const docRef = await addDoc(challengesRef, challengeData)
 
         return NextResponse.json({
@@ -227,6 +229,22 @@ export async function POST(request: NextRequest) {
         achievementsUnlocked: updatedChallenge.achievementsUnlocked,
       })
       await updateDoc(challengeRef, updateData)
+
+      if ((updatedChallenge.status === 'completed' || updatedChallenge.status === 'failed') && updatedChallenge.completedAt) {
+        for (const participantId of updatedChallenge.participants) {
+          const xpAwarded = updatedChallenge.xpAwarded[participantId] || 0
+          const participantScore = updatedChallenge.evaluation?.participantScores?.[participantId] || 0
+          const challengeAchievementIds = participantScore > 0
+            ? updatedChallenge.achievementsUnlocked
+            : []
+          await agentProgressService.applyChallengeOutcome(
+            participantId,
+            xpAwarded,
+            challengeAchievementIds,
+            updatedChallenge.status === 'completed'
+          )
+        }
+      }
 
       return NextResponse.json({
         success: true,
