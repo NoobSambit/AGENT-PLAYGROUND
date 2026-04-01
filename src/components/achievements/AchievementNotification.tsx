@@ -11,10 +11,10 @@ interface AchievementNotificationProps {
 }
 
 const RARITY_GRADIENTS: Record<AchievementRarity, string> = {
-  common: 'from-gray-400 to-gray-600',
-  rare: 'from-blue-400 to-blue-600',
-  epic: 'from-purple-400 to-purple-600',
-  legendary: 'from-amber-400 via-yellow-500 to-amber-600'
+  common: '',
+  rare: '',
+  epic: '',
+  legendary: ''
 }
 
 const RARITY_GLOWS: Record<AchievementRarity, string> = {
@@ -63,22 +63,22 @@ export function AchievementNotification({
         >
           <div
             className={`
-              relative overflow-hidden rounded-2xl p-1
-              bg-gradient-to-r ${gradient}
+              relative overflow-hidden rounded-sm p-1
+              bg-gradient-${gradient}
               shadow-xl ${glow}
             `}
           >
             {/* Shimmer effect for legendary */}
             {achievement.rarity === 'legendary' && (
               <motion.div
-                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent"
+                className="absolute inset-0 bg-primary "
                 animate={{ x: ['-100%', '100%'] }}
                 transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
               />
             )}
 
             {/* Content */}
-            <div className="relative bg-gray-900 rounded-xl p-4 flex items-center gap-4">
+            <div className="relative bg-gray-900 rounded-sm p-4 flex items-center gap-4">
               {/* Animated icon */}
               <motion.div
                 initial={{ scale: 0, rotate: -180 }}
@@ -86,7 +86,7 @@ export function AchievementNotification({
                 transition={{ delay: 0.2, type: 'spring', damping: 10 }}
                 className={`
                   w-16 h-16 rounded-full flex items-center justify-center text-4xl
-                  bg-gradient-to-br ${gradient}
+                  bg-gradient-${gradient}
                 `}
               >
                 {achievement.icon}
@@ -124,7 +124,7 @@ export function AchievementNotification({
                   transition={{ delay: 0.6 }}
                   className="flex items-center gap-3 mt-2"
                 >
-                  <span className={`px-2 py-0.5 rounded-full text-xs capitalize bg-gradient-to-r ${gradient}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-xs capitalize bg-gradient-${gradient}`}>
                     {achievement.rarity}
                   </span>
                   <span className="text-xs text-green-400">
@@ -193,7 +193,7 @@ export function LevelUpNotification({
           <motion.div
             initial={{ y: 50 }}
             animate={{ y: 0 }}
-            className="relative p-8 rounded-3xl bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 shadow-2xl"
+            className="relative p-8 rounded-sm bg-primary shadow-2xl"
             onClick={e => e.stopPropagation()}
           >
             {/* Particle effects */}

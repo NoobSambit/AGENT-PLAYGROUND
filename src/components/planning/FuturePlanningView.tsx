@@ -45,7 +45,7 @@ function GoalTrajectoryCard({ trajectory }: { trajectory: GoalTrajectory }) {
 
   return (
     <motion.div
-      className="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden"
+      className="bg-gray-800/50 rounded-sm border border-gray-700/50 overflow-hidden"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
     >
@@ -55,7 +55,7 @@ function GoalTrajectoryCard({ trajectory }: { trajectory: GoalTrajectory }) {
       >
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${config.bgColor}`}>
+            <div className={`p-2 rounded-sm ${config.bgColor}`}>
               <StatusIcon className={`w-4 h-4 ${config.color}`} />
             </div>
             <div>
@@ -123,7 +123,7 @@ function GoalTrajectoryCard({ trajectory }: { trajectory: GoalTrajectory }) {
                   <h5 className="text-xs font-medium text-gray-400 mb-2">Risk Factors</h5>
                   <div className="space-y-2">
                     {trajectory.riskFactors.map((risk, i) => (
-                      <div key={i} className={`p-2 rounded-lg ${
+                      <div key={i} className={`p-2 rounded-sm ${
                         risk.severity === 'high' ? 'bg-red-500/10 border border-red-500/20' :
                         risk.severity === 'medium' ? 'bg-amber-500/10 border border-amber-500/20' :
                         'bg-gray-800/50 border border-gray-700/50'
@@ -194,7 +194,7 @@ function PredictionCard({ prediction }: { prediction: FuturePrediction }) {
 
   return (
     <motion.div
-      className="bg-gradient-to-br from-purple-500/10 to-cyan-500/10 rounded-xl p-4 border border-purple-500/20"
+      className="bg-primary rounded-sm p-4 border border-purple-500/20"
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
     >
@@ -232,7 +232,7 @@ function PredictionCard({ prediction }: { prediction: FuturePrediction }) {
 // Activity card
 function ActivityCard({ activity }: { activity: ScheduledActivity }) {
   const typeColors: Record<string, string> = {
-    learning: 'bg-blue-500/20 text-blue-400',
+    learning: 'bg-[var(--color-pastel-blue)]/20 text-[var(--color-pastel-blue)]',
     creative: 'bg-purple-500/20 text-purple-400',
     social: 'bg-pink-500/20 text-pink-400',
     reflection: 'bg-amber-500/20 text-amber-400',
@@ -240,7 +240,7 @@ function ActivityCard({ activity }: { activity: ScheduledActivity }) {
   }
 
   return (
-    <div className="flex items-center gap-3 p-3 bg-gray-800/30 rounded-lg border border-gray-700/50">
+    <div className="flex items-center gap-3 p-3 bg-gray-800/30 rounded-sm border border-gray-700/50">
       <div className={`px-2 py-1 rounded text-xs ${typeColors[activity.type] || 'bg-gray-500/20 text-gray-400'}`}>
         {activity.type}
       </div>
@@ -275,8 +275,8 @@ function InsightCard({ insight }: { insight: FuturePlan['insights'][0] }) {
   const colors = colorMap[insight.type] || 'text-gray-400 bg-gray-500/20'
 
   return (
-    <div className="flex items-start gap-3 p-3 bg-gray-800/30 rounded-lg">
-      <div className={`p-2 rounded-lg ${colors.split(' ')[1]}`}>
+    <div className="flex items-start gap-3 p-3 bg-gray-800/30 rounded-sm">
+      <div className={`p-2 rounded-sm ${colors.split(' ')[1]}`}>
         <Icon className={`w-4 h-4 ${colors.split(' ')[0]}`} />
       </div>
       <div className="flex-1 min-w-0">
@@ -304,12 +304,12 @@ export function FuturePlanningView({ plan, className = '' }: FuturePlanningViewP
   }
 
   return (
-    <div className={`bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl border border-gray-800 overflow-hidden ${className}`}>
+    <div className={`bg-primary rounded-sm border border-gray-800 overflow-hidden ${className}`}>
       {/* Header */}
       <div className="p-5 border-b border-gray-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-gradient-to-br from-cyan-500/20 to-purple-500/20 rounded-xl">
+            <div className="p-2.5 bg-primary rounded-sm">
               <Calendar className="w-6 h-6 text-cyan-400" />
             </div>
             <div>
@@ -329,7 +329,7 @@ export function FuturePlanningView({ plan, className = '' }: FuturePlanningViewP
         </div>
 
         {/* Tab navigation */}
-        <div className="flex gap-1 mt-4 bg-gray-800/50 rounded-lg p-1">
+        <div className="flex gap-1 mt-4 bg-gray-800/50 rounded-sm p-1">
           {(['overview', 'goals', 'predictions', 'schedule'] as const).map((tab) => (
             <button
               key={tab}
@@ -359,11 +359,11 @@ export function FuturePlanningView({ plan, className = '' }: FuturePlanningViewP
             >
               {/* Summary cards */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-green-500/10 rounded-xl p-4 border border-green-500/20">
+                <div className="bg-green-500/10 rounded-sm p-4 border border-green-500/20">
                   <div className="text-xs text-green-400 mb-1">Biggest Opportunity</div>
                   <div className="text-sm text-white">{plan.summary.biggestOpportunity}</div>
                 </div>
-                <div className="bg-red-500/10 rounded-xl p-4 border border-red-500/20">
+                <div className="bg-red-500/10 rounded-sm p-4 border border-red-500/20">
                   <div className="text-xs text-red-400 mb-1">Biggest Risk</div>
                   <div className="text-sm text-white">{plan.summary.biggestRisk}</div>
                 </div>
@@ -406,7 +406,7 @@ export function FuturePlanningView({ plan, className = '' }: FuturePlanningViewP
                     {plan.suggestedGoals.map((goal, i) => (
                       <div
                         key={i}
-                        className="p-3 bg-gray-800/30 rounded-lg border border-gray-700/50"
+                        className="p-3 bg-gray-800/30 rounded-sm border border-gray-700/50"
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-sm text-white">{goal.title}</span>

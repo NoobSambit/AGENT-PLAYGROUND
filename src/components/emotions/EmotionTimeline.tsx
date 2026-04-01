@@ -98,7 +98,7 @@ function EmotionEventCard({ event }: { event: EmotionalEvent }) {
       />
 
       {/* Event card */}
-      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 shadow-sm border border-gray-100 dark:border-gray-700">
+      <div className="bg-gray-50 dark:bg-gray-800 rounded-sm p-3 shadow-sm border border-gray-100 dark:border-gray-700">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <span

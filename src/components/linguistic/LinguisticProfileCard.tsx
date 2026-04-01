@@ -101,7 +101,7 @@ function DimensionSlider({
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <div
-            className="p-1.5 rounded-lg"
+            className="p-1.5 rounded-sm"
             style={{ backgroundColor: `${dimension.color}20` }}
           >
             <Icon className="w-4 h-4" style={{ color: dimension.color }} />
@@ -231,21 +231,21 @@ function PunctuationStyle({ style }: { style: LinguisticProfile['punctuationStyl
         <span className="text-sm font-medium text-white">Writing Style</span>
       </div>
       <div className="grid grid-cols-3 gap-3">
-        <div className="bg-gray-800/50 rounded-lg p-3 text-center">
+        <div className="bg-gray-800/50 rounded-sm p-3 text-center">
           <div className="text-2xl mb-1">!</div>
           <div className="text-xs text-gray-400">Exclamations</div>
           <div className="text-sm font-medium text-white mt-1">
             {style.exclamationFrequency > 0.6 ? 'Frequent' : style.exclamationFrequency > 0.3 ? 'Moderate' : 'Rare'}
           </div>
         </div>
-        <div className="bg-gray-800/50 rounded-lg p-3 text-center">
+        <div className="bg-gray-800/50 rounded-sm p-3 text-center">
           <div className="text-2xl mb-1">...</div>
           <div className="text-xs text-gray-400">Ellipsis</div>
           <div className="text-sm font-medium text-white mt-1">
             {style.ellipsisUsage ? 'Uses' : 'Avoids'}
           </div>
         </div>
-        <div className="bg-gray-800/50 rounded-lg p-3 text-center">
+        <div className="bg-gray-800/50 rounded-sm p-3 text-center">
           <div className="text-2xl mb-1">😊</div>
           <div className="text-xs text-gray-400">Emoji</div>
           <div className="text-sm font-medium text-white mt-1">
@@ -336,7 +336,7 @@ export function LinguisticProfileCard({
 
   return (
     <motion.div
-      className={`bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl border border-gray-800 overflow-hidden ${className}`}
+      className={`bg-primary rounded-sm border border-gray-800 overflow-hidden ${className}`}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
     >
@@ -344,7 +344,7 @@ export function LinguisticProfileCard({
       <div className="p-5 border-b border-gray-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-gradient-to-br from-purple-500/20 to-cyan-500/20 rounded-xl">
+            <div className="p-2.5 bg-primary rounded-sm">
               <PenTool className="w-5 h-5 text-purple-400" />
             </div>
             <div>
@@ -354,7 +354,7 @@ export function LinguisticProfileCard({
           </div>
           <button
             onClick={() => setExpanded(!expanded)}
-            className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-800 rounded-sm transition-colors"
           >
             {expanded ? (
               <ChevronUp className="w-5 h-5 text-gray-400" />
@@ -393,7 +393,7 @@ export function LinguisticProfileCard({
           >
             <div className="px-5 pb-5">
               {/* Sample dialogue */}
-              <div className="bg-gray-800/30 rounded-xl p-4 mb-4">
+              <div className="bg-gray-800/30 rounded-sm p-4 mb-4">
                 <div className="flex items-center gap-2 mb-2">
                   <MessageSquare className="w-4 h-4 text-cyan-400" />
                   <span className="text-xs font-medium text-gray-400">Sample Response Style</span>
@@ -450,7 +450,7 @@ export function LinguisticProfileCard({
 // Compact version for sidebars
 export function LinguisticProfileMini({ profile, className = '' }: { profile: LinguisticProfile; className?: string }) {
   return (
-    <div className={`bg-gray-800/50 rounded-xl p-4 ${className}`}>
+    <div className={`bg-gray-800/50 rounded-sm p-4 ${className}`}>
       <div className="flex items-center gap-2 mb-3">
         <PenTool className="w-4 h-4 text-purple-400" />
         <span className="text-sm font-medium text-white">Speech Style</span>

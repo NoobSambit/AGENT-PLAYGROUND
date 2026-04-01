@@ -1,5 +1,6 @@
 import { tool } from '@langchain/core/tools'
 import { BaseChain } from './baseChain'
+import type { LLMConfig } from './baseChain'
 
 export class ToolExecutor {
   private agentId: string
@@ -11,7 +12,10 @@ export class ToolExecutor {
   }
 
   // SummarizerTool: Summarizes long text or conversations
-  async summarize(text: string, options?: { force?: boolean }): Promise<string | null> {
+  async summarize(
+    text: string,
+    options?: { force?: boolean; llmConfig?: LLMConfig }
+  ): Promise<string | null> {
     try {
       const force = options?.force === true
       if (text.length < 100 && !force) {
@@ -30,6 +34,7 @@ Focus on the key points and main ideas.`
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { role: 'user', content: prompt } as any
       ], {
+        ...(options?.llmConfig || {}),
         temperature: 0.3,
         maxTokens: 200
       })
@@ -42,7 +47,7 @@ Focus on the key points and main ideas.`
   }
 
   // KeywordExtractorTool: Extracts key topics for memory indexing
-  async extractKeywords(text: string): Promise<string[]> {
+  async extractKeywords(text: string, llmConfig?: LLMConfig): Promise<string[]> {
     try {
       const prompt = `Extract 5-8 key topics or keywords from the following text:
 
@@ -56,6 +61,7 @@ Return only the keywords as a comma-separated list. Focus on nouns, technical te
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { role: 'user', content: prompt } as any
       ], {
+        ...(llmConfig || {}),
         temperature: 0.2,
         maxTokens: 100
       })
@@ -75,7 +81,7 @@ Return only the keywords as a comma-separated list. Focus on nouns, technical te
 
   // PersonaAdjusterTool: Adjusts tone based on agent personality
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async adjustPersona(text: string, agent: any): Promise<string> {
+  async adjustPersona(text: string, agent: any, llmConfig?: LLMConfig): Promise<string> {
     try {
       // Get agent personality traits
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -103,6 +109,7 @@ Make the response more aligned with the agent's character while keeping the same
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { role: 'user', content: prompt } as any
       ], {
+        ...(llmConfig || {}),
         temperature: 0.4,
         maxTokens: Math.max(text.length, 200)
       })
@@ -115,7 +122,10 @@ Make the response more aligned with the agent's character while keeping the same
   }
 
   // Advanced Summarizer for long memories or conversations
-  async summarizeMemories(memories: Array<{ content: string; summary: string; importance: number }>): Promise<string> {
+  async summarizeMemories(
+    memories: Array<{ content: string; summary: string; importance: number }>,
+    llmConfig?: LLMConfig
+  ): Promise<string> {
     try {
       if (memories.length === 0) {
         return ''
@@ -142,6 +152,7 @@ Focus on recurring themes, user preferences, and important facts that would be m
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { role: 'user', content: prompt } as any
       ], {
+        ...(llmConfig || {}),
         temperature: 0.3,
         maxTokens: 300
       })
@@ -156,7 +167,8 @@ Focus on recurring themes, user preferences, and important facts that would be m
   // Context Analyzer: Analyzes conversation context for better responses
   async analyzeContext(
     currentInput: string,
-    conversationHistory: Array<{ role: 'user' | 'assistant', content: string }>
+    conversationHistory: Array<{ role: 'user' | 'assistant', content: string }>,
+    llmConfig?: LLMConfig
   ): Promise<{ context: string; urgency: 'low' | 'medium' | 'high' }> {
     try {
       const recentHistory = conversationHistory.slice(-5) // Last 5 messages
@@ -183,6 +195,7 @@ Urgency: [low/medium/high]`
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { role: 'user', content: prompt } as any
       ], {
+        ...(llmConfig || {}),
         temperature: 0.2,
         maxTokens: 100
       })
@@ -243,7 +256,8 @@ Urgency: [low/medium/high]`
   async executeToolChain(
     input: string,
     tools: string[],
-    agent?: { persona: string; coreTraits?: Record<string, number>; dynamicTraits?: Record<string, number> }
+    agent?: { persona: string; coreTraits?: Record<string, number>; dynamicTraits?: Record<string, number> },
+    llmConfig?: LLMConfig
   ): Promise<{ results: Record<string, unknown>; finalInput: string }> {
     const results: Record<string, unknown> = {}
     let processedInput = input
@@ -252,7 +266,7 @@ Urgency: [low/medium/high]`
       try {
         switch (toolName) {
           case 'summarizer':
-            const summary = await this.summarize(processedInput)
+            const summary = await this.summarize(processedInput, { llmConfig })
             if (summary) {
               results.summarizer = summary
               // Use summary for further processing if input was long
@@ -263,13 +277,13 @@ Urgency: [low/medium/high]`
             break
 
           case 'keyword_extractor':
-            const keywords = await this.extractKeywords(processedInput)
+            const keywords = await this.extractKeywords(processedInput, llmConfig)
             results.keyword_extractor = keywords
             break
 
           case 'persona_adjuster':
             if (agent) {
-              processedInput = await this.adjustPersona(processedInput, agent)
+              processedInput = await this.adjustPersona(processedInput, agent, llmConfig)
               results.persona_adjuster = 'applied'
             } else {
               results.persona_adjuster = 'skipped'
@@ -277,7 +291,7 @@ Urgency: [low/medium/high]`
             break
 
           case 'context_analyzer':
-            const context = await this.analyzeContext(processedInput, [])
+            const context = await this.analyzeContext(processedInput, [], llmConfig)
             results.context_analyzer = context
             break
         }

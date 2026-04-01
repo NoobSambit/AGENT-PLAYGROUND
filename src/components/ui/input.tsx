@@ -9,7 +9,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       <input
         type={type}
         className={cn(
-          "flex h-12 w-full rounded-xl",
+          "flex h-12 w-full rounded-sm",
           "bg-card/[0.72] backdrop-blur-xl",
           "border border-border/70",
           "px-4 py-3 text-sm text-foreground",
@@ -40,7 +40,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     return (
       <textarea
         className={cn(
-          "flex min-h-[120px] w-full rounded-xl",
+          "flex min-h-[120px] w-full rounded-sm",
           "bg-card/[0.72] backdrop-blur-xl",
           "border border-border/70",
           "px-4 py-3 text-sm text-foreground",

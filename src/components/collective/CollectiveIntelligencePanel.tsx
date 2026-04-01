@@ -11,7 +11,7 @@ interface CollectiveIntelligencePanelProps {
   agentName: string
 }
 
-const panelClass = 'rounded-[1.6rem] border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
+const panelClass = 'rounded-sm border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
 
 export function CollectiveIntelligencePanel({ agentId, agentName }: CollectiveIntelligencePanelProps) {
   const [snapshot, setSnapshot] = useState<CollectiveIntelligenceSnapshot | null>(null)
@@ -112,7 +112,7 @@ export function CollectiveIntelligencePanel({ agentId, agentName }: CollectiveIn
           <button
             type="button"
             onClick={() => void fetchSnapshot(query)}
-            className="inline-flex h-12 items-center justify-center rounded-full bg-gradient-to-r from-primary to-accent px-5 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)]"
+            className="inline-flex h-12 items-center justify-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)]"
           >
             Search network
           </button>
@@ -135,7 +135,7 @@ export function CollectiveIntelligencePanel({ agentId, agentName }: CollectiveIn
                 <p className="text-sm text-muted-foreground">Search for a topic to discover specialist agents and supporting knowledge.</p>
               ) : (
                 snapshot?.referrals.map((referral) => (
-                  <div key={referral.agentId} className="rounded-[1.3rem] border border-border/60 bg-background/45 p-4">
+                  <div key={referral.agentId} className="rounded-sm border border-border/60 bg-background/45 p-4">
                     <div className="flex items-center justify-between gap-4">
                       <div>
                         <div className="font-medium text-foreground">{referral.agentName}</div>
@@ -185,7 +185,7 @@ export function CollectiveIntelligencePanel({ agentId, agentName }: CollectiveIn
                 <p className="text-sm text-muted-foreground">Consensus appears once the network has enough overlapping validations.</p>
               ) : (
                 snapshot?.consensus.map((item) => (
-                  <div key={item.topic} className="rounded-[1.3rem] border border-border/60 bg-background/45 p-4">
+                  <div key={item.topic} className="rounded-sm border border-border/60 bg-background/45 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div className="font-medium text-foreground">{item.topic}</div>
                       <div className="text-sm font-semibold text-emerald-500">
@@ -222,7 +222,7 @@ export function CollectiveIntelligencePanel({ agentId, agentName }: CollectiveIn
               <button
                 type="button"
                 onClick={() => void publishBroadcast()}
-                className="inline-flex h-11 items-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-5 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)]"
+                className="inline-flex h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)]"
               >
                 <Send className="h-4 w-4" />
                 Publish broadcast
@@ -237,7 +237,7 @@ export function CollectiveIntelligencePanel({ agentId, agentName }: CollectiveIn
                 <p className="text-sm text-muted-foreground">No broadcasts yet.</p>
               ) : (
                 snapshot?.broadcasts.map((broadcast) => (
-                  <div key={broadcast.id} className="rounded-[1.3rem] border border-border/60 bg-background/45 p-4">
+                  <div key={broadcast.id} className="rounded-sm border border-border/60 bg-background/45 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div className="font-medium text-foreground">{broadcast.topic}</div>
                       <div className="text-xs text-muted-foreground">{new Date(broadcast.createdAt).toLocaleDateString()}</div>
@@ -276,7 +276,7 @@ function KnowledgeCard({
   onDispute: () => void
 }) {
   return (
-    <div className="rounded-[1.4rem] border border-border/60 bg-background/45 p-4">
+    <div className="rounded-sm border border-border/60 bg-background/45 p-4">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="font-medium text-foreground">{item.topic}</div>

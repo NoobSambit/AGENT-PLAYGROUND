@@ -22,7 +22,7 @@ export function ThemeToggle() {
       onClick={() => setTheme(isLight ? "dark" : "light")}
       className="relative inline-flex h-11 items-center gap-2 rounded-full border border-border/60 bg-card/[0.65] px-3 text-foreground shadow-[0_14px_40px_-28px_rgba(109,77,158,0.45)] backdrop-blur-xl transition-all hover:border-primary/25 hover:bg-card/[0.85]"
     >
-      <span className="relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-primary/20 to-accent/20">
+      <span className="relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-primary ">
         <Sun className="h-4 w-4 rotate-0 scale-100 text-amber-500 transition-all dark:-rotate-90 dark:scale-0" />
         <Moon className="absolute h-4 w-4 rotate-90 scale-0 text-primary transition-all dark:rotate-0 dark:scale-100" />
       </span>

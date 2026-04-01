@@ -9,6 +9,9 @@ import { SimulationService } from '@/lib/services/simulationService'
 import { SimulationRecord } from '@/types/database'
 import { ArrowRight, MessageCircle, Pause, Play, Plus, Trash2, Users, X } from 'lucide-react'
 import { Textarea } from '@/components/ui/input'
+import { LLMProviderToggle } from '@/components/llm/LLMProviderToggle'
+import { getClientModelForProvider, LLM_PROVIDER_LABELS } from '@/lib/llm/clientPreference'
+import { useLLMPreferenceStore } from '@/stores/llmPreferenceStore'
 
 interface SimulationAgent {
   id: string
@@ -47,12 +50,12 @@ interface SimulationViewMetadata {
 }
 
 const agentColors = [
-  'from-violet-500 to-purple-600',
-  'from-cyan-500 to-sky-600',
-  'from-pink-500 to-rose-600',
-  'from-amber-500 to-orange-600',
-  'from-emerald-500 to-green-600',
-  'from-indigo-500 to-blue-600'
+  'bg-violet-500',
+  'bg-cyan-500',
+  'bg-pink-500',
+  'bg-amber-500',
+  'bg-emerald-500',
+  'bg-[var(--color-pastel-purple)]/20'
 ]
 
 const agentTextColors = [
@@ -61,7 +64,7 @@ const agentTextColors = [
   'text-pink-500',
   'text-amber-500',
   'text-emerald-500',
-  'text-indigo-500'
+  'text-[var(--color-pastel-purple)]'
 ]
 
 const starterTopics = [
@@ -73,6 +76,7 @@ const starterTopics = [
 export default function SimulationPage() {
   const { agents, fetchAgents } = useAgentStore()
   const { setCurrentRoom } = useMessageStore()
+  const selectedProvider = useLLMPreferenceStore((state) => state.provider)
 
   const [simulations, setSimulations] = useState<SimulationRecord[]>([])
   const [selectedSimulation, setSelectedSimulation] = useState<string | null>(null)
@@ -232,16 +236,21 @@ export default function SimulationPage() {
                 <span className="soft-pill">{simulations.length} saved simulations</span>
                 <span className="soft-pill">{agents.length} agents available</span>
                 <span className="soft-pill">{simulationAgents.length} selected for next run</span>
+                <span className="soft-pill capitalize">provider: {LLM_PROVIDER_LABELS[selectedProvider]}</span>
+                <span className="soft-pill">model: {getClientModelForProvider(selectedProvider)}</span>
               </div>
             </div>
 
-            <div className="rounded-[1.9rem] border border-border/70 bg-background/[0.42] p-5 backdrop-blur-xl">
+            <div className="rounded-sm border border-border/70 bg-background/[0.42] p-5 backdrop-blur-xl">
               <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">How this works</div>
               <ol className="mt-4 space-y-3 text-sm leading-7 text-muted-foreground">
                 <li>1. Pick at least two agents.</li>
                 <li>2. Describe the discussion topic or decision they should work through.</li>
                 <li>3. Set the round limit and review the resulting transcript.</li>
               </ol>
+              <div className="mt-5">
+                <LLMProviderToggle compact />
+              </div>
             </div>
           </div>
         </motion.section>
@@ -291,16 +300,16 @@ export default function SimulationPage() {
                     <label className="text-sm font-medium text-foreground">Selected agents</label>
                     <div className="mt-2 space-y-3">
                       {simulationAgents.length === 0 ? (
-                        <div className="rounded-[1.5rem] border border-dashed border-border/70 bg-background/40 px-4 py-6 text-center text-sm text-muted-foreground">
+                        <div className="rounded-sm border border-dashed border-border/70 bg-background/40 px-4 py-6 text-center text-sm text-muted-foreground">
                           Add at least two agents to begin.
                         </div>
                       ) : (
                         simulationAgents.map((agent) => (
                           <div
                             key={agent.id}
-                            className="flex items-start gap-3 rounded-[1.5rem] border border-border/70 bg-background/40 p-4"
+                            className="flex items-start gap-3 rounded-sm border border-border/70 bg-background/40 p-4"
                           >
-                            <div className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br ${agent.color} text-sm font-semibold text-white shadow-lg`}>
+                            <div className={`flex h-10 w-10 items-center justify-center rounded-sm ${agent.color} text-sm font-semibold text-white shadow-lg`}>
                               {agent.name.charAt(0)}
                             </div>
                             <div className="min-w-0 flex-1">
@@ -309,7 +318,7 @@ export default function SimulationPage() {
                             </div>
                             <button
                               onClick={() => removeAgentFromSimulation(agent.id)}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-border/70 bg-card/[0.58] text-muted-foreground transition-all hover:border-destructive/30 hover:text-destructive"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-sm border border-border/70 bg-card/[0.58] text-muted-foreground transition-all hover:border-destructive/30 hover:text-destructive"
                               type="button"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -337,7 +346,7 @@ export default function SimulationPage() {
                 </div>
 
                 {uiError && (
-                  <div className="rounded-[1.35rem] border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  <div className="rounded-sm border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                     {uiError}
                   </div>
                 )}
@@ -347,7 +356,7 @@ export default function SimulationPage() {
                     <button
                       onClick={() => void startNewSimulation()}
                       disabled={simulationAgents.length < 2}
-                      className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-5 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)] transition-all hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)] transition-all hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
                       type="button"
                     >
                       <Play className="h-4 w-4" />
@@ -356,7 +365,7 @@ export default function SimulationPage() {
                   ) : (
                     <button
                       onClick={stopSimulation}
-                      className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-rose-500 to-red-500 px-5 text-sm font-semibold text-white"
+                      className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-rose-500 px-5 text-sm font-semibold text-white"
                       type="button"
                     >
                       <Pause className="h-4 w-4" />
@@ -380,7 +389,7 @@ export default function SimulationPage() {
               <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Recent runs</div>
               <div className="mt-4 space-y-3">
                 {simulations.length === 0 ? (
-                  <div className="rounded-[1.5rem] border border-dashed border-border/70 bg-background/40 px-4 py-8 text-center text-sm text-muted-foreground">
+                  <div className="rounded-sm border border-dashed border-border/70 bg-background/40 px-4 py-8 text-center text-sm text-muted-foreground">
                     No simulations have been saved yet.
                   </div>
                 ) : (
@@ -388,7 +397,7 @@ export default function SimulationPage() {
                     <button
                       key={simulation.id}
                       onClick={() => setSelectedSimulation(simulation.id)}
-                      className={`block w-full rounded-[1.5rem] border px-4 py-4 text-left transition-all ${
+                      className={`block w-full rounded-sm border px-4 py-4 text-left transition-all ${
                         selectedSimulation === simulation.id
                           ? 'border-primary/20 bg-primary/10'
                           : 'border-border/70 bg-background/40 hover:border-primary/20 hover:bg-background/70'
@@ -436,7 +445,7 @@ export default function SimulationPage() {
                     <div className="flex flex-wrap gap-3">
                       {currentSimulation.agents.map((agent, index) => (
                         <div key={agent.id} className="flex items-center gap-2 rounded-full border border-border/70 bg-background/40 px-3 py-2">
-                          <div className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${agentColors[index % agentColors.length]} text-xs font-semibold text-white`}>
+                          <div className={`flex h-8 w-8 items-center justify-center rounded-full ${agentColors[index % agentColors.length]} text-xs font-semibold text-white`}>
                             {agent.name.charAt(0)}
                           </div>
                           <span className={`text-sm font-medium ${agentTextColors[index % agentTextColors.length]}`}>{agent.name}</span>
@@ -471,7 +480,7 @@ export default function SimulationPage() {
                                 <p className="text-sm text-muted-foreground">No specialist referrals were needed for this run.</p>
                               ) : (
                                 currentSimulationMetadata.referrals?.map((referral) => (
-                                  <div key={referral.agentId} className="rounded-2xl border border-border/60 bg-background/45 p-3">
+                                  <div key={referral.agentId} className="rounded-sm border border-border/60 bg-background/45 p-3">
                                     <div className="flex items-center justify-between gap-3">
                                       <span className="font-medium text-foreground">{referral.agentName}</span>
                                       <span className="text-sm font-semibold text-primary">{(referral.score * 100).toFixed(0)}%</span>
@@ -488,7 +497,7 @@ export default function SimulationPage() {
                                 currentSimulationMetadata.consensus?.map((item) => {
                                   const confidence = item.consensusRating ?? item.confidence ?? 0
                                   return (
-                                    <div key={item.topic} className="rounded-2xl border border-border/60 bg-background/45 p-3">
+                                    <div key={item.topic} className="rounded-sm border border-border/60 bg-background/45 p-3">
                                       <div className="flex items-center justify-between gap-3">
                                         <span className="font-medium text-foreground">{item.topic}</span>
                                         <span className="text-sm font-semibold text-emerald-500">{(confidence * 100).toFixed(0)}%</span>
@@ -505,7 +514,7 @@ export default function SimulationPage() {
                             <InsightPanel title="Conflicts & Broadcasts">
                               {(currentSimulationMetadata.conflicts?.length ?? 0) > 0 ? (
                                 currentSimulationMetadata.conflicts?.slice(0, 2).map((conflict) => (
-                                  <div key={conflict.id} className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-3">
+                                  <div key={conflict.id} className="rounded-sm border border-rose-500/20 bg-rose-500/5 p-3">
                                     <div className="flex items-center justify-between gap-3">
                                       <span className="font-medium text-foreground">{conflict.topic}</span>
                                       <span className="text-sm font-semibold text-rose-500">{(conflict.tension * 100).toFixed(0)}%</span>
@@ -525,7 +534,7 @@ export default function SimulationPage() {
                               {(currentSimulationMetadata.broadcasts?.length ?? 0) > 0 && (
                                 <div className="space-y-3">
                                   {currentSimulationMetadata.broadcasts?.slice(0, 1).map((broadcast) => (
-                                    <div key={broadcast.id} className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-3">
+                                    <div key={broadcast.id} className="rounded-sm border border-cyan-500/20 bg-cyan-500/5 p-3">
                                       <div className="font-medium text-foreground">{broadcast.topic}</div>
                                       <p className="mt-2 text-sm text-muted-foreground">{broadcast.summary}</p>
                                       <p className="mt-2 text-xs text-muted-foreground">Broadcast by {broadcast.agentName}</p>
@@ -554,11 +563,11 @@ export default function SimulationPage() {
                             transition={{ delay: index * 0.03 }}
                             className="flex items-start gap-3"
                           >
-                            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${agentColors[agentIndex % agentColors.length]} text-sm font-semibold text-white shadow-lg`}>
+                            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-sm ${agentColors[agentIndex % agentColors.length]} text-sm font-semibold text-white shadow-lg`}>
                               {message.agentName.charAt(0)}
                             </div>
 
-                            <div className="flex-1 rounded-[1.5rem] border border-border/70 bg-background/45 p-4">
+                            <div className="flex-1 rounded-sm border border-border/70 bg-background/45 p-4">
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className={`text-sm font-semibold ${agentTextColors[agentIndex % agentTextColors.length]}`}>{message.agentName}</span>
                                 <span className="text-xs text-muted-foreground">Round {message.round}</span>
@@ -586,7 +595,7 @@ export default function SimulationPage() {
             ) : (
               <div className="flex min-h-[46rem] items-center justify-center px-6 py-10 text-center sm:px-8">
                 <div className="max-w-lg">
-                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.8rem] bg-gradient-to-br from-accent to-primary text-white shadow-[0_18px_44px_-24px_rgba(109,77,158,0.68)]">
+                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-sm bg-accent text-white shadow-[0_18px_44px_-24px_rgba(109,77,158,0.68)]">
                     <Users className="h-9 w-9" />
                   </div>
                   <h2 className="mt-6 text-2xl font-semibold text-foreground">Transcript area</h2>
@@ -631,7 +640,7 @@ export default function SimulationPage() {
 
                 <div className="max-h-[calc(80vh-6.5rem)] overflow-y-auto px-6 py-5">
                   {availableAgents.length === 0 ? (
-                    <div className="rounded-[1.5rem] border border-dashed border-border/70 bg-background/40 px-4 py-8 text-center text-sm text-muted-foreground">
+                    <div className="rounded-sm border border-dashed border-border/70 bg-background/40 px-4 py-8 text-center text-sm text-muted-foreground">
                       All agents are already selected.
                     </div>
                   ) : (
@@ -640,10 +649,10 @@ export default function SimulationPage() {
                         <button
                           key={agent.id}
                           onClick={() => addAgentToSimulation(agent)}
-                          className="flex items-start gap-4 rounded-[1.5rem] border border-border/70 bg-background/40 p-4 text-left transition-all hover:border-primary/20 hover:bg-background/70"
+                          className="flex items-start gap-4 rounded-sm border border-border/70 bg-background/40 p-4 text-left transition-all hover:border-primary/20 hover:bg-background/70"
                           type="button"
                         >
-                          <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${agentColors[index % agentColors.length]} text-sm font-semibold text-white shadow-lg`}>
+                          <div className={`flex h-12 w-12 items-center justify-center rounded-sm ${agentColors[index % agentColors.length]} text-sm font-semibold text-white shadow-lg`}>
                             {agent.name.charAt(0)}
                           </div>
                           <div className="min-w-0 flex-1">
@@ -667,7 +676,7 @@ export default function SimulationPage() {
 
 function InsightCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-[1.4rem] border border-border/70 bg-background/45 p-4">
+    <div className="rounded-sm border border-border/70 bg-background/45 p-4">
       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">{label}</div>
       <div className="mt-3 text-3xl font-semibold text-foreground">{value}</div>
     </div>
@@ -676,7 +685,7 @@ function InsightCard({ label, value }: { label: string; value: number }) {
 
 function InsightPanel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-[1.5rem] border border-border/70 bg-background/45 p-4">
+    <div className="rounded-sm border border-border/70 bg-background/45 p-4">
       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">{title}</div>
       <div className="mt-3 space-y-3">{children}</div>
     </div>

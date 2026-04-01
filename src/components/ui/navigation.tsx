@@ -4,9 +4,11 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowUpRight, Bot, Menu, Sparkles, X } from 'lucide-react'
+import { ArrowUpRight, Menu, Sparkles, X } from 'lucide-react'
+import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { cn } from '@/lib/utils'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { LLMProviderToggle } from '@/components/llm/LLMProviderToggle'
 
 const navItems = [
   { href: '/', label: 'Home', description: 'Product overview and entry point' },
@@ -31,8 +33,8 @@ export function Navigation() {
       <div className="page-shell px-0">
         <div className="page-section flex min-h-16 items-center gap-4 px-4 py-3 sm:px-5">
           <Link href="/" className="group flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-[0_18px_40px_-24px_rgba(109,77,158,0.6)] transition-transform duration-300 group-hover:scale-[1.03]">
-              <Bot className="h-5 w-5" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-sm bg-primary text-primary-foreground shadow-[0_18px_40px_-24px_rgba(109,77,158,0.6)] transition-transform duration-300 group-hover:scale-[1.03]">
+              <PlaygroundLogo className="h-5 w-5" />
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold uppercase tracking-[0.24em] text-primary/80">
@@ -72,11 +74,13 @@ export function Navigation() {
               </div>
             )}
 
+            <LLMProviderToggle compact className="min-w-[18rem]" />
+
             <ThemeToggle />
 
             <Link
               href="/agents/new"
-              className="inline-flex h-11 items-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-4 text-sm font-semibold text-primary-foreground shadow-[0_20px_50px_-26px_rgba(109,77,158,0.7)] transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_60px_-28px_rgba(109,77,158,0.78)]"
+              className="inline-flex h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_20px_50px_-26px_rgba(109,77,158,0.7)] transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_60px_-28px_rgba(109,77,158,0.78)]"
             >
               Create Agent
               <ArrowUpRight className="h-4 w-4" />
@@ -116,7 +120,7 @@ export function Navigation() {
                       href={item.href}
                       onClick={() => setMobileMenuOpen(false)}
                       className={cn(
-                        'flex items-start justify-between rounded-2xl px-4 py-3 transition-all',
+                        'flex items-start justify-between rounded-sm px-4 py-3 transition-all',
                         isActive
                           ? 'bg-primary/10 text-foreground'
                           : 'bg-transparent text-muted-foreground hover:bg-card/70 hover:text-foreground'
@@ -134,10 +138,14 @@ export function Navigation() {
 
               <div className="page-divider my-4" />
 
+              <LLMProviderToggle />
+
+              <div className="page-divider my-4" />
+
               <Link
                 href="/agents/new"
                 onClick={() => setMobileMenuOpen(false)}
-                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent text-sm font-semibold text-primary-foreground shadow-[0_18px_48px_-28px_rgba(109,77,158,0.72)]"
+                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-primary text-sm font-semibold text-primary-foreground shadow-[0_18px_48px_-28px_rgba(109,77,158,0.72)]"
               >
                 Create Agent
                 <ArrowUpRight className="h-4 w-4" />

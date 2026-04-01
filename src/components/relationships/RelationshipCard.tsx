@@ -28,13 +28,13 @@ export function RelationshipCard({
 
   return (
     <button
-      className="block w-full rounded-[1.6rem] border border-border/70 bg-card/[0.62] p-5 text-left backdrop-blur-xl transition-all hover:border-primary/20 hover:bg-card/[0.82]"
+      className="block w-full rounded-sm border border-border/70 bg-card/[0.62] p-5 text-left backdrop-blur-xl transition-all hover:border-primary/20 hover:bg-card/[0.82]"
       onClick={onClick}
       type="button"
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-background/45 text-2xl">
+          <div className="flex h-12 w-12 items-center justify-center rounded-sm bg-background/45 text-2xl">
             {summary.icon}
           </div>
           <div>
@@ -47,7 +47,7 @@ export function RelationshipCard({
 
       <div className="mt-5 space-y-3">
         <MetricBar label="Trust" value={relationship.metrics.trust} color="bg-emerald-500" />
-        <MetricBar label="Respect" value={relationship.metrics.respect} color="bg-blue-500" />
+        <MetricBar label="Respect" value={relationship.metrics.respect} color="bg-[var(--color-pastel-blue)]/20" />
         <MetricBar label="Affection" value={relationship.metrics.affection} color="bg-pink-500" />
         <MetricBar label="Familiarity" value={relationship.metrics.familiarity} color="bg-primary" />
       </div>

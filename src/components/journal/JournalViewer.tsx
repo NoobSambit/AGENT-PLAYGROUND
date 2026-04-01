@@ -132,7 +132,7 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
         </div>
         <button
           onClick={() => setSelectedType('daily_reflection')}
-          className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg transition-colors"
+          className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-sm transition-colors"
         >
           📝 Write Entry
         </button>
@@ -166,7 +166,7 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
 
       {/* Insights Panel */}
       {insights && (insights.allInsights.length > 0 || insights.allGoals.length > 0) && (
-        <div className="bg-gray-800 rounded-lg p-4">
+        <div className="bg-gray-800 rounded-sm p-4">
           <h4 className="text-white font-semibold mb-3">Recent Insights</h4>
           <div className="space-y-3">
             {insights.allInsights.slice(0, 3).map((insight, i) => (
@@ -226,7 +226,7 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
       {/* Entry Type Selector Modal */}
       {selectedType !== null && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 max-w-lg w-full mx-4">
+          <div className="bg-gray-800 rounded-sm p-6 max-w-lg w-full mx-4">
             <h4 className="text-lg font-semibold text-white mb-4">
               Choose Entry Type
             </h4>
@@ -237,7 +237,7 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
                   <button
                     key={type}
                     onClick={() => setSelectedType(type)}
-                    className={`p-3 rounded-lg text-left transition-colors ${
+                    className={`p-3 rounded-sm text-left transition-colors ${
                       selectedType === type
                         ? 'bg-amber-600'
                         : 'bg-gray-700 hover:bg-gray-600'
@@ -274,7 +274,7 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
       {/* Entry Detail Modal */}
       {selectedEntry && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+          <div className="bg-gray-800 rounded-sm p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-start mb-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
@@ -381,7 +381,7 @@ function StatCard({
   icon: string
 }) {
   return (
-    <div className="bg-gray-800 rounded-lg p-4 text-center">
+    <div className="bg-gray-800 rounded-sm p-4 text-center">
       <div className="text-2xl mb-1">{icon}</div>
       <div className="text-xl font-bold text-white capitalize">{value}</div>
       <div className="text-xs text-gray-400">{label}</div>
@@ -429,7 +429,7 @@ function EntryCard({
   return (
     <div
       onClick={onClick}
-      className="bg-gray-800 rounded-lg p-4 hover:bg-gray-750 transition-colors cursor-pointer"
+      className="bg-gray-800 rounded-sm p-4 hover:bg-gray-750 transition-colors cursor-pointer"
     >
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">

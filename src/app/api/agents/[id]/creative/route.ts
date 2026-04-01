@@ -11,8 +11,9 @@ import { doc, getDoc, collection, addDoc, getDocs, query, where, orderBy, limit 
 import { creativityService } from '@/lib/services/creativityService'
 import { agentProgressService } from '@/lib/services/agentProgressService'
 import { CreativeWorkType, CreativeWorkStyle, AgentRecord, CreativeWork } from '@/types/database'
-import { getGeminiModel, getGroqModel } from '@/lib/llmConfig'
+import { generateText } from '@/lib/llm/provider'
 import { stripUndefinedFields } from '@/lib/firestoreUtils'
+import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
 
 // Rate limiting: max 20 creative works per day per user
 const DAILY_LIMIT = 20
@@ -32,6 +33,7 @@ export async function POST(
   try {
     const { id: agentId } = await params
     const body: CreateCreativeRequest = await request.json()
+    const providerInfo = getProviderInfoForRequest(request)
 
     if (!body.type || !body.style) {
       return NextResponse.json(
@@ -81,11 +83,9 @@ export async function POST(
     )
 
     // Call LLM to generate creative content
-    const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GROQ_API_KEY
-
-    if (!apiKey) {
+    if (!providerInfo) {
       return NextResponse.json(
-        { error: 'LLM API key not configured' },
+        { error: 'LLM provider not configured' },
         { status: 500 }
       )
     }
@@ -94,60 +94,15 @@ export async function POST(
 
 You have been asked to create something. Be creative, authentic to your personality, and produce high-quality content.`
 
-    // Use Gemini API
-    let llmResponse: string
-
-    if (process.env.GOOGLE_AI_API_KEY) {
-      const model = getGeminiModel()
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GOOGLE_AI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              { role: 'user', parts: [{ text: systemPrompt + '\n\n' + creativePrompt }] }
-            ],
-            generationConfig: {
-              temperature: 0.9,
-              maxOutputTokens: 2000,
-            },
-          }),
-        }
-      )
-
-      if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.status}`)
-      }
-
-      const data = await response.json()
-      llmResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-    } else {
-      // Fallback to Groq
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: getGroqModel(),
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: creativePrompt },
-          ],
-          temperature: 0.9,
-          max_tokens: 2000,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Groq API error: ${response.status}`)
-      }
-
-      const data = await response.json()
-      llmResponse = data.choices?.[0]?.message?.content || ''
-    }
+    const { content: llmResponse } = await generateText({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: creativePrompt },
+      ],
+      temperature: 0.9,
+      maxTokens: 2000,
+      providerInfo,
+    })
 
     // Parse the creative response
     const creativeWork = creativityService.parseCreativeResponse(

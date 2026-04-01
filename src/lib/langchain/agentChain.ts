@@ -1,4 +1,4 @@
-import { BaseChain } from './baseChain'
+import { BaseChain, type LLMConfig } from './baseChain'
 import { MemoryChain } from './memoryChain'
 import { ToolExecutor } from './tools'
 import { AgentService } from '@/lib/services/agentService'
@@ -55,7 +55,8 @@ export class AgentChain {
 
   async generateResponse(
     userInput: string,
-    conversationHistory: Array<{ role: 'user' | 'assistant', content: string }> = []
+    conversationHistory: Array<{ role: 'user' | 'assistant', content: string }> = [],
+    llmConfig?: LLMConfig
   ): Promise<AgentResponse> {
     const startTime = Date.now()
 
@@ -86,7 +87,7 @@ export class AgentChain {
       let reasoning = ''
 
       if (shouldUseTools) {
-        const toolResult = await this.useTools(userInput, agentData, memoryMessages)
+        const toolResult = await this.useTools(userInput, agentData, memoryMessages, llmConfig)
         response = toolResult.response
         toolsUsed = toolResult.toolsUsed || []
         reasoning = toolResult.reasoning || ''
@@ -94,7 +95,8 @@ export class AgentChain {
         response = await this.generateDirectResponse(
           systemPrompt,
           conversationHistory,
-          userInput
+          userInput,
+          llmConfig
         )
       }
 
@@ -129,7 +131,8 @@ export class AgentChain {
   async streamResponse(
     userInput: string,
     conversationHistory: Array<{ role: 'user' | 'assistant', content: string }> = [],
-    onToken?: (token: string) => void
+    onToken?: (token: string) => void,
+    llmConfig?: LLMConfig
   ): Promise<AgentResponse> {
     const startTime = Date.now()
 
@@ -161,7 +164,7 @@ export class AgentChain {
       if (shouldUseTools) {
         // For streaming with tools, we'll use direct response for simplicity
         // Tools are better suited for non-streaming responses
-        const result = await this.useTools(userInput, agentData, memoryMessages)
+        const result = await this.useTools(userInput, agentData, memoryMessages, llmConfig)
         fullResponse = result.response
         toolsUsed = result.toolsUsed || []
         reasoning = result.reasoning || ''
@@ -178,7 +181,8 @@ export class AgentChain {
           systemPrompt,
           conversationHistory,
           userInput,
-          onToken
+          onToken,
+          llmConfig
         )
       }
 
@@ -327,7 +331,8 @@ export class AgentChain {
     input: string,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     agent: any,
-    memoryMessages: BaseMessage[]
+    memoryMessages: BaseMessage[],
+    llmConfig?: LLMConfig
   ): Promise<{ response: string; toolsUsed: string[]; reasoning: string }> {
     const toolsUsed: string[] = []
     let reasoning = 'Using LangChain tools for enhanced response...'
@@ -340,7 +345,10 @@ export class AgentChain {
 
       let summary: string | null = null
       if (wantsSummary || input.length > 150) {
-        summary = await this.toolExecutor.summarize(summaryInput, { force: wantsSummary })
+        summary = await this.toolExecutor.summarize(summaryInput, {
+          force: wantsSummary,
+          llmConfig,
+        })
         if (summary) {
           toolsUsed.push('summarizer')
           reasoning += '\n- Used summarizer tool for input analysis'
@@ -348,7 +356,7 @@ export class AgentChain {
       }
 
       // Extract keywords for memory indexing
-      const keywords = await this.toolExecutor.extractKeywords(summaryInput)
+      const keywords = await this.toolExecutor.extractKeywords(summaryInput, llmConfig)
       if (keywords && keywords.length > 0) {
         toolsUsed.push('keyword_extractor')
         reasoning += '\n- Used keyword extractor for memory indexing'
@@ -366,7 +374,7 @@ export class AgentChain {
       }
 
       // Adjust persona if needed
-      const adjustedInput = await this.toolExecutor.adjustPersona(input, agent)
+      const adjustedInput = await this.toolExecutor.adjustPersona(input, agent, llmConfig)
       if (adjustedInput !== input) {
         toolsUsed.push('persona_adjuster')
         reasoning += '\n- Used persona adjuster for tone matching'
@@ -377,7 +385,8 @@ export class AgentChain {
       const response = await this.generateDirectResponse(
         await this.createSystemPrompt(agent, memoryMessages, finalInput),
         [],
-        finalInput
+        finalInput,
+        llmConfig
       )
 
       return { response, toolsUsed, reasoning }
@@ -388,7 +397,8 @@ export class AgentChain {
       const response = await this.generateDirectResponse(
         await this.createSystemPrompt(agent, memoryMessages, input),
         [],
-        input
+        input,
+        llmConfig
       )
 
       return {
@@ -402,7 +412,8 @@ export class AgentChain {
   private async generateDirectResponse(
     systemPrompt: string,
     conversationHistory: Array<{ role: 'user' | 'assistant', content: string }>,
-    userInput: string
+    userInput: string,
+    llmConfig?: LLMConfig
   ): Promise<string> {
     const messages = this.baseChain.formatMessages(
       systemPrompt,
@@ -411,6 +422,7 @@ export class AgentChain {
     )
 
     return await this.baseChain.generateResponse(messages, {
+      ...(llmConfig || {}),
       temperature: this.config.temperature,
       maxTokens: this.config.maxTokens
     })
@@ -420,7 +432,8 @@ export class AgentChain {
     systemPrompt: string,
     conversationHistory: Array<{ role: 'user' | 'assistant', content: string }>,
     userInput: string,
-    onToken?: (token: string) => void
+    onToken?: (token: string) => void,
+    llmConfig?: LLMConfig
   ): Promise<string> {
     const messages = this.baseChain.formatMessages(
       systemPrompt,
@@ -429,6 +442,7 @@ export class AgentChain {
     )
 
     return await this.baseChain.streamResponse(messages, {
+      ...(llmConfig || {}),
       temperature: this.config.temperature,
       maxTokens: this.config.maxTokens
     }, onToken)

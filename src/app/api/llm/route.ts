@@ -1,6 +1,12 @@
 import { NextRequest } from 'next/server'
 import { AgentChain } from '@/lib/langchain/agentChain'
-import { getGeminiModel, getGroqModel } from '@/lib/llmConfig'
+import {
+  getLLMProviderOptions,
+  getOllamaBaseUrl,
+  type LLMProvider,
+  type LLMProviderInfo,
+} from '@/lib/llmConfig'
+import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
 
 interface LLMRequest {
   prompt: string
@@ -9,6 +15,18 @@ interface LLMRequest {
   agentId?: string // For memory context
   conversationHistory?: Array<{ role: 'user' | 'assistant', content: string }>
   enableStreaming?: boolean
+}
+
+export async function GET(request: NextRequest) {
+  const providerInfo = getProviderInfoForRequest(request)
+
+  return new Response(JSON.stringify({
+    activeProvider: providerInfo?.provider ?? null,
+    activeModel: providerInfo?.model ?? null,
+    providers: getLLMProviderOptions(),
+  }), {
+    headers: { 'Content-Type': 'application/json' }
+  })
 }
 
 export async function POST(request: NextRequest) {
@@ -24,11 +42,11 @@ export async function POST(request: NextRequest) {
 
     // If agentId is provided, use LangChain orchestration
     if (body.agentId) {
-      return await handleLangChainResponse(body)
+      return await handleLangChainResponse(request, body)
     }
 
     // Fallback to original direct API logic for backward compatibility
-    return await handleDirectAPIResponse(body)
+    return await handleDirectAPIResponse(request, body)
 
   } catch (error) {
     console.error('LLM API error:', error)
@@ -39,16 +57,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
-type LLMProvider = 'gemini' | 'groq'
-
-function getProviderInfo(): { provider: LLMProvider; model: string } | null {
-  if (process.env.GOOGLE_AI_API_KEY) {
-    return { provider: 'gemini', model: getGeminiModel() }
-  }
-  if (process.env.GROQ_API_KEY) {
-    return { provider: 'groq', model: getGroqModel() }
-  }
-  return null
+function getProviderInfo(request: NextRequest): LLMProviderInfo | null {
+  return getProviderInfoForRequest(request)
 }
 
 function extractTokens(payload: unknown, provider: LLMProvider): string[] {
@@ -72,10 +82,7 @@ function extractTokens(payload: unknown, provider: LLMProvider): string[] {
   return content ? [content] : []
 }
 
-function normalizeSseStream(
-  response: Response,
-  providerInfo: { provider: LLMProvider; model: string }
-): Response {
+function normalizeSseStream(response: Response, providerInfo: LLMProviderInfo): Response {
   if (!response.body) {
     return new Response(JSON.stringify({ error: 'Empty LLM stream' }), {
       status: 500,
@@ -183,11 +190,146 @@ function normalizeSseStream(
   })
 }
 
+function normalizeOllamaStream(response: Response, providerInfo: LLMProviderInfo): Response {
+  if (!response.body) {
+    return new Response(JSON.stringify({ error: 'Empty LLM stream' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+
+  const encoder = new TextEncoder()
+  const decoder = new TextDecoder()
+  const reader = response.body.getReader()
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      let buffer = ''
+
+      const sendDone = () => {
+        const donePayload = JSON.stringify({
+          done: true,
+          model: providerInfo.model,
+          provider: providerInfo.provider
+        })
+        controller.enqueue(encoder.encode(`data: ${donePayload}\n\n`))
+        controller.close()
+      }
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split(/\r?\n/)
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (!trimmed) continue
+
+            try {
+              const payload = JSON.parse(trimmed) as {
+                done?: boolean
+                error?: string
+                message?: { content?: string }
+              }
+
+              if (payload.error) {
+                const errorPayload = JSON.stringify({
+                  error: payload.error,
+                  done: true,
+                  model: providerInfo.model,
+                  provider: providerInfo.provider
+                })
+                controller.enqueue(encoder.encode(`data: ${errorPayload}\n\n`))
+                controller.close()
+                return
+              }
+
+              if (payload.message?.content) {
+                const normalized = JSON.stringify({
+                  content: payload.message.content,
+                  model: providerInfo.model,
+                  provider: providerInfo.provider
+                })
+                controller.enqueue(encoder.encode(`data: ${normalized}\n\n`))
+              }
+
+              if (payload.done) {
+                sendDone()
+                return
+              }
+            } catch {
+              // Ignore malformed JSON chunks
+            }
+          }
+        }
+
+        if (buffer.trim()) {
+          try {
+            const payload = JSON.parse(buffer.trim()) as {
+              done?: boolean
+              message?: { content?: string }
+            }
+
+            if (payload.message?.content) {
+              const normalized = JSON.stringify({
+                content: payload.message.content,
+                model: providerInfo.model,
+                provider: providerInfo.provider
+              })
+              controller.enqueue(encoder.encode(`data: ${normalized}\n\n`))
+            }
+          } catch {
+            // Ignore malformed trailing JSON
+          }
+        }
+
+        sendDone()
+      } catch {
+        const errorPayload = JSON.stringify({
+          error: 'Error normalizing Ollama stream',
+          done: true,
+          model: providerInfo.model,
+          provider: providerInfo.provider
+        })
+        controller.enqueue(encoder.encode(`data: ${errorPayload}\n\n`))
+        controller.close()
+      }
+    }
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive'
+    }
+  })
+}
+
 // Handle LangChain-powered responses
-async function handleLangChainResponse(body: LLMRequest): Promise<Response> {
+async function handleLangChainResponse(request: NextRequest, body: LLMRequest): Promise<Response> {
   try {
     const agentChain = AgentChain.getInstance(body.agentId!)
-    const providerInfo = getProviderInfo()
+    const providerInfo = getProviderInfo(request)
+
+    if (!providerInfo) {
+      return new Response(JSON.stringify({
+        error: 'LLM provider not configured',
+        fallback: true
+      }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    const llmConfig = {
+      provider: providerInfo.provider,
+      model: providerInfo.model,
+    } as const
 
     if (body.enableStreaming) {
       // Handle streaming response
@@ -207,7 +349,8 @@ async function handleLangChainResponse(body: LLMRequest): Promise<Response> {
                   provider: providerInfo?.provider
                 })
                 controller.enqueue(encoder.encode(`data: ${data}\n\n`))
-              }
+              },
+              llmConfig
             )
 
             // Send final response
@@ -247,7 +390,8 @@ async function handleLangChainResponse(body: LLMRequest): Promise<Response> {
       // Handle non-streaming response
       const response = await agentChain.generateResponse(
         body.prompt,
-        body.conversationHistory || []
+        body.conversationHistory || [],
+        llmConfig
       )
 
       return new Response(JSON.stringify({
@@ -275,16 +419,12 @@ async function handleLangChainResponse(body: LLMRequest): Promise<Response> {
 }
 
 // Fallback to direct API response for backward compatibility
-async function handleDirectAPIResponse(body: LLMRequest): Promise<Response> {
+async function handleDirectAPIResponse(request: NextRequest, body: LLMRequest): Promise<Response> {
   try {
-    // Memory context is handled by LangChain AgentChain when agentId is provided
+    const providerInfo = getProviderInfo(request)
 
-    // Use Gemini API (preferred) or fallback to Groq
-    const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GROQ_API_KEY
-    const providerInfo = getProviderInfo()
-
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'LLM API key not configured' }), {
+    if (!providerInfo) {
+      return new Response(JSON.stringify({ error: 'LLM provider not configured' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
       })
@@ -303,19 +443,17 @@ Respond naturally and helpfully to user queries. Keep responses conversational b
       { role: 'user', content: body.prompt }
     ]
 
-    if (process.env.GOOGLE_AI_API_KEY && providerInfo) {
-      // Use Gemini API
-      const response = await handleGeminiStream(apiKey, messages, providerInfo.model)
+    if (providerInfo.provider === 'gemini') {
+      const response = await handleGeminiStream(messages, providerInfo.model)
       return normalizeSseStream(response, providerInfo)
     }
-    if (process.env.GROQ_API_KEY && providerInfo) {
-      // Fallback to Groq API
-      const response = await handleGroqStream(apiKey, messages, providerInfo.model)
+    if (providerInfo.provider === 'groq') {
+      const response = await handleGroqStream(messages, providerInfo.model)
       return normalizeSseStream(response, providerInfo)
     }
-    {
-      throw new Error('No LLM API key configured')
-    }
+
+    const response = await handleOllamaStream(messages, providerInfo.model)
+    return normalizeOllamaStream(response, providerInfo)
 
   } catch (error) {
     console.error('Direct API response error:', error)
@@ -327,11 +465,10 @@ Respond naturally and helpfully to user queries. Keep responses conversational b
 }
 
 async function handleGeminiStream(
-  apiKey: string,
   messages: Array<{ role: string; content: string }>,
   model: string
 ) {
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`, {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${process.env.GOOGLE_AI_API_KEY}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -352,14 +489,13 @@ async function handleGeminiStream(
 }
 
 async function handleGroqStream(
-  apiKey: string,
   messages: Array<{ role: string; content: string }>,
   model: string
 ) {
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
+      'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -373,6 +509,33 @@ async function handleGroqStream(
 
   if (!response.ok) {
     throw new Error(`Groq API error: ${response.status}`)
+  }
+
+  return response
+}
+
+async function handleOllamaStream(
+  messages: Array<{ role: string; content: string }>,
+  model: string
+) {
+  const response = await fetch(`${getOllamaBaseUrl()}/api/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: true,
+      options: {
+        temperature: 0.7,
+        num_predict: 1000,
+      },
+    })
+  })
+
+  if (!response.ok) {
+    throw new Error(`Ollama API error: ${response.status}`)
   }
 
   return response

@@ -109,7 +109,7 @@ export function TimelineExplorer({ events, className = '' }: TimelineExplorerPro
         {/* Zoom controls */}
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-500">Zoom:</span>
-          <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="flex rounded-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
             {(Object.keys(ZOOM_LABELS) as ZoomLevel[]).map(level => (
               <button
                 key={level}
@@ -117,7 +117,7 @@ export function TimelineExplorer({ events, className = '' }: TimelineExplorerPro
                 className={`
                   px-3 py-1.5 text-sm transition-colors
                   ${zoomLevel === level
-                    ? 'bg-blue-500 text-white'
+                    ? 'bg-[var(--color-pastel-blue)]/20 text-white'
                     : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }
                 `}
@@ -135,14 +135,14 @@ export function TimelineExplorer({ events, className = '' }: TimelineExplorerPro
             placeholder="Search events..."
             value={filters.searchQuery || ''}
             onChange={e => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
-            className="px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`
-              px-3 py-1.5 text-sm rounded-lg border transition-colors
+              px-3 py-1.5 text-sm rounded-sm border transition-colors
               ${showFilters
-                ? 'bg-blue-500 text-white border-blue-500'
+                ? 'bg-[var(--color-pastel-blue)]/20 text-white border-[var(--color-pastel-blue)]/50'
                 : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'
               }
             `}
@@ -154,7 +154,7 @@ export function TimelineExplorer({ events, className = '' }: TimelineExplorerPro
 
       {/* Filter panel */}
       {showFilters && (
-        <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-sm border border-gray-200 dark:border-gray-700">
           <div className="space-y-4">
             {/* Event type filters */}
             <div>
@@ -229,7 +229,7 @@ export function TimelineExplorer({ events, className = '' }: TimelineExplorerPro
 
       {/* Narrative threads */}
       {threads.length > 0 && (
-        <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+        <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-sm border border-purple-200 dark:border-purple-800">
           <h3 className="text-sm font-medium text-purple-700 dark:text-purple-300 mb-2">
             Narrative Threads
           </h3>
@@ -288,7 +288,7 @@ function StatCard({
   icon: string
 }) {
   return (
-    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+    <div className="p-4 bg-white dark:bg-gray-800 rounded-sm border border-gray-200 dark:border-gray-700">
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
         <span>{icon}</span>
         <span>{label}</span>
@@ -340,9 +340,9 @@ function TimelineEventCard({
       {/* Event card */}
       <div
         className={`
-          p-4 rounded-lg border-2 transition-colors
+          p-4 rounded-sm border-2 transition-colors
           ${isSelected
-            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+            ? 'border-[var(--color-pastel-blue)]/50 bg-[var(--color-pastel-blue)]/20 dark:bg-[var(--color-pastel-blue)]/20'
             : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600'
           }
         `}
@@ -419,7 +419,7 @@ function EventDetailsSidebar({
         </div>
         <button
           onClick={onClose}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-sm transition-colors"
         >
           <span className="text-xl">&times;</span>
         </button>

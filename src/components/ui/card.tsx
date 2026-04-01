@@ -24,7 +24,7 @@ const Card = React.forwardRef<
       "relative overflow-hidden",
       "bg-[linear-gradient(160deg,rgba(255,255,255,0.14)_0%,rgba(255,255,255,0.02)_100%),var(--surface)]",
       "border border-border/70",
-      "before:absolute before:inset-0 before:bg-gradient-to-br before:from-primary/14 before:via-accent/8 before:to-pink-500/8 before:opacity-0 before:transition-opacity",
+      "before:absolute before:inset-0 before:bg-primary/5 before:opacity-0 before:transition-opacity",
       "hover:before:opacity-100",
     ],
     bordered: [
@@ -40,7 +40,7 @@ const Card = React.forwardRef<
     <div
       ref={ref}
       className={cn(
-        "rounded-2xl text-card-foreground transition-all duration-300",
+        "rounded-sm text-card-foreground transition-all duration-300",
         variants[variant],
         className
       )}

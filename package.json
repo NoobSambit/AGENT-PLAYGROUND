@@ -14,6 +14,7 @@
     "@langchain/core": "^0.3.78",
     "@langchain/google-genai": "^0.2.18",
     "@langchain/groq": "^0.2.4",
+    "@langchain/ollama": "^0.2.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "firebase": "^12.3.0",

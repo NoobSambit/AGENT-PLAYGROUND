@@ -196,9 +196,9 @@ export function KnowledgeGraph({ agentId, onNodeClick }: KnowledgeGraphProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96 bg-gray-50 rounded-lg">
+      <div className="flex items-center justify-center h-96 bg-gray-50 rounded-sm">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--color-pastel-blue)]/50 mx-auto"></div>
           <p className="mt-4 text-gray-600">Building knowledge graph...</p>
         </div>
       </div>
@@ -207,7 +207,7 @@ export function KnowledgeGraph({ agentId, onNodeClick }: KnowledgeGraphProps) {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-96 bg-red-50 rounded-lg">
+      <div className="flex items-center justify-center h-96 bg-red-50 rounded-sm">
         <div className="text-center text-red-600">
           <p className="font-semibold">Error loading knowledge graph</p>
           <p className="text-sm mt-2">{error}</p>
@@ -218,7 +218,7 @@ export function KnowledgeGraph({ agentId, onNodeClick }: KnowledgeGraphProps) {
 
   if (!graphData || simulatedNodes.length === 0) {
     return (
-      <div className="flex items-center justify-center h-96 bg-gray-50 rounded-lg">
+      <div className="flex items-center justify-center h-96 bg-gray-50 rounded-sm">
         <div className="text-center text-gray-600">
           <p className="font-semibold">No knowledge graph data</p>
           <p className="text-sm mt-2">Have more conversations to build connections!</p>
@@ -228,7 +228,7 @@ export function KnowledgeGraph({ agentId, onNodeClick }: KnowledgeGraphProps) {
   }
 
   return (
-    <div className="bg-white rounded-lg border">
+    <div className="bg-white rounded-sm border">
       {/* Controls */}
       <div className="p-4 border-b flex flex-wrap gap-4 items-center">
         <div className="flex items-center gap-2">
@@ -359,7 +359,7 @@ export function KnowledgeGraph({ agentId, onNodeClick }: KnowledgeGraphProps) {
 
           <div className="mt-4 space-y-3">
             {contradictions.slice(0, 4).map((item) => (
-              <div key={item.id} className="rounded-lg border border-amber-200 bg-white/80 p-3">
+              <div key={item.id} className="rounded-sm border border-amber-200 bg-white/80 p-3">
                 <div className="flex items-start justify-between gap-3">
                   <p className="text-sm text-slate-700">{item.summary}</p>
                   <div className="shrink-0 text-xs font-semibold text-amber-700">
@@ -386,7 +386,7 @@ export function KnowledgeGraph({ agentId, onNodeClick }: KnowledgeGraphProps) {
 
       {/* Hovered node details */}
       {hoveredNode && (
-        <div className="absolute bg-white shadow-lg rounded-lg p-4 max-w-sm border pointer-events-none"
+        <div className="absolute bg-white shadow-lg rounded-sm p-4 max-w-sm border pointer-events-none"
           style={{ top: 'auto', bottom: 20, right: 20 }}>
           {(() => {
             const node = simulatedNodes.find(n => n.id === hoveredNode)

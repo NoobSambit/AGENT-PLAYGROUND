@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -8,10 +8,10 @@ import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
 import { MemoryRecord, MessageRecord, AgentRecord, AgentRelationship } from '@/types/database'
-import { ArrowLeft, Send, Bot, User, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star, Award, Heart, Clock, Palette, Moon, BookOpen, Target, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles } from 'lucide-react'
+import { ArrowLeft, Send, User, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star, Award, Heart, Clock, Palette, Moon, BookOpen, Target, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles } from 'lucide-react'
+import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { motion } from 'framer-motion'
 import { GradientOrb } from '@/components/ui/animated-background'
-import { getCurrentLLMModel } from '@/utils/llm'
 import { MetaLearningState, SkillProgression } from '@/types/metaLearning'
 
 // Phase 1 Components
@@ -42,6 +42,9 @@ import { MentorshipHub } from '@/components/mentorship/MentorshipHub'
 import { CollectiveIntelligencePanel } from '@/components/collective/CollectiveIntelligencePanel'
 import { ConflictResolutionPanel } from '@/components/relationships/ConflictResolutionPanel'
 import { NeuralActivityView } from '@/components/neural/NeuralActivityView'
+import { LLMProviderToggle } from '@/components/llm/LLMProviderToggle'
+import { getClientModelForProvider, LLM_PROVIDER_LABELS } from '@/lib/llm/clientPreference'
+import { useLLMPreferenceStore } from '@/stores/llmPreferenceStore'
 
 // Phase 1 Services
 import { emotionalService } from '@/lib/services/emotionalService'
@@ -104,7 +107,7 @@ const TAB_CONFIG = [
   { id: 'mentorship', icon: GraduationCap, label: 'Mentorship', description: 'Teaching, coaching, and growth connections.' },
 ] as const satisfies ReadonlyArray<{
   id: TabType
-  icon: typeof Bot
+  icon: typeof Brain
   label: string
   description: string
 }>
@@ -117,9 +120,9 @@ export default function AgentDetail() {
 
   const { agents, currentAgent, setCurrentAgent, fetchAgentById, fetchAgents } = useAgentStore()
   const { messages, sendMessage, fetchMessagesByAgentId, loading: messagesLoading } = useMessageStore()
+  const selectedProvider = useLLMPreferenceStore((state) => state.provider)
 
   const [newMessage, setNewMessage] = useState('')
-  const [currentModel, setCurrentModel] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabType>('chat')
   const [agentResolved, setAgentResolved] = useState(false)
   const [memories, setMemories] = useState<MemoryRecord[]>([])
@@ -159,6 +162,19 @@ export default function AgentDetail() {
   const agentEmotionalState = currentAgent?.emotionalState || emotionalService.createDefaultEmotionalState()
   const agentEmotionalHistory = currentAgent?.emotionalHistory || []
   const activeTabConfig = TAB_CONFIG.find((tab) => tab.id === activeTab) || TAB_CONFIG[0]
+  const activeProviderModel = useMemo(() => {
+    const latestModelForProvider = [...messages]
+      .reverse()
+      .find((message) =>
+        message.type === 'agent' &&
+        message.metadata?.provider === selectedProvider &&
+        typeof message.metadata?.model === 'string'
+      )
+
+    return typeof latestModelForProvider?.metadata?.model === 'string'
+      ? latestModelForProvider.metadata.model
+      : getClientModelForProvider(selectedProvider)
+  }, [messages, selectedProvider])
 
   useEffect(() => {
     const loadCurrentAgent = async () => {
@@ -197,16 +213,6 @@ export default function AgentDetail() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
-
-  useEffect(() => {
-    const latestModel = [...messages]
-      .reverse()
-      .find(msg => typeof msg.metadata?.model === 'string')
-
-    if (latestModel?.metadata?.model && latestModel.metadata.model !== currentModel) {
-      setCurrentModel(latestModel.metadata.model as string)
-    }
-  }, [messages, currentModel])
 
   // Load memories when switching to memory tab
   const loadMemories = async (forceRefresh = false) => {
@@ -448,9 +454,6 @@ export default function AgentDetail() {
 
       if (response.ok) {
         const data = await response.json()
-        if (data.model) {
-          setCurrentModel(data.model)
-        }
 
         // Send agent response with LangChain metadata
         await sendMessage(data.content, currentAgent.id, {
@@ -458,7 +461,8 @@ export default function AgentDetail() {
           toolsUsed: data.toolsUsed,
           reasoning: data.reasoning,
           memoryUsed: data.memoryUsed,
-          model: data.model
+          model: data.model,
+          provider: data.provider
         }, 'agent')
       } else {
         console.error('Failed to get LangChain response')
@@ -537,11 +541,11 @@ export default function AgentDetail() {
 
   if (!currentAgent) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background to-background/80 p-6">
+      <div className="min-h-screen bg-background p-6">
         <div className="mx-auto max-w-4xl flex items-center justify-center min-h-[400px]">
           <Card>
             <CardContent className="p-8 text-center">
-              <Bot className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <PlaygroundLogo className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-semibold mb-2">Agent not found</h3>
                       <p className="text-muted-foreground mb-4">
                 The agent you&apos;re looking for doesn&apos;t exist or has been removed.
@@ -585,9 +589,9 @@ export default function AgentDetail() {
                   <motion.div
                     animate={{ rotate: [0, 4, -4, 0] }}
                     transition={{ duration: 6, repeat: Infinity }}
-                    className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[1.6rem] bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-[0_20px_48px_-24px_rgba(109,77,158,0.72)]"
+                    className="flex h-16 w-16 shrink-0 items-center justify-center rounded-sm bg-primary text-primary-foreground shadow-[0_20px_48px_-24px_rgba(109,77,158,0.72)]"
                   >
-                    <Bot className="h-8 w-8" />
+                    <PlaygroundLogo className="h-8 w-8" />
                   </motion.div>
                   <div className="space-y-3">
                     <div>
@@ -602,7 +606,8 @@ export default function AgentDetail() {
 
                     <div className="flex flex-wrap gap-2">
                       <span className="soft-pill capitalize">status: {currentAgent.status}</span>
-                      <span className="soft-pill">model: {currentModel || getCurrentLLMModel()}</span>
+                      <span className="soft-pill capitalize">provider: {LLM_PROVIDER_LABELS[selectedProvider]}</span>
+                      <span className="soft-pill">model: {activeProviderModel}</span>
                       <span className="soft-pill">{currentAgent.memoryCount || 0} memories</span>
                       <span className="soft-pill">{currentAgent.relationshipCount || 0} relationships</span>
                     </div>
@@ -619,7 +624,7 @@ export default function AgentDetail() {
                 </button>
                 <button
                   onClick={() => router.push('/simulation')}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-4 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)]"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)]"
                 >
                   Open simulation lab
                 </button>
@@ -627,13 +632,13 @@ export default function AgentDetail() {
             </div>
 
             <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-                <div className="rounded-[1.7rem] border border-border/70 bg-background/45 p-5">
+                <div className="rounded-sm border border-border/70 bg-background/45 p-5">
                   <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">What this page is for</div>
                   <p className="mt-3 text-sm leading-7 text-muted-foreground">
                   This workspace combines the agent&apos;s live conversation surface with memory, emotions, neural activity, relationships, learning, planning, creativity, journaling, collective knowledge, and mentorship systems.
                 </p>
               </div>
-              <div className="rounded-[1.7rem] border border-border/70 bg-background/45 p-5">
+              <div className="rounded-sm border border-border/70 bg-background/45 p-5">
                 <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Current focus</div>
                 <p className="mt-3 text-sm leading-7 text-muted-foreground">
                   {activeTabConfig.description}
@@ -677,11 +682,11 @@ export default function AgentDetail() {
             transition={{ delay: 0.2 }}
             className="space-y-6"
           >
-            <div className="p-6 rounded-2xl premium-card">
+            <div className="p-6 rounded-sm premium-card">
               <CardHeader className="space-y-4 p-0 pb-4">
                 <CardTitle className="flex items-center gap-3 text-xl">
                   <div className="icon-container icon-container-purple">
-                    <Bot className="h-5 w-5" />
+                    <PlaygroundLogo className="h-5 w-5" />
                   </div>
                   Agent Information
                 </CardTitle>
@@ -702,12 +707,12 @@ export default function AgentDetail() {
                   <h4 className="text-sm font-medium text-muted-foreground">Goals</h4>
                   <ul className="space-y-2">
                     {currentAgent.goals.length > 0 ? currentAgent.goals.map((goal, index) => (
-                      <li key={index} className="text-sm flex items-start gap-3 p-2 rounded-lg bg-muted/30">
+                      <li key={index} className="text-sm flex items-start gap-3 p-2 rounded-sm bg-muted/30">
                         <span className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                         <span className="leading-relaxed">{goal}</span>
                       </li>
                     )) : (
-                      <li className="text-sm text-muted-foreground p-2 rounded-lg bg-muted/30">
+                      <li className="text-sm text-muted-foreground p-2 rounded-sm bg-muted/30">
                         No explicit goals set yet.
                       </li>
                     )}
@@ -722,18 +727,22 @@ export default function AgentDetail() {
                 </div>
 
                 <div className="space-y-3">
-                  <h4 className="text-sm font-medium text-muted-foreground">AI Model</h4>
-                  <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">LLM Runtime</h4>
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
-                      {currentModel || getCurrentLLMModel()}
+                      {LLM_PROVIDER_LABELS[selectedProvider]}
+                    </span>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
+                      {activeProviderModel}
                     </span>
                   </div>
+                  <LLMProviderToggle compact />
                 </div>
               </CardContent>
             </div>
 
             {/* Phase 1: Level Progress */}
-            <div className="p-6 rounded-2xl premium-card">
+            <div className="p-6 rounded-sm premium-card">
               <CardHeader className="space-y-4 p-0 pb-4">
                 <CardTitle className="flex items-center gap-3 text-xl">
                   <div className="icon-container icon-container-amber">
@@ -757,7 +766,7 @@ export default function AgentDetail() {
             </div>
 
             {/* Phase 1: Emotion Mini Display */}
-            <div className="p-6 rounded-2xl premium-card">
+            <div className="p-6 rounded-sm premium-card">
               <CardHeader className="space-y-4 p-0 pb-4">
                 <CardTitle className="flex items-center gap-3 text-xl">
                   <div className="icon-container icon-container-pink">
@@ -778,7 +787,7 @@ export default function AgentDetail() {
               </CardContent>
             </div>
 
-            <div className="p-6 rounded-2xl premium-card">
+            <div className="p-6 rounded-sm premium-card">
               <CardHeader className="space-y-4 p-0 pb-4">
                 <CardTitle className="flex items-center gap-3 text-xl">
                   <div className="icon-container icon-container-cyan">
@@ -789,19 +798,19 @@ export default function AgentDetail() {
               </CardHeader>
               <CardContent className="space-y-6 p-0">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-4 rounded-xl bg-violet-500/10">
+                  <div className="text-center p-4 rounded-sm bg-violet-500/10">
                     <div className="text-3xl font-bold text-violet-400 mb-1">{agentStats.totalMessages}</div>
                     <div className="text-sm text-muted-foreground">Messages</div>
                   </div>
-                  <div className="text-center p-4 rounded-xl bg-cyan-500/10">
+                  <div className="text-center p-4 rounded-sm bg-cyan-500/10">
                     <div className="text-3xl font-bold text-cyan-400 mb-1">{agentStats.conversationCount}</div>
                     <div className="text-sm text-muted-foreground">Sessions</div>
                   </div>
-                  <div className="text-center p-4 rounded-xl bg-emerald-500/10">
+                  <div className="text-center p-4 rounded-sm bg-emerald-500/10">
                     <div className="text-3xl font-bold text-emerald-400 mb-1">{currentAgent.relationshipCount || 0}</div>
                     <div className="text-sm text-muted-foreground">Relationships</div>
                   </div>
-                  <div className="text-center p-4 rounded-xl bg-amber-500/10">
+                  <div className="text-center p-4 rounded-sm bg-amber-500/10">
                     <div className="text-3xl font-bold text-amber-400 mb-1">{currentAgent.memoryCount || 0}</div>
                     <div className="text-sm text-muted-foreground">Memories</div>
                   </div>
@@ -818,8 +827,8 @@ export default function AgentDetail() {
                 <Card className="h-[650px] flex flex-col backdrop-blur-sm bg-card/80 border-0 shadow-2xl">
                   <CardHeader className="border-b border-border/50 space-y-4">
                     <CardTitle className="flex items-center gap-3 text-2xl">
-                      <div className="p-2 rounded-xl bg-primary/10">
-                        <Bot className="h-6 w-6 text-primary" />
+                      <div className="p-2 rounded-sm bg-primary/10">
+                        <PlaygroundLogo className="h-6 w-6 text-primary" />
                       </div>
                       Chat with {currentAgent.name}
                     </CardTitle>
@@ -858,16 +867,16 @@ export default function AgentDetail() {
                             }}
                           >
                             {message.type === 'agent' && (
-                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center flex-shrink-0 shadow-lg">
-                                <Bot className="h-5 w-5 text-primary-foreground" />
+                              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0 shadow-lg">
+                                <PlaygroundLogo className="h-5 w-5 text-primary-foreground" />
                               </div>
                             )}
 
                             <div
-                              className={`max-w-[75%] rounded-2xl px-5 py-3 shadow-sm ${
+                              className={`max-w-[75%] rounded-sm px-5 py-3 shadow-sm ${
                                 message.type === 'user'
-                                  ? 'bg-gradient-to-br from-primary to-primary/90 text-primary-foreground rounded-br-md'
-                                  : 'bg-gradient-to-br from-muted to-muted/80 text-card-foreground rounded-bl-md'
+                                  ? 'bg-primary text-primary-foreground rounded-br-md'
+                                  : 'bg-muted text-card-foreground rounded-bl-md'
                               }`}
                             >
                               <p className="text-sm leading-relaxed">{message.content}</p>
@@ -897,7 +906,7 @@ export default function AgentDetail() {
                             </div>
 
                             {message.type === 'user' && (
-                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-secondary to-secondary/80 flex items-center justify-center flex-shrink-0 shadow-lg">
+                              <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center flex-shrink-0 shadow-lg">
                                 <User className="h-5 w-5 text-secondary-foreground" />
                               </div>
                             )}
@@ -922,7 +931,7 @@ export default function AgentDetail() {
                       <Button
                         type="submit"
                         disabled={!newMessage.trim() || messagesLoading}
-                        className="gap-2 px-6 py-3 text-base font-medium rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                        className="gap-2 px-6 py-3 text-base font-medium rounded-sm shadow-lg hover:shadow-xl transition-all duration-200"
                       >
                         <Send className="h-5 w-5" />
                         Send
@@ -947,7 +956,7 @@ export default function AgentDetail() {
                 <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                   <CardHeader className="space-y-4">
                     <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-xl bg-accent/10">
+                      <div className="p-2 rounded-sm bg-accent/10">
                         <TrendingUp className="h-6 w-6 text-accent" />
                       </div>
                       Personality Evolution
@@ -969,7 +978,7 @@ export default function AgentDetail() {
                             </div>
                             <div className="w-full bg-muted/30 rounded-full h-2">
                               <div
-                                className="bg-gradient-to-r from-primary/60 to-primary h-2 rounded-full transition-all duration-500"
+                                className="bg-primary h-2 rounded-full transition-all duration-500"
                                 style={{ width: `${score * 100}%` }}
                               />
                             </div>
@@ -990,7 +999,7 @@ export default function AgentDetail() {
                             </div>
                             <div className="w-full bg-muted/30 rounded-full h-2">
                               <div
-                                className="bg-gradient-to-r from-accent/60 to-accent h-2 rounded-full transition-all duration-500"
+                                className="bg-accent h-2 rounded-full transition-all duration-500"
                                 style={{ width: `${score * 100}%` }}
                               />
                             </div>
@@ -1005,7 +1014,7 @@ export default function AgentDetail() {
                 <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                   <CardHeader className="space-y-4">
                     <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-xl bg-primary/10">
+                      <div className="p-2 rounded-sm bg-primary/10">
                         <Brain className="h-6 w-6 text-primary" />
                       </div>
                       Memory Timeline
@@ -1026,10 +1035,10 @@ export default function AgentDetail() {
                     ) : (
                       <div className="space-y-4 max-h-96 overflow-y-auto">
                         {memories.slice(0, 20).map((memory) => (
-                          <div key={memory.id} className="flex gap-4 p-4 rounded-lg bg-muted/30 border border-border/50">
+                          <div key={memory.id} className="flex gap-4 p-4 rounded-sm bg-muted/30 border border-border/50">
                             <div className="flex-shrink-0">
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
-                                memory.type === 'conversation' ? 'bg-blue-100 text-blue-700' :
+                                memory.type === 'conversation' ? 'bg-[var(--color-pastel-blue)]/20 text-[var(--color-pastel-blue)]' :
                                 memory.type === 'fact' ? 'bg-green-100 text-green-700' :
                                 memory.type === 'interaction' ? 'bg-purple-100 text-purple-700' :
                                 'bg-orange-100 text-orange-700'
@@ -1083,7 +1092,7 @@ export default function AgentDetail() {
                 <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                   <CardHeader className="space-y-4">
                     <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-xl bg-secondary/10">
+                      <div className="p-2 rounded-sm bg-secondary/10">
                         <Calendar className="h-6 w-6 text-secondary" />
                       </div>
                       Memory Statistics
@@ -1091,23 +1100,23 @@ export default function AgentDetail() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="text-center p-4 rounded-lg bg-primary/5">
+                      <div className="text-center p-4 rounded-sm bg-primary/5">
                         <div className="text-2xl font-bold text-primary mb-1">{memoryStats.totalMemories || 0}</div>
                         <div className="text-sm text-muted-foreground">Total Memories</div>
                       </div>
-                      <div className="text-center p-4 rounded-lg bg-accent/5">
+                      <div className="text-center p-4 rounded-sm bg-accent/5">
                         <div className="text-2xl font-bold text-accent mb-1">
                           {Object.keys(memoryStats.memoriesByType || {}).length}
                         </div>
                         <div className="text-sm text-muted-foreground">Memory Types</div>
                       </div>
-                      <div className="text-center p-4 rounded-lg bg-secondary/5">
+                      <div className="text-center p-4 rounded-sm bg-secondary/5">
                         <div className="text-2xl font-bold text-secondary mb-1">
                           {memoryStats.averageImportance ? Math.round(memoryStats.averageImportance * 10) / 10 : 0}
                         </div>
                         <div className="text-sm text-muted-foreground">Avg. Importance</div>
                       </div>
-                      <div className="text-center p-4 rounded-lg bg-muted/30">
+                      <div className="text-center p-4 rounded-sm bg-muted/30">
                         <div className="text-2xl font-bold text-muted-foreground mb-1">
                           {currentAgent.totalInteractions || 0}
                         </div>
@@ -1123,7 +1132,7 @@ export default function AgentDetail() {
                 <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                   <CardHeader className="space-y-4">
                     <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-xl bg-pink-500/10">
+                      <div className="p-2 rounded-sm bg-pink-500/10">
                         <Heart className="h-6 w-6 text-pink-500" />
                       </div>
                       Emotional State
@@ -1149,7 +1158,7 @@ export default function AgentDetail() {
                 <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                   <CardHeader className="space-y-4">
                     <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-xl bg-purple-500/10">
+                      <div className="p-2 rounded-sm bg-purple-500/10">
                         <Clock className="h-6 w-6 text-purple-500" />
                       </div>
                       Emotional Timeline
@@ -1167,7 +1176,7 @@ export default function AgentDetail() {
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-violet-500/10">
+                    <div className="p-2 rounded-sm bg-violet-500/10">
                       <Brain className="h-6 w-6 text-violet-500" />
                     </div>
                     Neural Activity
@@ -1186,7 +1195,7 @@ export default function AgentDetail() {
                 <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                   <CardHeader className="space-y-4">
                     <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-xl bg-amber-500/10">
+                      <div className="p-2 rounded-sm bg-amber-500/10">
                         <Award className="h-6 w-6 text-amber-500" />
                       </div>
                       Level Progress
@@ -1206,7 +1215,7 @@ export default function AgentDetail() {
                 <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                   <CardHeader className="space-y-4">
                     <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-xl bg-green-500/10">
+                      <div className="p-2 rounded-sm bg-green-500/10">
                         <Star className="h-6 w-6 text-green-500" />
                       </div>
                       Unlocked Achievements ({Object.keys(agentProgress.achievements).length})
@@ -1235,7 +1244,7 @@ export default function AgentDetail() {
                 <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                   <CardHeader className="space-y-4">
                     <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-xl bg-gray-500/10">
+                      <div className="p-2 rounded-sm bg-gray-500/10">
                         <Award className="h-6 w-6 text-gray-500" />
                       </div>
                       Available Achievements
@@ -1262,8 +1271,8 @@ export default function AgentDetail() {
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-blue-500/10">
-                      <Clock className="h-6 w-6 text-blue-500" />
+                    <div className="p-2 rounded-sm bg-[var(--color-pastel-blue)]/20">
+                      <Clock className="h-6 w-6 text-[var(--color-pastel-blue)]" />
                     </div>
                     Timeline Explorer
                   </CardTitle>
@@ -1280,7 +1289,7 @@ export default function AgentDetail() {
                 <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                   <CardHeader className="space-y-4">
                     <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-xl bg-emerald-500/10">
+                      <div className="p-2 rounded-sm bg-emerald-500/10">
                         <Users className="h-6 w-6 text-emerald-500" />
                       </div>
                       Relationship Network
@@ -1295,25 +1304,25 @@ export default function AgentDetail() {
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                       </div>
                     ) : relationships.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-border/60 p-8 text-center text-muted-foreground">
+                      <div className="rounded-sm border border-dashed border-border/60 p-8 text-center text-muted-foreground">
                         No persistent relationships yet. Run simulations, challenges, or mentorship sessions to build this network.
                       </div>
                     ) : (
                       <>
                         <div className="grid gap-4 md:grid-cols-3">
-                          <div className="rounded-2xl bg-emerald-500/10 p-4">
+                          <div className="rounded-sm bg-emerald-500/10 p-4">
                             <div className="text-sm text-muted-foreground">Connections</div>
                             <div className="mt-2 text-3xl font-bold text-emerald-400">
                               {relationshipStats?.totalRelationships || relationships.length}
                             </div>
                           </div>
-                          <div className="rounded-2xl bg-violet-500/10 p-4">
+                          <div className="rounded-sm bg-violet-500/10 p-4">
                             <div className="text-sm text-muted-foreground">Strong Bonds</div>
                             <div className="mt-2 text-3xl font-bold text-violet-400">
                               {relationshipStats?.strongBonds || 0}
                             </div>
                           </div>
-                          <div className="rounded-2xl bg-cyan-500/10 p-4">
+                          <div className="rounded-sm bg-cyan-500/10 p-4">
                             <div className="text-sm text-muted-foreground">Average Trust</div>
                             <div className="mt-2 text-3xl font-bold text-cyan-400">
                               {Math.round((relationshipStats?.averageTrust || 0) * 100)}%
@@ -1321,7 +1330,7 @@ export default function AgentDetail() {
                           </div>
                         </div>
 
-                        <div className="overflow-x-auto rounded-2xl border border-border/50 bg-background/45 p-4">
+                        <div className="overflow-x-auto rounded-sm border border-border/50 bg-background/45 p-4">
                           <RelationshipGraph
                             relationships={relationships}
                             agents={relationshipAgents.length > 0 ? relationshipAgents : [{ id: currentAgent.id, name: currentAgent.name }]}
@@ -1361,7 +1370,7 @@ export default function AgentDetail() {
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-cyan-500/10">
+                    <div className="p-2 rounded-sm bg-cyan-500/10">
                       <TrendingUp className="h-6 w-6 text-cyan-500" />
                     </div>
                     Meta-Learning Dashboard
@@ -1378,7 +1387,7 @@ export default function AgentDetail() {
                   ) : learningState ? (
                     <MetaLearningDashboard state={learningState} skills={learningSkills} />
                   ) : (
-                    <div className="rounded-2xl border border-dashed border-border/60 p-8 text-center text-muted-foreground">
+                    <div className="rounded-sm border border-dashed border-border/60 p-8 text-center text-muted-foreground">
                       Learning patterns will appear after enough conversation history is available.
                     </div>
                   )}
@@ -1388,7 +1397,7 @@ export default function AgentDetail() {
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-amber-500/10">
+                    <div className="p-2 rounded-sm bg-amber-500/10">
                       <Calendar className="h-6 w-6 text-amber-500" />
                     </div>
                     Future Planning
@@ -1401,7 +1410,7 @@ export default function AgentDetail() {
                   {futurePlan ? (
                     <FuturePlanningView plan={futurePlan} />
                   ) : (
-                    <div className="rounded-2xl border border-dashed border-border/60 p-8 text-center text-muted-foreground">
+                    <div className="rounded-sm border border-dashed border-border/60 p-8 text-center text-muted-foreground">
                       Planning insights need a little history first. Conversations, timeline events, and learning goals feed this forecast.
                     </div>
                   )}
@@ -1411,7 +1420,7 @@ export default function AgentDetail() {
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-violet-500/10">
+                    <div className="p-2 rounded-sm bg-violet-500/10">
                       <Sparkles className="h-6 w-6 text-violet-500" />
                     </div>
                     Parallel Realities
@@ -1453,7 +1462,7 @@ export default function AgentDetail() {
                       onReset={() => setParallelReality(null)}
                     />
                   ) : (
-                    <div className="rounded-2xl border border-dashed border-border/60 p-8 text-center text-muted-foreground">
+                    <div className="rounded-sm border border-dashed border-border/60 p-8 text-center text-muted-foreground">
                       Choose a scenario template to compare the current trajectory against an alternate path.
                     </div>
                   )}
@@ -1464,7 +1473,7 @@ export default function AgentDetail() {
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-purple-500/10">
+                    <div className="p-2 rounded-sm bg-purple-500/10">
                       <Palette className="h-6 w-6 text-purple-500" />
                     </div>
                     Creative Portfolio
@@ -1482,8 +1491,8 @@ export default function AgentDetail() {
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-indigo-500/10">
-                      <Moon className="h-6 w-6 text-indigo-500" />
+                    <div className="p-2 rounded-sm bg-[var(--color-pastel-purple)]/20">
+                      <Moon className="h-6 w-6 text-[var(--color-pastel-purple)]" />
                     </div>
                     Dream Journal
                   </CardTitle>
@@ -1500,7 +1509,7 @@ export default function AgentDetail() {
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-amber-500/10">
+                    <div className="p-2 rounded-sm bg-amber-500/10">
                       <BookOpen className="h-6 w-6 text-amber-500" />
                     </div>
                     Personal Journal
@@ -1518,7 +1527,7 @@ export default function AgentDetail() {
                 <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                   <CardHeader className="space-y-4">
                     <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-xl bg-cyan-500/10">
+                      <div className="p-2 rounded-sm bg-cyan-500/10">
                         <Target className="h-6 w-6 text-cyan-500" />
                       </div>
                       Psychological Profile
@@ -1536,7 +1545,7 @@ export default function AgentDetail() {
                   <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                     <CardHeader className="space-y-4">
                       <CardTitle className="flex items-center gap-3 text-xl">
-                        <div className="p-2 rounded-xl bg-violet-500/10">
+                        <div className="p-2 rounded-sm bg-violet-500/10">
                           <Languages className="h-6 w-6 text-violet-500" />
                         </div>
                         Linguistic Personality
@@ -1559,7 +1568,7 @@ export default function AgentDetail() {
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-rose-500/10">
+                    <div className="p-2 rounded-sm bg-rose-500/10">
                       <Swords className="h-6 w-6 text-rose-500" />
                     </div>
                     Challenge Hub
@@ -1577,7 +1586,7 @@ export default function AgentDetail() {
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-emerald-500/10">
+                    <div className="p-2 rounded-sm bg-emerald-500/10">
                       <Network className="h-6 w-6 text-emerald-500" />
                     </div>
                     Knowledge Graph
@@ -1595,8 +1604,8 @@ export default function AgentDetail() {
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-blue-500/10">
-                      <Library className="h-6 w-6 text-blue-500" />
+                    <div className="p-2 rounded-sm bg-[var(--color-pastel-blue)]/20">
+                      <Library className="h-6 w-6 text-[var(--color-pastel-blue)]" />
                     </div>
                     Shared Knowledge Library
                   </CardTitle>
@@ -1616,7 +1625,7 @@ export default function AgentDetail() {
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-cyan-500/10">
+                    <div className="p-2 rounded-sm bg-cyan-500/10">
                       <Users className="h-6 w-6 text-cyan-500" />
                     </div>
                     Collective Intelligence
@@ -1637,7 +1646,7 @@ export default function AgentDetail() {
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-xl bg-violet-500/10">
+                    <div className="p-2 rounded-sm bg-violet-500/10">
                       <GraduationCap className="h-6 w-6 text-violet-500" />
                     </div>
                     Mentorship Hub

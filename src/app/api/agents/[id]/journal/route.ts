@@ -11,7 +11,9 @@ import { doc, getDoc, collection, addDoc, getDocs, query, orderBy, limit, where 
 import { journalService } from '@/lib/services/journalService'
 import { agentProgressService } from '@/lib/services/agentProgressService'
 import { JournalEntryType, AgentRecord, JournalEntry, MemoryRecord, AgentRelationship } from '@/types/database'
-import { getGeminiModel, getGroqModel } from '@/lib/llmConfig'
+import { generateText } from '@/lib/llm/provider'
+import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
+import type { LLMProviderInfo } from '@/lib/llmConfig'
 
 // Rate limiting: max 10 journal entries per day per agent
 const DAILY_LIMIT = 10
@@ -27,58 +29,19 @@ interface CreateJournalRequest {
 async function generateJournalContent(
   systemPrompt: string,
   journalPrompt: string,
-  apiKey: string
+  providerInfo: LLMProviderInfo
 ): Promise<string> {
-  if (process.env.GOOGLE_AI_API_KEY) {
-    const model = getGeminiModel()
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GOOGLE_AI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            { role: 'user', parts: [{ text: systemPrompt + '\n\n' + journalPrompt }] }
-          ],
-          generationConfig: {
-            temperature: 0.8,
-            maxOutputTokens: 1500,
-          },
-        }),
-      }
-    )
-
-    if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`)
-    }
-
-    const data = await response.json()
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-  }
-
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: getGroqModel(),
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: journalPrompt },
-      ],
-      temperature: 0.8,
-      max_tokens: 1500,
-    }),
+  const { content } = await generateText({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: journalPrompt },
+    ],
+    temperature: 0.8,
+    maxTokens: 1500,
+    providerInfo,
   })
 
-  if (!response.ok) {
-    throw new Error(`Groq API error: ${response.status}`)
-  }
-
-  const data = await response.json()
-  return data.choices?.[0]?.message?.content || ''
+  return content
 }
 
 export async function POST(
@@ -88,6 +51,7 @@ export async function POST(
   try {
     const { id: agentId } = await params
     const body: CreateJournalRequest = await request.json()
+    const providerInfo = getProviderInfoForRequest(request)
 
     // Get agent data
     const agentRef = doc(db, 'agents', agentId)
@@ -156,11 +120,9 @@ export async function POST(
     )
 
     // Call LLM to generate journal entry
-    const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GROQ_API_KEY
-
-    if (!apiKey) {
+    if (!providerInfo) {
       return NextResponse.json(
-        { error: 'LLM API key not configured' },
+        { error: 'LLM provider not configured' },
         { status: 500 }
       )
     }
@@ -169,7 +131,7 @@ export async function POST(
 Write authentically and introspectively, reflecting on your experiences and feelings.
 Your persona: ${agent.persona}`
 
-    const llmResponse = await generateJournalContent(systemPrompt, journalPrompt, apiKey)
+    const llmResponse = await generateJournalContent(systemPrompt, journalPrompt, providerInfo)
 
     // Parse the journal response
     let journalEntry = journalService.parseJournalResponse(
@@ -185,7 +147,7 @@ Your persona: ${agent.persona}`
       const retryPrompt = `${journalPrompt}
 
 Your previous response was ${journalEntry.wordCount} words. Rewrite it to be between ${JOURNAL_MIN_WORDS}-${JOURNAL_MAX_WORDS} words. Keep JSON format and do not include extra commentary.`
-      const retryResponse = await generateJournalContent(systemPrompt, retryPrompt, apiKey)
+      const retryResponse = await generateJournalContent(systemPrompt, retryPrompt, providerInfo)
       const retryEntry = journalService.parseJournalResponse(
         agentId,
         entryType,

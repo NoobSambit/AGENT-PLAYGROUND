@@ -21,7 +21,8 @@ import {
 import { challengeService } from '@/lib/services/challengeService'
 import { agentProgressService } from '@/lib/services/agentProgressService'
 import { Challenge, ChallengeStatus, AgentRecord } from '@/types/database'
-import { getGeminiModel, getGroqModel } from '@/lib/llmConfig'
+import { generateText } from '@/lib/llm/provider'
+import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
 import { stripUndefinedFields } from '@/lib/firestoreUtils'
 
 export async function GET(request: NextRequest) {
@@ -94,6 +95,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+    const providerInfo = getProviderInfoForRequest(request)
     const { action, templateId, participants, initiator, challengeId, message, agentId } = body
 
     // Create new challenge
@@ -396,11 +398,9 @@ export async function POST(request: NextRequest) {
       )
 
       // Call LLM
-      const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GROQ_API_KEY
-
-      if (!apiKey) {
+      if (!providerInfo) {
         return NextResponse.json(
-          { error: 'LLM API key not configured' },
+          { error: 'LLM provider not configured' },
           { status: 500 }
         )
       }
@@ -408,59 +408,15 @@ export async function POST(request: NextRequest) {
       const systemPrompt = `You are ${agent.name}. ${agent.persona}
 You are participating in a challenge. Respond authentically and engage with the challenge objectives.`
 
-      let llmResponse: string
-
-      if (process.env.GOOGLE_AI_API_KEY) {
-        const model = getGeminiModel()
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GOOGLE_AI_API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [
-                { role: 'user', parts: [{ text: systemPrompt + '\n\n' + roundPrompt }] }
-              ],
-              generationConfig: {
-                temperature: 0.8,
-                maxOutputTokens: 1000,
-              },
-            }),
-          }
-        )
-
-        if (!response.ok) {
-          throw new Error(`Gemini API error: ${response.status}`)
-        }
-
-        const data = await response.json()
-        llmResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      } else {
-        // Fallback to Groq
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: getGroqModel(),
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: roundPrompt },
-            ],
-            temperature: 0.8,
-            max_tokens: 1000,
-          }),
-        })
-
-        if (!response.ok) {
-          throw new Error(`Groq API error: ${response.status}`)
-        }
-
-        const data = await response.json()
-        llmResponse = data.choices?.[0]?.message?.content || ''
-      }
+      const { content: llmResponse } = await generateText({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: roundPrompt },
+        ],
+        temperature: 0.8,
+        maxTokens: 1000,
+        providerInfo,
+      })
 
       // Add message to challenge
       const updatedChallenge = challengeService.addMessage(

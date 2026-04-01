@@ -189,7 +189,7 @@ export function RelationshipGraph({
 
   return (
     <div className="relative">
-      <svg width={width} height={height} className="w-full rounded-[1.6rem] bg-background/40">
+      <svg width={width} height={height} className="w-full rounded-sm bg-background/40">
         {edges.map((edge) => {
           const sourceNode = getNodeById(edge.source)
           const targetNode = getNodeById(edge.target)
@@ -266,7 +266,7 @@ export function RelationshipGraph({
         })}
       </svg>
 
-      <div className="absolute bottom-4 left-4 rounded-[1.2rem] border border-border/70 bg-card/[0.74] p-3 text-xs backdrop-blur-xl">
+      <div className="absolute bottom-4 left-4 rounded-sm border border-border/70 bg-card/[0.74] p-3 text-xs backdrop-blur-xl">
         <div className="mb-2 font-semibold uppercase tracking-[0.18em] text-muted-foreground">Relationship types</div>
         <div className="space-y-1.5">
           {Object.entries(RELATIONSHIP_COLORS).map(([type, color]) => (
@@ -279,7 +279,7 @@ export function RelationshipGraph({
       </div>
 
       {selectedRelationship && (
-        <div className="absolute right-4 top-4 max-w-xs rounded-[1.4rem] border border-border/70 bg-card/[0.76] p-4 backdrop-blur-xl">
+        <div className="absolute right-4 top-4 max-w-xs rounded-sm border border-border/70 bg-card/[0.76] p-4 backdrop-blur-xl">
           <div className="flex items-start justify-between gap-4">
             <h4 className="font-semibold text-foreground">Relationship details</h4>
             <button

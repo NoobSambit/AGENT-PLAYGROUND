@@ -4,7 +4,8 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { useAgentStore } from '@/stores/agentStore'
-import { ArrowRight, Bot, Brain, MessageCircle, Plus, Sparkles, Users, Zap, type LucideIcon } from 'lucide-react'
+import { ArrowRight, Brain, MessageCircle, Plus, Sparkles, Users, Zap, type LucideIcon } from 'lucide-react'
+import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { GradientOrb } from '@/components/ui/animated-background'
 
 const fadeInUp = {
@@ -19,7 +20,7 @@ function StatCard({
   detail,
   accent,
 }: {
-  icon: LucideIcon
+  icon: LucideIcon | React.ElementType
   label: string
   value: string | number
   detail: string
@@ -54,12 +55,12 @@ function AgentSnapshot({
       variants={fadeInUp}
       whileHover={{ y: -4 }}
       onClick={onOpen}
-      className="group rounded-[1.75rem] border border-border/70 bg-card/[0.68] p-6 text-left shadow-[0_24px_60px_-38px_rgba(109,77,158,0.32)] backdrop-blur-2xl transition-all hover:border-primary/20 hover:bg-card/[0.84]"
+      className="group rounded-sm border border-border/70 bg-card/[0.68] p-6 text-left shadow-[0_24px_60px_-38px_rgba(109,77,158,0.32)] backdrop-blur-2xl transition-all hover:border-primary/20 hover:bg-card/[0.84]"
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-[0_18px_40px_-26px_rgba(109,77,158,0.6)]">
-            <Bot className="h-5 w-5" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-sm bg-primary text-primary-foreground shadow-[0_18px_40px_-26px_rgba(109,77,158,0.6)]">
+            <PlaygroundLogo className="h-5 w-5" />
           </div>
           <div>
             <h3 className="text-lg font-semibold text-foreground">{agent.name}</h3>
@@ -91,7 +92,7 @@ function AgentSnapshot({
         ))}
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-3 rounded-[1.35rem] bg-background/45 p-4">
+      <div className="mt-6 grid grid-cols-2 gap-3 rounded-sm bg-background/45 p-4">
         <div>
           <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Messages</div>
           <div className="mt-2 text-2xl font-semibold text-foreground">{agent.stats?.totalMessages || 0}</div>
@@ -107,8 +108,8 @@ function AgentSnapshot({
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="rounded-[2rem] border border-dashed border-border/70 bg-card/[0.54] px-6 py-12 text-center backdrop-blur-xl sm:px-10">
-      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-[0_18px_40px_-24px_rgba(109,77,158,0.6)]">
+    <div className="rounded-sm border border-dashed border-border/70 bg-card/[0.54] px-6 py-12 text-center backdrop-blur-xl sm:px-10">
+      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-sm bg-primary text-primary-foreground shadow-[0_18px_40px_-24px_rgba(109,77,158,0.6)]">
         <Sparkles className="h-9 w-9" />
       </div>
       <h2 className="mt-6 text-2xl font-semibold text-foreground">Start with one agent</h2>
@@ -117,7 +118,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       </p>
       <button
         onClick={onCreate}
-        className="mt-6 inline-flex h-12 items-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-5 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)]"
+        className="mt-6 inline-flex h-12 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)]"
       >
         Create Agent
         <ArrowRight className="h-4 w-4" />
@@ -178,7 +179,7 @@ export default function Dashboard() {
               <div className="flex flex-col gap-3 sm:flex-row">
                 <button
                   onClick={() => router.push('/agents/new')}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-5 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)] transition-all hover:-translate-y-0.5"
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)] transition-all hover:-translate-y-0.5"
                 >
                   <Plus className="h-4 w-4" />
                   Create a new agent
@@ -206,7 +207,7 @@ export default function Dashboard() {
                     : 'Create the first agent, then return here for oversight and simulations.',
                 },
               ].map((item) => (
-                <div key={item.title} className="rounded-[1.75rem] border border-border/70 bg-background/40 p-5 backdrop-blur-xl">
+                <div key={item.title} className="rounded-sm border border-border/70 bg-background/40 p-5 backdrop-blur-xl">
                   <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">{item.title}</div>
                   <p className="mt-3 text-sm leading-7 text-muted-foreground">{item.detail}</p>
                 </div>
@@ -221,7 +222,7 @@ export default function Dashboard() {
           variants={{ animate: { transition: { staggerChildren: 0.08 } } }}
           className="grid gap-5 md:grid-cols-2 xl:grid-cols-4"
         >
-          <StatCard icon={Bot} label="Roster size" value={stats.totalAgents} detail="All personalities created in the workspace." accent="purple" />
+          <StatCard icon={PlaygroundLogo} label="Roster size" value={stats.totalAgents} detail="All personalities created in the workspace." accent="purple" />
           <StatCard icon={Zap} label="Active agents" value={stats.activeAgents} detail="Agents ready for direct chat, planning, and simulation." accent="cyan" />
           <StatCard icon={MessageCircle} label="Conversation volume" value={stats.totalMessages.toLocaleString()} detail="A quick signal for system usage and agent activity." accent="pink" />
           <StatCard icon={Brain} label="Stored memories" value={stats.totalMemories.toLocaleString()} detail="Long-term context accumulated across the roster." accent="purple" />
@@ -259,9 +260,9 @@ export default function Dashboard() {
             {loading ? (
               <div className="grid gap-5 md:grid-cols-2">
                 {Array.from({ length: 4 }).map((_, index) => (
-                  <div key={index} className="rounded-[1.75rem] border border-border/60 bg-card/[0.6] p-6">
+                  <div key={index} className="rounded-sm border border-border/60 bg-card/[0.6] p-6">
                     <div className="flex items-center gap-3">
-                      <div className="skeleton h-12 w-12 rounded-2xl" />
+                      <div className="skeleton h-12 w-12 rounded-sm" />
                       <div className="space-y-2">
                         <div className="skeleton h-4 w-24" />
                         <div className="skeleton h-3 w-20" />
@@ -322,7 +323,7 @@ export default function Dashboard() {
                   <button
                     key={item.title}
                     onClick={item.onClick}
-                    className="group block w-full rounded-[1.5rem] border border-border/[0.65] bg-background/45 p-5 text-left transition-all hover:border-primary/20 hover:bg-background/70"
+                    className="group block w-full rounded-sm border border-border/[0.65] bg-background/45 p-5 text-left transition-all hover:border-primary/20 hover:bg-background/70"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div>
@@ -340,7 +341,7 @@ export default function Dashboard() {
             <div className="page-section px-6 py-7">
               <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Coverage</div>
               <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-                <div className="rounded-[1.5rem] bg-background/45 p-5">
+                <div className="rounded-sm bg-background/45 p-5">
                   <div className="flex items-center gap-3">
                     <div className="icon-container icon-container-cyan">
                       <Users className="h-5 w-5" />
@@ -353,7 +354,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                 </div>
-                <div className="rounded-[1.5rem] bg-background/45 p-5">
+                <div className="rounded-sm bg-background/45 p-5">
                   <div className="flex items-center gap-3">
                     <div className="icon-container icon-container-pink">
                       <Sparkles className="h-5 w-5" />

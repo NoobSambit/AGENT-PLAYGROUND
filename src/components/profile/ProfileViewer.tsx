@@ -48,7 +48,7 @@ const ENNEAGRAM_TYPES: Record<number, { name: string; description: string; icon:
   9: { name: 'The Peacemaker', description: 'Receptive, reassuring, complacent', icon: '☮️' },
 }
 
-const panelClass = 'rounded-[1.6rem] border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
+const panelClass = 'rounded-sm border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
 
 export function ProfileViewer({ agentId, agentName }: ProfileViewerProps) {
   const [profile, setProfile] = useState<PsychologicalProfile | null>(null)
@@ -101,7 +101,7 @@ export function ProfileViewer({ agentId, agentName }: ProfileViewerProps) {
   if (!profile) {
     return (
       <div className={`${panelClass} text-center`}>
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[1.4rem] bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-[0_18px_40px_-24px_rgba(109,77,158,0.68)]">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-sm bg-primary text-primary-foreground shadow-[0_18px_40px_-24px_rgba(109,77,158,0.68)]">
           <Brain className="h-8 w-8" />
         </div>
         <h3 className="mt-5 text-xl font-semibold text-foreground">No profile generated yet</h3>
@@ -111,7 +111,7 @@ export function ProfileViewer({ agentId, agentName }: ProfileViewerProps) {
         <button
           onClick={() => void generateProfile()}
           disabled={generating}
-          className="mt-6 inline-flex h-11 items-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-5 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)] disabled:opacity-60"
+          className="mt-6 inline-flex h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)] disabled:opacity-60"
         >
           <Sparkles className="h-4 w-4" />
           {generating ? 'Generating profile...' : 'Generate profile'}
@@ -220,13 +220,13 @@ function MBTIView({ profile }: { profile: MBTIProfile }) {
   return (
     <div className="space-y-6">
       <div className={`${panelClass} text-center`}>
-        <div className="inline-flex items-center gap-1 rounded-[1.4rem] bg-background/45 px-6 py-4 text-4xl font-semibold text-foreground">
+        <div className="inline-flex items-center gap-1 rounded-sm bg-background/45 px-6 py-4 text-4xl font-semibold text-foreground">
           {profile.type.split('').map((letter, index) => (
             <span
               key={index}
               className={
                 index === 0
-                  ? 'text-blue-500'
+                  ? 'text-[var(--color-pastel-blue)]'
                   : index === 1
                     ? 'text-emerald-500'
                     : index === 2
@@ -310,7 +310,7 @@ function EnneagramView({ profile }: { profile: EnneagramProfile }) {
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Tritype</div>
           <div className="mt-4 flex flex-wrap justify-center gap-4">
             {profile.tritype.map((type) => (
-              <div key={type} className="min-w-28 rounded-[1.25rem] bg-background/45 px-4 py-4 text-center">
+              <div key={type} className="min-w-28 rounded-sm bg-background/45 px-4 py-4 text-center">
                 <div className="text-2xl">{ENNEAGRAM_TYPES[type]?.icon}</div>
                 <div className="mt-2 font-medium text-foreground">Type {type}</div>
                 <div className="text-xs text-muted-foreground">{ENNEAGRAM_TYPES[type]?.name}</div>
@@ -421,7 +421,7 @@ function InsightsView({ profile }: { profile: PsychologicalProfile }) {
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {profile.motivationalProfile.coreValues.map((value) => (
-            <span key={value} className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-medium text-blue-600 dark:text-blue-300">
+            <span key={value} className="rounded-full bg-[var(--color-pastel-blue)]/20 px-3 py-1 text-xs font-medium text-[var(--color-pastel-blue)] dark:text-[var(--color-pastel-blue)]">
               {value}
             </span>
           ))}
@@ -464,7 +464,7 @@ function InsightsView({ profile }: { profile: PsychologicalProfile }) {
             <div className="text-3xl font-semibold text-accent">{(profile.emotionalIntelligence * 100).toFixed(0)}%</div>
             <div className="h-3 flex-1 rounded-full bg-muted/45">
               <div
-                className="h-3 rounded-full bg-gradient-to-r from-accent to-primary"
+                className="h-3 rounded-full bg-primary "
                 style={{ width: `${profile.emotionalIntelligence * 100}%` }}
               />
             </div>

@@ -21,7 +21,7 @@ const CATEGORY_ICONS: Record<KnowledgeCategory, string> = {
 }
 
 const CATEGORY_COLORS: Record<KnowledgeCategory, string> = {
-  fact: 'bg-blue-500/15 text-blue-600 dark:text-blue-300',
+  fact: 'bg-[var(--color-pastel-blue)]/20 text-[var(--color-pastel-blue)] dark:text-[var(--color-pastel-blue)]',
   opinion: 'bg-primary/15 text-primary',
   theory: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300',
   experience: 'bg-amber-500/15 text-amber-600 dark:text-amber-300',
@@ -29,7 +29,7 @@ const CATEGORY_COLORS: Record<KnowledgeCategory, string> = {
   wisdom: 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300'
 }
 
-const panelClass = 'rounded-[1.6rem] border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
+const panelClass = 'rounded-sm border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
 
 export function SharedKnowledgeLibrary({
   agentId,
@@ -156,7 +156,7 @@ export function SharedKnowledgeLibrary({
     <div className="space-y-6">
       {stats && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Entries" value={stats.total} tone="text-blue-600 dark:text-blue-300" />
+          <StatCard label="Entries" value={stats.total} tone="text-[var(--color-pastel-blue)] dark:text-[var(--color-pastel-blue)]" />
           <StatCard label="Avg confidence" value={`${(stats.averageConfidence * 100).toFixed(0)}%`} tone="text-emerald-600 dark:text-emerald-300" />
           <StatCard
             label="Categories active"
@@ -212,7 +212,7 @@ export function SharedKnowledgeLibrary({
             {showContribute && agentId && (
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="inline-flex h-12 items-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-5 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)]"
+                className="inline-flex h-12 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)]"
               >
                 <Plus className="h-4 w-4" />
                 Contribute
@@ -235,7 +235,7 @@ export function SharedKnowledgeLibrary({
             <div key={item.id} className={panelClass}>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-background/45 text-2xl">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-sm bg-background/45 text-2xl">
                     {CATEGORY_ICONS[item.category]}
                   </div>
                   <div>
@@ -318,7 +318,7 @@ export function SharedKnowledgeLibrary({
                 <select
                   value={newKnowledge.category}
                   onChange={(event) => setNewKnowledge((prev) => ({ ...prev, category: event.target.value as KnowledgeCategory }))}
-                  className="mt-2 h-12 w-full rounded-2xl border border-border/70 bg-card/[0.62] px-4 text-sm text-foreground outline-none"
+                  className="mt-2 h-12 w-full rounded-sm border border-border/70 bg-card/[0.62] px-4 text-sm text-foreground outline-none"
                 >
                   <option value="fact">Fact</option>
                   <option value="opinion">Opinion</option>
@@ -360,7 +360,7 @@ export function SharedKnowledgeLibrary({
               <button
                 onClick={() => void handleCreate()}
                 disabled={!newKnowledge.topic || !newKnowledge.content}
-                className="inline-flex h-11 items-center justify-center rounded-full bg-gradient-to-r from-primary to-accent px-5 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)] disabled:opacity-60"
+                className="inline-flex h-11 items-center justify-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)] disabled:opacity-60"
               >
                 Contribute knowledge
               </button>

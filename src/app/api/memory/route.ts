@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MemoryService } from '@/lib/services/memoryService'
 import { CreateMemoryData, UpdateMemoryData } from '@/types/database'
-import { getGeminiModel, getGroqModel } from '@/lib/llmConfig'
+import { generateText } from '@/lib/llm/provider'
+import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
 
 interface MemoryRequest {
   action: 'get' | 'getRelevant' | 'summarize' | 'delete' | 'getStats' | 'create' | 'update'
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     if (body.action === 'summarize') {
-      return await handleSummarize(body)
+      return await handleSummarize(request, body)
     }
 
     if (body.action === 'delete') {
@@ -90,7 +91,10 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function handleSummarize(body: { memories: Array<{ content: string; summary: string; importance: number }>, context?: string }) {
+async function handleSummarize(
+  request: NextRequest,
+  body: { memories: Array<{ content: string; summary: string; importance: number }>, context?: string }
+) {
   try {
     if (!body.memories || body.memories.length === 0) {
       return NextResponse.json(
@@ -99,12 +103,11 @@ async function handleSummarize(body: { memories: Array<{ content: string; summar
       )
     }
 
-    // Use Gemini/Groq to summarize memories for efficient storage
-    const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GROQ_API_KEY
+    const providerInfo = getProviderInfoForRequest(request)
 
-    if (!apiKey) {
+    if (!providerInfo) {
       return NextResponse.json(
-        { error: 'LLM API key not configured' },
+        { error: 'LLM provider not configured' },
         { status: 500 }
       )
     }
@@ -124,55 +127,17 @@ ${memoriesText}
 
 Please provide a concise summary that captures the key information, patterns, and insights from these memories. Focus on what would be most relevant for the AI agent to remember about user preferences, interaction patterns, and important facts.`
 
-    let summary = ''
+    const { content: summary } = await generateText({
+      messages: [
+        { role: 'system', content: 'You are a helpful assistant that summarizes memories for AI agents.' },
+        { role: 'user', content: prompt }
+      ],
+      maxTokens: 500,
+      temperature: 0.3,
+      providerInfo,
+    })
 
-    if (process.env.GOOGLE_AI_API_KEY) {
-      const model = getGeminiModel()
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: prompt }]
-          }]
-        })
-      })
-
-      if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.status}`)
-      }
-
-      const data = await response.json()
-      summary = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Unable to generate summary'
-    } else if (process.env.GROQ_API_KEY) {
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: getGroqModel(),
-          messages: [
-            { role: 'system', content: 'You are a helpful assistant that summarizes memories for AI agents.' },
-            { role: 'user', content: prompt }
-          ],
-          max_tokens: 500,
-          temperature: 0.3
-        })
-      })
-
-      if (!response.ok) {
-        throw new Error(`Groq API error: ${response.status}`)
-      }
-
-      const data = await response.json()
-      summary = data.choices?.[0]?.message?.content || 'Unable to generate summary'
-    }
-
-    return NextResponse.json({ summary })
+    return NextResponse.json({ summary: summary || 'Unable to generate summary' })
   } catch (error) {
     console.error('Summarization error:', error)
     return NextResponse.json(

@@ -117,7 +117,7 @@ export function CreativePortfolio({ agentId, agentName }: CreativePortfolioProps
         </div>
         <button
           onClick={() => setShowCreateForm(true)}
-          className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
+          className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-sm transition-colors"
         >
           ✨ Create New
         </button>
@@ -183,7 +183,7 @@ export function CreativePortfolio({ agentId, agentName }: CreativePortfolioProps
       {/* Create Form Modal */}
       {showCreateForm && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="bg-gray-800 rounded-sm p-6 max-w-md w-full mx-4">
             <h4 className="text-lg font-semibold text-white mb-4">Create New Work</h4>
 
             <div className="space-y-4">
@@ -252,7 +252,7 @@ export function CreativePortfolio({ agentId, agentName }: CreativePortfolioProps
       {/* Work Detail Modal */}
       {selectedWork && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+          <div className="bg-gray-800 rounded-sm p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-start mb-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
@@ -314,7 +314,7 @@ function StatCard({
   icon: string
 }) {
   return (
-    <div className="bg-gray-800 rounded-lg p-4 text-center">
+    <div className="bg-gray-800 rounded-sm p-4 text-center">
       <div className="text-2xl mb-1">{icon}</div>
       <div className="text-xl font-bold text-white">{value}</div>
       <div className="text-xs text-gray-400">{label}</div>
@@ -355,7 +355,7 @@ function WorkCard({
   return (
     <div
       onClick={onClick}
-      className="bg-gray-800 rounded-lg p-4 hover:bg-gray-750 transition-colors cursor-pointer"
+      className="bg-gray-800 rounded-sm p-4 hover:bg-gray-750 transition-colors cursor-pointer"
     >
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">

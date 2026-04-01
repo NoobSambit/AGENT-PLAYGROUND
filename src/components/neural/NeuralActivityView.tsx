@@ -7,7 +7,7 @@ interface NeuralActivityViewProps {
   agentId: string
 }
 
-const panelClass = 'rounded-[1.6rem] border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
+const panelClass = 'rounded-sm border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
 
 export function NeuralActivityView({ agentId }: NeuralActivityViewProps) {
   const [snapshot, setSnapshot] = useState<NeuralActivitySnapshot | null>(null)

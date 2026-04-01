@@ -221,9 +221,19 @@ Supported actions:
 
 ## LLM
 
+### `GET /api/llm`
+
+Returns provider availability and the currently selected request-scoped provider.
+
 ### `POST /api/llm`
 
 Provider-facing or orchestration-facing route for model-backed interactions used by the app.
+
+Current provider support:
+
+- Gemini
+- Groq
+- Ollama via a local or reachable `OLLAMA_BASE_URL`
 
 ## Agent-Scoped Enhancement Routes
 

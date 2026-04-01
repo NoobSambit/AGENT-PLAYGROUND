@@ -41,7 +41,7 @@ const DIFFICULTY_COLORS: Record<ChallengeDifficulty, string> = {
 
 const STATUS_COLORS: Record<ChallengeStatus, string> = {
   pending: 'text-gray-400 bg-gray-400/20',
-  in_progress: 'text-blue-400 bg-blue-400/20',
+  in_progress: 'text-[var(--color-pastel-blue)] bg-[var(--color-pastel-blue)]/20',
   completed: 'text-green-400 bg-green-400/20',
   failed: 'text-red-400 bg-red-400/20',
   abandoned: 'text-gray-500 bg-gray-500/20',
@@ -223,7 +223,7 @@ export function ChallengeHub({ currentAgentId, agents }: ChallengeHubProps) {
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg transition-colors"
+          className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-sm transition-colors"
         >
           ⚔️ New Challenge
         </button>
@@ -311,7 +311,7 @@ export function ChallengeHub({ currentAgentId, agents }: ChallengeHubProps) {
       {/* Create Challenge Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+          <div className="bg-gray-800 rounded-sm p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h4 className="text-lg font-semibold text-white">Create Challenge</h4>
               <button
@@ -334,7 +334,7 @@ export function ChallengeHub({ currentAgentId, agents }: ChallengeHubProps) {
                     <button
                       key={template.id}
                       onClick={() => setSelectedTemplate(template)}
-                      className="bg-gray-700 hover:bg-gray-600 p-4 rounded-lg text-left transition-colors"
+                      className="bg-gray-700 hover:bg-gray-600 p-4 rounded-sm text-left transition-colors"
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-2xl">{TYPE_ICONS[template.type]}</span>
@@ -366,7 +366,7 @@ export function ChallengeHub({ currentAgentId, agents }: ChallengeHubProps) {
                   ← Back to templates
                 </button>
 
-                <div className="bg-gray-700 rounded-lg p-4 mb-4">
+                <div className="bg-gray-700 rounded-sm p-4 mb-4">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-2xl">{TYPE_ICONS[selectedTemplate.type]}</span>
                     <span className="font-semibold text-white">{selectedTemplate.name}</span>
@@ -382,7 +382,7 @@ export function ChallengeHub({ currentAgentId, agents }: ChallengeHubProps) {
                   {agents.map(agent => (
                     <label
                       key={agent.id}
-                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                      className={`flex items-center gap-3 p-3 rounded-sm cursor-pointer transition-colors ${
                         selectedParticipants.includes(agent.id)
                           ? 'bg-rose-600/30 border border-rose-500'
                           : 'bg-gray-700 hover:bg-gray-600'
@@ -462,7 +462,7 @@ function StatCard({
   icon: string
 }) {
   return (
-    <div className="bg-gray-800 rounded-lg p-4 text-center">
+    <div className="bg-gray-800 rounded-sm p-4 text-center">
       <div className="text-2xl mb-1">{icon}</div>
       <div className="text-xl font-bold text-white">{value}</div>
       <div className="text-xs text-gray-400">{label}</div>
@@ -482,7 +482,7 @@ function ChallengeCard({
   return (
     <div
       onClick={onClick}
-      className="bg-gray-800 rounded-lg p-4 hover:bg-gray-750 transition-colors cursor-pointer"
+      className="bg-gray-800 rounded-sm p-4 hover:bg-gray-750 transition-colors cursor-pointer"
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
@@ -559,7 +559,7 @@ function ChallengeDetailModal({
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-lg p-6 max-w-3xl w-full max-h-[80vh] overflow-y-auto">
+      <div className="bg-gray-800 rounded-sm p-6 max-w-3xl w-full max-h-[80vh] overflow-y-auto">
         <div className="flex justify-between items-start mb-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -633,7 +633,7 @@ function ChallengeDetailModal({
             <h5 className="text-white font-semibold mb-2">
               Conversation (Round {challenge.currentRound + 1}/{challenge.maxRounds})
             </h5>
-            <div className="space-y-3 max-h-64 overflow-y-auto bg-gray-900 rounded-lg p-4">
+            <div className="space-y-3 max-h-64 overflow-y-auto bg-gray-900 rounded-sm p-4">
               {challenge.messages.map(msg => (
                 <div key={msg.id} className="flex gap-3">
                   <div className="w-8 h-8 rounded-full bg-gray-700 flex-shrink-0 flex items-center justify-center text-sm text-white">
@@ -654,7 +654,7 @@ function ChallengeDetailModal({
 
         {/* Evaluation */}
         {challenge.evaluation && (
-          <div className="mb-6 bg-gray-700 rounded-lg p-4">
+          <div className="mb-6 bg-gray-700 rounded-sm p-4">
             <div className="flex justify-between items-center mb-2">
               <span className={`font-semibold ${challenge.evaluation.success ? 'text-green-400' : 'text-red-400'}`}>
                 {challenge.evaluation.success ? '✓ Challenge Completed!' : '✕ Challenge Failed'}
@@ -680,7 +680,7 @@ function ChallengeDetailModal({
           {challenge.status === 'in_progress' && (
             <button
               onClick={onAdvanceRound}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded transition-colors"
+              className="flex-1 bg-[var(--color-pastel-blue)]/20 hover:bg-[var(--color-pastel-blue)]/20 text-white py-2 rounded transition-colors"
             >
               ⏭️ Next Round
             </button>

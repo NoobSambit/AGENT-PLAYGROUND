@@ -108,7 +108,7 @@ export function DreamJournal({ agentId, agentName }: DreamJournalProps) {
         </div>
         <button
           onClick={() => setSelectedType('symbolic')}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors"
+          className="bg-[var(--color-pastel-purple)]/20 hover:bg-[var(--color-pastel-purple)]/20 text-white px-4 py-2 rounded-sm transition-colors"
         >
           🌙 Generate Dream
         </button>
@@ -142,13 +142,13 @@ export function DreamJournal({ agentId, agentName }: DreamJournalProps) {
 
       {/* Patterns */}
       {patterns && (patterns.recurringSymbols.length > 0 || patterns.recurringThemes.length > 0) && (
-        <div className="bg-gray-800 rounded-lg p-4">
+        <div className="bg-gray-800 rounded-sm p-4">
           <h4 className="text-white font-semibold mb-3">Recurring Patterns</h4>
           <div className="flex flex-wrap gap-2">
             {patterns.recurringSymbols.map(symbol => (
               <span
                 key={symbol}
-                className="text-xs bg-indigo-600/30 text-indigo-300 px-2 py-1 rounded"
+                className="text-xs bg-[var(--color-pastel-purple)]/20 text-[var(--color-pastel-purple)] px-2 py-1 rounded"
               >
                 🔮 {symbol}
               </span>
@@ -187,7 +187,7 @@ export function DreamJournal({ agentId, agentName }: DreamJournalProps) {
       {/* Dream Type Selector Modal */}
       {selectedType !== null && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="bg-gray-800 rounded-sm p-6 max-w-md w-full mx-4">
             <h4 className="text-lg font-semibold text-white mb-4">
               Choose Dream Type
             </h4>
@@ -198,9 +198,9 @@ export function DreamJournal({ agentId, agentName }: DreamJournalProps) {
                   <button
                     key={type}
                     onClick={() => setSelectedType(type)}
-                    className={`p-3 rounded-lg text-left transition-colors ${
+                    className={`p-3 rounded-sm text-left transition-colors ${
                       selectedType === type
-                        ? 'bg-indigo-600'
+                        ? 'bg-[var(--color-pastel-purple)]/20'
                         : 'bg-gray-700 hover:bg-gray-600'
                     }`}
                   >
@@ -221,7 +221,7 @@ export function DreamJournal({ agentId, agentName }: DreamJournalProps) {
               <button
                 onClick={generateDream}
                 disabled={generating}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded transition-colors disabled:opacity-50"
+                className="flex-1 bg-[var(--color-pastel-purple)]/20 hover:bg-[var(--color-pastel-purple)]/20 text-white py-2 rounded transition-colors disabled:opacity-50"
               >
                 {generating ? 'Dreaming...' : 'Generate'}
               </button>
@@ -233,7 +233,7 @@ export function DreamJournal({ agentId, agentName }: DreamJournalProps) {
       {/* Dream Detail Modal */}
       {selectedDream && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+          <div className="bg-gray-800 rounded-sm p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-start mb-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
@@ -304,8 +304,8 @@ export function DreamJournal({ agentId, agentName }: DreamJournalProps) {
 
             {/* Emotional Processing */}
             {selectedDream.emotionalProcessing && (
-              <div className="bg-indigo-900/30 rounded-lg p-4 mb-6">
-                <div className="text-indigo-300 text-sm">
+              <div className="bg-[var(--color-pastel-purple)]/20 rounded-sm p-4 mb-6">
+                <div className="text-[var(--color-pastel-purple)] text-sm">
                   💭 {selectedDream.emotionalProcessing}
                 </div>
               </div>
@@ -334,7 +334,7 @@ function StatCard({
   icon: string
 }) {
   return (
-    <div className="bg-gray-800 rounded-lg p-4 text-center">
+    <div className="bg-gray-800 rounded-sm p-4 text-center">
       <div className="text-2xl mb-1">{icon}</div>
       <div className="text-xl font-bold text-white">{value}</div>
       <div className="text-xs text-gray-400">{label}</div>
@@ -352,7 +352,7 @@ function DreamCard({
   return (
     <div
       onClick={onClick}
-      className="bg-gray-800 rounded-lg p-4 hover:bg-gray-750 transition-colors cursor-pointer"
+      className="bg-gray-800 rounded-sm p-4 hover:bg-gray-750 transition-colors cursor-pointer"
     >
       <div className="flex items-start gap-3">
         <span className="text-3xl">{DREAM_ICONS[dream.type]}</span>
@@ -364,7 +364,7 @@ function DreamCard({
             {dream.symbols.slice(0, 3).map((symbol, i) => (
               <span
                 key={i}
-                className="text-xs bg-indigo-600/30 text-indigo-300 px-2 py-0.5 rounded"
+                className="text-xs bg-[var(--color-pastel-purple)]/20 text-[var(--color-pastel-purple)] px-2 py-0.5 rounded"
               >
                 {symbol.symbol}
               </span>
@@ -383,7 +383,7 @@ function DreamCard({
 
 function SymbolCard({ symbol }: { symbol: DreamSymbol }) {
   return (
-    <div className="bg-gray-700 rounded-lg p-3">
+    <div className="bg-gray-700 rounded-sm p-3">
       <div className="flex justify-between items-start">
         <span className="font-medium text-white capitalize">{symbol.symbol}</span>
         <span className="text-xs text-gray-400">{symbol.emotionalAssociation}</span>
@@ -402,7 +402,7 @@ function QualityMeter({ label, value }: { label: string; value: number }) {
       </div>
       <div className="w-full bg-gray-700 rounded-full h-1.5 mt-1">
         <div
-          className="bg-indigo-500 h-1.5 rounded-full"
+          className="bg-[var(--color-pastel-purple)]/20 h-1.5 rounded-full"
           style={{ width: `${value * 100}%` }}
         />
       </div>

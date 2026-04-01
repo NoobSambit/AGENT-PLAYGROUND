@@ -1,4 +1,4 @@
-// Real LLM integration functions for Gemini AI
+// Real LLM integration functions for configured providers
 // Uses streaming responses via Server-Sent Events
 
 export interface LLMResponse {
@@ -8,7 +8,7 @@ export interface LLMResponse {
 }
 
 /**
- * Generates a real AI response for an agent using Gemini API
+ * Generates a real AI response for an agent using the configured provider
  * Uses streaming responses for better UX
  *
  * @param userMessage - The user's message
@@ -47,7 +47,7 @@ export async function generateAgentResponse(
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
       let fullContent = ''
-      let model = 'gemini-2.0-flash' // Default model
+      let model = getCurrentLLMModel()
 
       const readStream = async () => {
         try {
@@ -150,12 +150,18 @@ export function getCurrentLLMModel(): string {
   if (publicProvider === 'groq') {
     return 'llama-3.3-70b-versatile'
   }
+  if (publicProvider === 'ollama') {
+    return process.env.NEXT_PUBLIC_LLM_MODEL || 'llama3.2'
+  }
 
   if (process.env.GOOGLE_AI_API_KEY) {
     return 'gemini-2.0-flash'
   }
   if (process.env.GROQ_API_KEY) {
     return 'llama-3.3-70b-versatile'
+  }
+  if (process.env.LLM_PROVIDER === 'ollama') {
+    return process.env.NEXT_PUBLIC_LLM_MODEL || 'llama3.2'
   }
 
   return 'fallback'

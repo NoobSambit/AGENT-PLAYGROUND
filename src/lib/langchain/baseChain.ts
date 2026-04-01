@@ -1,17 +1,25 @@
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
 import { ChatGroq } from '@langchain/groq'
+import { ChatOllama } from '@langchain/ollama'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { BaseMessage, SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
 import { LinguisticProfile, EmotionalState } from '@/types/database'
 import { PersonalityService } from '@/lib/services/personalityService'
 import { emotionalService } from '@/lib/services/emotionalService'
-import { getGeminiModel, getGroqModel } from '@/lib/llmConfig'
+import {
+  getConfiguredLLMProvider,
+  getGeminiModel,
+  getGroqModel,
+  getOllamaBaseUrl,
+  getOllamaModel,
+  type LLMProvider,
+} from '@/lib/llmConfig'
 
 export interface LLMConfig {
   temperature?: number
   maxTokens?: number
   model?: string
-  provider?: 'gemini' | 'groq'
+  provider?: LLMProvider
 }
 
 // Phase 1 context for enhanced prompts
@@ -23,7 +31,7 @@ export interface Phase1Context {
 export class BaseChain {
   private static instance: BaseChain | null = null
   private llm: BaseChatModel | null = null
-  private provider: 'gemini' | 'groq' | null = null
+  private provider: LLMProvider | null = null
   private config: LLMConfig = {
     temperature: 0.7,
     maxTokens: 1000
@@ -73,6 +81,13 @@ export class BaseChain {
         maxTokens: this.config.maxTokens || 1000,
         streaming: true,
         maxRetries: 2,
+      })
+    } else if (provider === 'ollama') {
+      this.llm = new ChatOllama({
+        baseUrl: getOllamaBaseUrl(),
+        model,
+        temperature: this.config.temperature || 0.7,
+        numPredict: this.config.maxTokens || 1000,
       })
     } else {
       throw new Error('No LLM provider configured')
@@ -179,34 +194,30 @@ export class BaseChain {
     }
   }
 
-  private resolveProvider(config?: LLMConfig): 'gemini' | 'groq' {
+  private resolveProvider(config?: LLMConfig): LLMProvider {
     if (config?.provider) {
       return config.provider
     }
 
-    const envProvider = process.env.LLM_PROVIDER || process.env.NEXT_PUBLIC_LLM_PROVIDER
-    if (envProvider === 'groq' && process.env.GROQ_API_KEY) {
-      return 'groq'
-    }
-    if (envProvider === 'gemini' && process.env.GOOGLE_AI_API_KEY) {
-      return 'gemini'
+    const providerInfo = getConfiguredLLMProvider()
+    if (providerInfo) {
+      return providerInfo.provider
     }
 
-    if (process.env.GOOGLE_AI_API_KEY) {
-      return 'gemini'
-    }
-    if (process.env.GROQ_API_KEY) {
-      return 'groq'
-    }
-
-    throw new Error('No LLM provider configured (GOOGLE_AI_API_KEY or GROQ_API_KEY)')
+    throw new Error('No LLM provider configured (GOOGLE_AI_API_KEY, GROQ_API_KEY, or LLM_PROVIDER=ollama)')
   }
 
-  private resolveModel(provider: 'gemini' | 'groq', config?: LLMConfig): string {
+  private resolveModel(provider: LLMProvider, config?: LLMConfig): string {
     if (provider === 'gemini') {
       if (config?.model) return config.model
       if (this.provider === 'gemini' && this.config.model) return this.config.model
       return getGeminiModel()
+    }
+
+    if (provider === 'ollama') {
+      if (config?.model) return config.model
+      if (this.provider === 'ollama' && this.config.model) return this.config.model
+      return getOllamaModel()
     }
 
     if (config?.model) return config.model

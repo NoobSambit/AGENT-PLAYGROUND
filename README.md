@@ -17,7 +17,7 @@ npm install
 npm run dev
 ```
 
-Create `.env.local` from `.env.example` before running feature flows that depend on Firebase or model providers.
+Create `.env.local` from `.env.example` before running feature flows that depend on Firebase or model providers. The app now exposes a provider toggle in the UI, but Gemini and Groq still require server-side keys, and Ollama still requires a local model to be available.
 
 ## Documentation
 
@@ -63,6 +63,7 @@ npm run db:reset -- --confirm-project=your_project_id
 - LangChain
 - Google Gemini
 - Groq
+- Ollama
 
 ---
 

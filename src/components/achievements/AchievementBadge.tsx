@@ -27,9 +27,9 @@ const RARITY_STYLES: Record<AchievementRarity, {
     glow: ''
   },
   rare: {
-    bg: 'bg-blue-50 dark:bg-blue-900/30',
-    border: 'border-blue-400 dark:border-blue-500',
-    text: 'text-blue-600 dark:text-blue-400',
+    bg: 'bg-[var(--color-pastel-blue)]/20 dark:bg-[var(--color-pastel-blue)]/20',
+    border: 'border-[var(--color-pastel-blue)]/50 dark:border-[var(--color-pastel-blue)]/50',
+    text: 'text-[var(--color-pastel-blue)] dark:text-[var(--color-pastel-blue)]',
     glow: 'shadow-blue-200 dark:shadow-blue-900'
   },
   epic: {
@@ -167,7 +167,7 @@ export function AchievementCard({
   return (
     <div
       className={`
-        relative p-4 rounded-lg border-2 transition-all
+        relative p-4 rounded-sm border-2 transition-all
         ${unlocked ? rarityStyle.bg : 'bg-gray-100 dark:bg-gray-800'}
         ${unlocked ? rarityStyle.border : 'border-gray-200 dark:border-gray-700'}
         ${!unlocked ? 'opacity-70' : ''}
@@ -222,7 +222,7 @@ export function AchievementCard({
               </div>
               <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-blue-500 rounded-full transition-all"
+                  className="h-full bg-[var(--color-pastel-blue)]/20 rounded-full transition-all"
                   style={{ width: `${progress}%` }}
                 />
               </div>
@@ -262,7 +262,7 @@ export function LevelProgress({
       {/* Level badge */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl shadow-lg">
+          <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white font-bold text-xl shadow-lg">
             {level}
           </div>
           <div>
@@ -286,7 +286,7 @@ export function LevelProgress({
         </div>
         <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full transition-all duration-500"
+            className="h-full bg-primary rounded-full transition-all duration-500"
             style={{ width: `${progressPercent}%` }}
           />
         </div>

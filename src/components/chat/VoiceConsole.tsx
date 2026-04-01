@@ -150,7 +150,7 @@ export function VoiceConsole({
   }, [voiceEnabled, voiceProfile.pitch, voiceProfile.rate, voiceProfile.volume])
 
   return (
-    <div className="mt-4 rounded-[1.35rem] border border-border/60 bg-background/45 p-4">
+    <div className="mt-4 rounded-sm border border-border/60 bg-background/45 p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">Voice Console</div>

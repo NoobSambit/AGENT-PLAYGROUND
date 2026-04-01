@@ -11,7 +11,8 @@ import { doc, getDoc, collection, addDoc, getDocs, query, orderBy, limit, where 
 import { dreamService } from '@/lib/services/dreamService'
 import { agentProgressService } from '@/lib/services/agentProgressService'
 import { DreamType, AgentRecord, Dream, MemoryRecord, EmotionType } from '@/types/database'
-import { getGeminiModel, getGroqModel } from '@/lib/llmConfig'
+import { generateText } from '@/lib/llm/provider'
+import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
 
 // Rate limiting: max 5 dreams per day per agent
 const DAILY_LIMIT = 5
@@ -28,6 +29,7 @@ export async function POST(
   try {
     const { id: agentId } = await params
     const body: CreateDreamRequest = await request.json()
+    const providerInfo = getProviderInfoForRequest(request)
 
     // Get agent data
     const agentRef = doc(db, 'agents', agentId)
@@ -90,11 +92,9 @@ export async function POST(
     )
 
     // Call LLM to generate dream
-    const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GROQ_API_KEY
-
-    if (!apiKey) {
+    if (!providerInfo) {
       return NextResponse.json(
-        { error: 'LLM API key not configured' },
+        { error: 'LLM provider not configured' },
         { status: 500 }
       )
     }
@@ -105,59 +105,15 @@ It should reflect the agent's recent experiences and emotional state.
 
 ${agent.persona}`
 
-    let llmResponse: string
-
-    if (process.env.GOOGLE_AI_API_KEY) {
-      const model = getGeminiModel()
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GOOGLE_AI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              { role: 'user', parts: [{ text: systemPrompt + '\n\n' + dreamPrompt }] }
-            ],
-            generationConfig: {
-              temperature: 0.95,
-              maxOutputTokens: 2500,
-            },
-          }),
-        }
-      )
-
-      if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.status}`)
-      }
-
-      const data = await response.json()
-      llmResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-    } else {
-      // Fallback to Groq
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: getGroqModel(),
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: dreamPrompt },
-          ],
-          temperature: 0.95,
-          max_tokens: 2500,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Groq API error: ${response.status}`)
-      }
-
-      const data = await response.json()
-      llmResponse = data.choices?.[0]?.message?.content || ''
-    }
+    const { content: llmResponse } = await generateText({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: dreamPrompt },
+      ],
+      temperature: 0.95,
+      maxTokens: 2500,
+      providerInfo,
+    })
 
     // Parse the dream response
     const relatedMemoryIds = memories.map(m => m.id)

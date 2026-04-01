@@ -100,13 +100,13 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 
   return (
     <motion.div
-      className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50"
+      className="bg-gray-800/50 rounded-sm p-4 border border-gray-700/50"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
     >
       <div className="flex items-start gap-3">
         <div
-          className="p-2 rounded-lg"
+          className="p-2 rounded-sm"
           style={{ backgroundColor: `${config.color}20` }}
         >
           <Icon className="w-4 h-4" style={{ color: config.color }} />
@@ -195,7 +195,7 @@ function PatternActivity({ patterns }: { patterns: LearningPattern[] }) {
         return (
           <div key={type} className="flex items-center gap-3">
             <div
-              className="p-1.5 rounded-lg"
+              className="p-1.5 rounded-sm"
               style={{ backgroundColor: `${config.color}20` }}
             >
               <Icon className="w-3.5 h-3.5" style={{ color: config.color }} />
@@ -229,7 +229,7 @@ function SkillProgressionCard({ skill }: { skill: SkillProgression }) {
   const levelProgress = (skill.experiencePoints / skill.pointsToNextLevel) * 100
 
   return (
-    <div className="bg-gray-800/30 rounded-lg p-3">
+    <div className="bg-gray-800/30 rounded-sm p-3">
       <div className="flex items-center gap-2 mb-2">
         <Icon className="w-4 h-4" style={{ color: config.color }} />
         <span className="text-sm font-medium text-white">{skill.skillName}</span>
@@ -270,12 +270,12 @@ function RecommendationCard({
 
   return (
     <motion.div
-      className="bg-gradient-to-r from-gray-800/50 to-gray-800/30 rounded-lg p-3 border border-gray-700/50"
+      className="bg-primary rounded-sm p-3 border border-gray-700/50"
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
     >
       <div className="flex items-start gap-3">
-        <div className={`p-2 rounded-lg ${
+        <div className={`p-2 rounded-sm ${
           recommendation.priority === 'high' ? 'bg-red-500/20' :
           recommendation.priority === 'medium' ? 'bg-amber-500/20' :
           'bg-cyan-500/20'
@@ -307,12 +307,12 @@ export function MetaLearningDashboard({
   const { profile, stats, recommendations, activePatterns, activeGoals } = state
 
   return (
-    <div className={`bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl border border-gray-800 overflow-hidden ${className}`}>
+    <div className={`bg-primary rounded-sm border border-gray-800 overflow-hidden ${className}`}>
       {/* Header */}
       <div className="p-5 border-b border-gray-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-gradient-to-br from-purple-500/20 to-cyan-500/20 rounded-xl">
+            <div className="p-2.5 bg-primary rounded-sm">
               <Brain className="w-6 h-6 text-purple-400" />
             </div>
             <div>
@@ -329,7 +329,7 @@ export function MetaLearningDashboard({
         </div>
 
         {/* Tab navigation */}
-        <div className="flex gap-1 mt-4 bg-gray-800/50 rounded-lg p-1">
+        <div className="flex gap-1 mt-4 bg-gray-800/50 rounded-sm p-1">
           {(['overview', 'patterns', 'goals', 'skills'] as const).map((tab) => (
             <button
               key={tab}
@@ -359,32 +359,32 @@ export function MetaLearningDashboard({
             >
               {/* Stats grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-gray-800/50 rounded-xl p-3 text-center">
+                <div className="bg-gray-800/50 rounded-sm p-3 text-center">
                   <div className="text-2xl font-bold text-cyan-400">{stats.totalPatterns}</div>
                   <div className="text-xs text-gray-500">Patterns Found</div>
                 </div>
-                <div className="bg-gray-800/50 rounded-xl p-3 text-center">
+                <div className="bg-gray-800/50 rounded-sm p-3 text-center">
                   <div className="flex items-center justify-center gap-1">
                     <TrendingUp className="w-5 h-5 text-green-400" />
                     <span className="text-2xl font-bold text-green-400">{stats.positivePatterns}</span>
                   </div>
                   <div className="text-xs text-gray-500">Positive</div>
                 </div>
-                <div className="bg-gray-800/50 rounded-xl p-3 text-center">
+                <div className="bg-gray-800/50 rounded-sm p-3 text-center">
                   <div className="flex items-center justify-center gap-1">
                     <TrendingDown className="w-5 h-5 text-red-400" />
                     <span className="text-2xl font-bold text-red-400">{stats.negativePatterns}</span>
                   </div>
                   <div className="text-xs text-gray-500">Needs Work</div>
                 </div>
-                <div className="bg-gray-800/50 rounded-xl p-3 text-center">
+                <div className="bg-gray-800/50 rounded-sm p-3 text-center">
                   <div className="text-2xl font-bold text-purple-400">{stats.adaptationsThisWeek}</div>
                   <div className="text-xs text-gray-500">This Week</div>
                 </div>
               </div>
 
               {/* Capabilities */}
-              <div className="bg-gray-800/30 rounded-xl p-4">
+              <div className="bg-gray-800/30 rounded-sm p-4">
                 <h3 className="text-sm font-medium text-white mb-4">Learning Capabilities</h3>
                 <div className="grid grid-cols-5 gap-2">
                   <CapabilityGauge label="Speed" value={profile.capabilities.speedOfLearning} color="#4FC3F7" />
@@ -412,7 +412,7 @@ export function MetaLearningDashboard({
 
               {/* Strengths & Weaknesses */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-green-500/10 rounded-xl p-4 border border-green-500/20">
+                <div className="bg-green-500/10 rounded-sm p-4 border border-green-500/20">
                   <h4 className="text-sm font-medium text-green-400 mb-2 flex items-center gap-2">
                     <CheckCircle className="w-4 h-4" />
                     Strengths
@@ -429,7 +429,7 @@ export function MetaLearningDashboard({
                     )}
                   </div>
                 </div>
-                <div className="bg-red-500/10 rounded-xl p-4 border border-red-500/20">
+                <div className="bg-red-500/10 rounded-sm p-4 border border-red-500/20">
                   <h4 className="text-sm font-medium text-red-400 mb-2 flex items-center gap-2">
                     <AlertCircle className="w-4 h-4" />
                     Growth Areas
@@ -474,7 +474,7 @@ export function MetaLearningDashboard({
                   return (
                     <div
                       key={i}
-                      className={`flex items-center gap-3 p-3 rounded-lg border ${
+                      className={`flex items-center gap-3 p-3 rounded-sm border ${
                         pattern.outcome === 'positive' ? 'bg-green-500/5 border-green-500/20' :
                         pattern.outcome === 'negative' ? 'bg-red-500/5 border-red-500/20' :
                         'bg-gray-800/30 border-gray-700/50'

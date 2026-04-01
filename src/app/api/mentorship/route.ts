@@ -10,7 +10,8 @@ import { db } from '@/lib/firebase'
 import { doc, getDoc, getDocs, collection } from 'firebase/firestore'
 import { MentorshipService } from '@/lib/services/mentorshipService'
 import { AgentRecord, MentorshipFocus } from '@/types/database'
-import { getGeminiModel, getGroqModel } from '@/lib/llmConfig'
+import { generateText } from '@/lib/llm/provider'
+import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
 
 export async function GET(request: NextRequest) {
   try {
@@ -99,6 +100,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+    const providerInfo = getProviderInfoForRequest(request)
     const { action } = body
 
     // Create new mentorship
@@ -385,63 +387,19 @@ export async function POST(request: NextRequest) {
       const prompt = MentorshipService.generateSessionPrompt(mentorship, mentor, mentee, topic)
 
       // Call LLM to generate lesson content
-      const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GROQ_API_KEY
-
-      if (!apiKey) {
+      if (!providerInfo) {
         return NextResponse.json(
-          { error: 'LLM API key not configured' },
+          { error: 'LLM provider not configured' },
           { status: 500 }
         )
       }
 
-      let lessonContent: string
-
-      if (process.env.GOOGLE_AI_API_KEY) {
-        const model = getGeminiModel()
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GOOGLE_AI_API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ role: 'user', parts: [{ text: prompt }] }],
-              generationConfig: {
-                temperature: 0.8,
-                maxOutputTokens: 2000
-              }
-            })
-          }
-        )
-
-        if (!response.ok) {
-          throw new Error(`Gemini API error: ${response.status}`)
-        }
-
-        const data = await response.json()
-        lessonContent = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      } else {
-        // Fallback to Groq
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: getGroqModel(),
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.8,
-            max_tokens: 2000
-          })
-        })
-
-        if (!response.ok) {
-          throw new Error(`Groq API error: ${response.status}`)
-        }
-
-        const data = await response.json()
-        lessonContent = data.choices?.[0]?.message?.content || ''
-      }
+      const { content: lessonContent } = await generateText({
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.8,
+        maxTokens: 2000,
+        providerInfo,
+      })
 
       // Extract exercises from the lesson (simple parsing)
       const exerciseMatches = lessonContent.match(/exercise[s]?:?\s*\n?((?:[•\-\d]\s*.+\n?)+)/gi)

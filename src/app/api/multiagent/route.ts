@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { addDoc, collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { AgentChain } from '@/lib/langchain/agentChain'
+import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
 import { AgentService } from '@/lib/services/agentService'
 import { KnowledgeService } from '@/lib/services/knowledgeService'
 import { agentProgressService } from '@/lib/services/agentProgressService'
@@ -244,6 +245,14 @@ async function saveBroadcast(broadcast: KnowledgeBroadcast): Promise<KnowledgeBr
 export async function POST(request: NextRequest) {
   try {
     const body: MultiAgentRequest = await request.json()
+    const providerInfo = getProviderInfoForRequest(request)
+
+    if (!providerInfo) {
+      return NextResponse.json(
+        { error: 'LLM provider not configured' },
+        { status: 500 }
+      )
+    }
 
     if (!body.agents || body.agents.length < 2) {
       return NextResponse.json(
@@ -329,7 +338,11 @@ export async function POST(request: NextRequest) {
             referrals: networkSnapshot.referrals,
             consensus: networkSnapshot.consensus,
           }),
-          buildConversationHistory(messages, agent.id)
+          buildConversationHistory(messages, agent.id),
+          {
+            provider: providerInfo.provider,
+            model: providerInfo.model,
+          }
         )
 
         const message: SimulationMessage = {
@@ -340,6 +353,8 @@ export async function POST(request: NextRequest) {
           timestamp: new Date().toISOString(),
           round: currentRound,
           metadata: {
+            provider: providerInfo.provider,
+            model: providerInfo.model,
             toolsUsed: response.toolsUsed || [],
             reasoning: response.reasoning || undefined,
             memoryUsed: response.memoryUsed || 0,

@@ -10,7 +10,7 @@ interface ConflictResolutionPanelProps {
   agents: AgentRecord[]
 }
 
-const panelClass = 'rounded-[1.6rem] border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
+const panelClass = 'rounded-sm border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
 
 export function ConflictResolutionPanel({ currentAgent, agents }: ConflictResolutionPanelProps) {
   const [topic, setTopic] = useState('')
@@ -112,7 +112,7 @@ export function ConflictResolutionPanel({ currentAgent, agents }: ConflictResolu
             <select
               value={otherAgentId}
               onChange={(event) => setOtherAgentId(event.target.value)}
-              className="mt-2 h-12 w-full rounded-2xl border border-border/70 bg-card/[0.62] px-4 text-sm text-foreground outline-none"
+              className="mt-2 h-12 w-full rounded-sm border border-border/70 bg-card/[0.62] px-4 text-sm text-foreground outline-none"
             >
               <option value="">Select agent</option>
               {counterpartAgents.map((agent) => (
@@ -126,7 +126,7 @@ export function ConflictResolutionPanel({ currentAgent, agents }: ConflictResolu
             <select
               value={mediatorId}
               onChange={(event) => setMediatorId(event.target.value)}
-              className="mt-2 h-12 w-full rounded-2xl border border-border/70 bg-card/[0.62] px-4 text-sm text-foreground outline-none"
+              className="mt-2 h-12 w-full rounded-sm border border-border/70 bg-card/[0.62] px-4 text-sm text-foreground outline-none"
             >
               <option value="">No mediator</option>
               {counterpartAgents
@@ -174,7 +174,7 @@ export function ConflictResolutionPanel({ currentAgent, agents }: ConflictResolu
             type="button"
             onClick={() => void analyzeConflict()}
             disabled={loading}
-            className="inline-flex h-11 items-center justify-center rounded-full bg-gradient-to-r from-primary to-accent px-5 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)] disabled:opacity-60"
+            className="inline-flex h-11 items-center justify-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)] disabled:opacity-60"
           >
             {loading ? 'Analyzing...' : 'Analyze conflict'}
           </button>
@@ -228,7 +228,7 @@ export function ConflictResolutionPanel({ currentAgent, agents }: ConflictResolu
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">Action items</div>
             <div className="mt-3 space-y-2">
               {analysis.actionItems.map((item) => (
-                <div key={item} className="rounded-[1.2rem] bg-background/45 px-4 py-3 text-sm text-muted-foreground">{item}</div>
+                <div key={item} className="rounded-sm bg-background/45 px-4 py-3 text-sm text-muted-foreground">{item}</div>
               ))}
             </div>
           </div>
@@ -246,7 +246,7 @@ export function ConflictResolutionPanel({ currentAgent, agents }: ConflictResolu
                 key={conflict.id}
                 type="button"
                 onClick={() => setAnalysis(conflict)}
-                className="block w-full rounded-[1.2rem] border border-border/60 bg-background/45 px-4 py-3 text-left transition-all hover:border-primary/20"
+                className="block w-full rounded-sm border border-border/60 bg-background/45 px-4 py-3 text-left transition-all hover:border-primary/20"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div>

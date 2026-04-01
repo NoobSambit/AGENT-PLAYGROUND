@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { useAgentStore } from '@/stores/agentStore'
-import { ArrowLeft, Bot, Brain, Plus, Save, Sparkles, Target, Wand2, X } from 'lucide-react'
+import { ArrowLeft, Brain, Plus, Save, Sparkles, Target, Wand2, X } from 'lucide-react'
+import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { GradientOrb } from '@/components/ui/animated-background'
 import { Input, Textarea } from '@/components/ui/input'
 
@@ -127,7 +128,7 @@ export default function NewAgent() {
                 ].map((item) => {
                   const Icon = item.icon
                   return (
-                    <div key={item.title} className="rounded-[1.6rem] border border-border/70 bg-background/45 p-5 backdrop-blur-xl">
+                    <div key={item.title} className="rounded-sm border border-border/70 bg-background/45 p-5 backdrop-blur-xl">
                       <div className="flex items-center gap-3">
                         <div className={`icon-container icon-container-${item.accent}`}>
                           <Icon className="h-5 w-5" />
@@ -145,10 +146,10 @@ export default function NewAgent() {
 
             <section className="page-section px-6 py-7">
               <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Live preview</div>
-              <div className="mt-4 rounded-[1.7rem] border border-border/70 bg-background/45 p-6">
+              <div className="mt-4 rounded-sm border border-border/70 bg-background/45 p-6">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-[0_18px_44px_-24px_rgba(109,77,158,0.68)]">
-                    <Bot className="h-6 w-6" />
+                  <div className="flex h-14 w-14 items-center justify-center rounded-sm bg-primary text-primary-foreground shadow-[0_18px_44px_-24px_rgba(109,77,158,0.68)]">
+                    <PlaygroundLogo className="h-6 w-6" />
                   </div>
                   <div>
                     <div className="text-lg font-semibold text-foreground">
@@ -246,7 +247,7 @@ export default function NewAgent() {
               <div className="mt-6 space-y-4">
                 {formData.goals.map((goal, index) => (
                   <div key={index} className="flex items-center gap-3">
-                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-border/70 bg-card/[0.62] text-sm font-semibold text-muted-foreground">
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-sm border border-border/70 bg-card/[0.62] text-sm font-semibold text-muted-foreground">
                       {index + 1}
                     </span>
                     <Input
@@ -258,7 +259,7 @@ export default function NewAgent() {
                       <button
                         type="button"
                         onClick={() => handleRemoveGoal(index)}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-border/70 bg-card/[0.62] text-muted-foreground transition-all hover:border-destructive/30 hover:text-destructive"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-sm border border-border/70 bg-card/[0.62] text-muted-foreground transition-all hover:border-destructive/30 hover:text-destructive"
                       >
                         <X className="h-4 w-4" />
                       </button>
@@ -281,7 +282,7 @@ export default function NewAgent() {
               <button
                 type="submit"
                 disabled={loading || !formData.name.trim() || !formData.persona.trim()}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-6 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)] transition-all hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-[0_20px_48px_-26px_rgba(109,77,158,0.72)] transition-all hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save className="h-4 w-4" />
                 {loading ? 'Creating agent...' : 'Create agent'}

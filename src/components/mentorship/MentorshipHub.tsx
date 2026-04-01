@@ -19,7 +19,7 @@ const FOCUS_ICONS: Record<MentorshipFocus, string> = {
 }
 
 const FOCUS_COLORS: Record<MentorshipFocus, string> = {
-  communication: 'bg-blue-100 text-blue-800',
+  communication: 'bg-[var(--color-pastel-blue)]/20 text-[var(--color-pastel-blue)]',
   emotional_intelligence: 'bg-pink-100 text-pink-800',
   knowledge: 'bg-green-100 text-green-800',
   creativity: 'bg-purple-100 text-purple-800',
@@ -184,7 +184,7 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--color-pastel-blue)]/50"></div>
       </div>
     )
   }
@@ -194,21 +194,21 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
       {/* Stats Overview */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg p-4 text-white">
+          <div className="bg-primary rounded-sm p-4 text-white">
             <div className="text-3xl font-bold">{stats.asMentor.totalMentorships}</div>
             <div className="text-sm opacity-90">As Mentor</div>
           </div>
-          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg p-4 text-white">
+          <div className="bg-primary rounded-sm p-4 text-white">
             <div className="text-3xl font-bold">{stats.asMentee.totalMentorships}</div>
             <div className="text-sm opacity-90">As Mentee</div>
           </div>
-          <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg p-4 text-white">
+          <div className="bg-primary rounded-sm p-4 text-white">
             <div className="text-3xl font-bold">
               {(stats.asMentor.averageEffectiveness * 100).toFixed(0)}%
             </div>
             <div className="text-sm opacity-90">Mentor Effectiveness</div>
           </div>
-          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg p-4 text-white">
+          <div className="bg-primary rounded-sm p-4 text-white">
             <div className="text-3xl font-bold">
               {(stats.asMentee.averageProgress * 100).toFixed(0)}%
             </div>
@@ -223,7 +223,7 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
           onClick={() => setActiveTab('mentoring')}
           className={`px-6 py-3 font-medium ${
             activeTab === 'mentoring'
-              ? 'border-b-2 border-blue-500 text-blue-600'
+              ? 'border-b-2 border-[var(--color-pastel-blue)]/50 text-[var(--color-pastel-blue)]'
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
@@ -233,7 +233,7 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
           onClick={() => setActiveTab('learning')}
           className={`px-6 py-3 font-medium ${
             activeTab === 'learning'
-              ? 'border-b-2 border-blue-500 text-blue-600'
+              ? 'border-b-2 border-[var(--color-pastel-blue)]/50 text-[var(--color-pastel-blue)]'
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
@@ -243,7 +243,7 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
           onClick={() => setActiveTab('find')}
           className={`px-6 py-3 font-medium ${
             activeTab === 'find'
-              ? 'border-b-2 border-blue-500 text-blue-600'
+              ? 'border-b-2 border-[var(--color-pastel-blue)]/50 text-[var(--color-pastel-blue)]'
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
@@ -255,7 +255,7 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
       {activeTab === 'mentoring' && (
         <div className="space-y-4">
           {mentorships.asMentor.length === 0 ? (
-            <div className="text-center py-12 bg-gray-50 rounded-lg">
+            <div className="text-center py-12 bg-gray-50 rounded-sm">
               <p className="text-gray-500">Not mentoring anyone yet</p>
               <p className="text-sm text-gray-400 mt-2">
                 Other agents can find you as a potential mentor
@@ -282,11 +282,11 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
       {activeTab === 'learning' && (
         <div className="space-y-4">
           {mentorships.asMentee.length === 0 ? (
-            <div className="text-center py-12 bg-gray-50 rounded-lg">
+            <div className="text-center py-12 bg-gray-50 rounded-sm">
               <p className="text-gray-500">Not learning from anyone yet</p>
               <button
                 onClick={() => setActiveTab('find')}
-                className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                className="mt-4 px-4 py-2 bg-[var(--color-pastel-blue)]/20 text-white rounded-sm hover:bg-[var(--color-pastel-blue)]/20"
               >
                 Find a Mentor
               </button>
@@ -312,7 +312,7 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
       {activeTab === 'find' && (
         <div className="space-y-4">
           {matches.length === 0 ? (
-            <div className="text-center py-12 bg-gray-50 rounded-lg">
+            <div className="text-center py-12 bg-gray-50 rounded-sm">
               <p className="text-gray-500">No mentor matches found</p>
               <p className="text-sm text-gray-400 mt-2">
                 Try creating more agents to find potential mentors
@@ -326,7 +326,7 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
               {matches.map(match => (
                 <div
                   key={match.mentorId}
-                  className="bg-white rounded-lg border p-4 hover:shadow-md transition-shadow"
+                  className="bg-white rounded-sm border p-4 hover:shadow-md transition-shadow"
                 >
                   <div className="flex justify-between items-start">
                     <div>
@@ -396,7 +396,7 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
                       setSelectedFocusAreas(match.recommendedFocus)
                       setShowCreateModal(true)
                     }}
-                    className="mt-4 w-full py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                    className="mt-4 w-full py-2 bg-[var(--color-pastel-blue)]/20 text-white rounded-sm hover:bg-[var(--color-pastel-blue)]/20"
                   >
                     Start Mentorship
                   </button>
@@ -410,7 +410,7 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
       {/* Create Mentorship Modal */}
       {showCreateModal && selectedMatch && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
+          <div className="bg-white rounded-sm p-6 max-w-lg w-full mx-4">
             <h2 className="text-xl font-bold mb-4">Start Mentorship</h2>
 
             <p className="text-gray-600 mb-4">
@@ -430,9 +430,9 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
                           : [...prev, focus]
                       )
                     }}
-                    className={`px-3 py-2 rounded-lg border ${
+                    className={`px-3 py-2 rounded-sm border ${
                       selectedFocusAreas.includes(focus)
-                        ? 'bg-blue-500 text-white border-blue-500'
+                        ? 'bg-[var(--color-pastel-blue)]/20 text-white border-[var(--color-pastel-blue)]/50'
                         : 'hover:bg-gray-50'
                     }`}
                   >
@@ -456,7 +456,7 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
               <button
                 onClick={handleCreateMentorship}
                 disabled={selectedFocusAreas.length === 0}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+                className="px-4 py-2 bg-[var(--color-pastel-blue)]/20 text-white rounded hover:bg-[var(--color-pastel-blue)]/20 disabled:opacity-50"
               >
                 Start Mentorship
               </button>
@@ -468,7 +468,7 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
       {/* Create Session Modal */}
       {showSessionModal && activeMentorship && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
+          <div className="bg-white rounded-sm p-6 max-w-lg w-full mx-4">
             <h2 className="text-xl font-bold mb-4">Create Session</h2>
 
             <p className="text-gray-600 mb-4">
@@ -500,7 +500,7 @@ export function MentorshipHub({ agentId, agentName, allAgents = [] }: Mentorship
               <button
                 onClick={handleCreateSession}
                 disabled={!sessionTopic}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+                className="px-4 py-2 bg-[var(--color-pastel-blue)]/20 text-white rounded hover:bg-[var(--color-pastel-blue)]/20 disabled:opacity-50"
               >
                 Generate Lesson
               </button>
@@ -530,13 +530,13 @@ function MentorshipCard({
 
   const statusColors = {
     active: 'bg-green-100 text-green-800',
-    completed: 'bg-blue-100 text-blue-800',
+    completed: 'bg-[var(--color-pastel-blue)]/20 text-[var(--color-pastel-blue)]',
     paused: 'bg-yellow-100 text-yellow-800',
     terminated: 'bg-red-100 text-red-800'
   }
 
   return (
-    <div className="bg-white rounded-lg border overflow-hidden">
+    <div className="bg-white rounded-sm border overflow-hidden">
       <div className="p-4">
         <div className="flex justify-between items-start">
           <div>
@@ -575,7 +575,7 @@ function MentorshipCard({
             </div>
             <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
               <div
-                className="h-full bg-blue-500 rounded-full"
+                className="h-full bg-[var(--color-pastel-blue)]/20 rounded-full"
                 style={{
                   width: `${(role === 'mentor' ? mentorship.mentorEffectiveness : mentorship.menteeProgress) * 100}%`
                 }}
@@ -610,7 +610,7 @@ function MentorshipCard({
             <>
               <button
                 onClick={onCreateSession}
-                className="flex-1 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                className="flex-1 py-2 bg-[var(--color-pastel-blue)]/20 text-white rounded hover:bg-[var(--color-pastel-blue)]/20 text-sm"
               >
                 New Session
               </button>
@@ -674,7 +674,7 @@ function MentorshipCard({
                 {session.skillsImproved.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-2">
                     {session.skillsImproved.map(skill => (
-                      <span key={skill} className="text-xs bg-blue-100 text-blue-700 px-1 py-0.5 rounded">
+                      <span key={skill} className="text-xs bg-[var(--color-pastel-blue)]/20 text-[var(--color-pastel-blue)] px-1 py-0.5 rounded">
                         {skill}
                       </span>
                     ))}

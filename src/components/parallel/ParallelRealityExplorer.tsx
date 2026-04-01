@@ -101,10 +101,10 @@ function ScenarioCard({ scenario }: { scenario: WhatIfScenario }) {
   const Icon = config.icon
 
   return (
-    <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+    <div className="bg-gray-800/50 rounded-sm p-4 border border-gray-700/50">
       <div className="flex items-start gap-3">
         <div
-          className="p-2.5 rounded-lg"
+          className="p-2.5 rounded-sm"
           style={{ backgroundColor: `${config.color}20` }}
         >
           <Icon className="w-5 h-5" style={{ color: config.color }} />
@@ -127,7 +127,7 @@ function ScenarioCard({ scenario }: { scenario: WhatIfScenario }) {
           </div>
 
           {/* Hypothesis */}
-          <div className="mt-3 p-2 bg-gray-900/50 rounded-lg">
+          <div className="mt-3 p-2 bg-gray-900/50 rounded-sm">
             <div className="text-xs text-purple-400 mb-1">Hypothesis</div>
             <div className="text-xs text-gray-300">{scenario.hypothesis}</div>
           </div>
@@ -143,7 +143,7 @@ function OutcomeAnalysis({ analysis }: { analysis: RealityComparisonMetrics['out
     <div className="space-y-4">
       {/* Positive outcomes */}
       {analysis.positiveOutcomes.length > 0 && (
-        <div className="bg-green-500/10 rounded-xl p-4 border border-green-500/20">
+        <div className="bg-green-500/10 rounded-sm p-4 border border-green-500/20">
           <div className="flex items-center gap-2 mb-2">
             <CheckCircle className="w-4 h-4 text-green-400" />
             <span className="text-sm font-medium text-green-400">Positive Outcomes</span>
@@ -161,7 +161,7 @@ function OutcomeAnalysis({ analysis }: { analysis: RealityComparisonMetrics['out
 
       {/* Negative outcomes */}
       {analysis.negativeOutcomes.length > 0 && (
-        <div className="bg-red-500/10 rounded-xl p-4 border border-red-500/20">
+        <div className="bg-red-500/10 rounded-sm p-4 border border-red-500/20">
           <div className="flex items-center gap-2 mb-2">
             <AlertCircle className="w-4 h-4 text-red-400" />
             <span className="text-sm font-medium text-red-400">Negative Outcomes</span>
@@ -179,7 +179,7 @@ function OutcomeAnalysis({ analysis }: { analysis: RealityComparisonMetrics['out
 
       {/* Neutral outcomes */}
       {analysis.neutralOutcomes.length > 0 && (
-        <div className="bg-gray-500/10 rounded-xl p-4 border border-gray-500/20">
+        <div className="bg-gray-500/10 rounded-sm p-4 border border-gray-500/20">
           <div className="flex items-center gap-2 mb-2">
             <Minus className="w-4 h-4 text-gray-400" />
             <span className="text-sm font-medium text-gray-400">Neutral Outcomes</span>
@@ -196,7 +196,7 @@ function OutcomeAnalysis({ analysis }: { analysis: RealityComparisonMetrics['out
       )}
 
       {/* Recommendation */}
-      <div className="bg-purple-500/10 rounded-xl p-4 border border-purple-500/20">
+      <div className="bg-purple-500/10 rounded-sm p-4 border border-purple-500/20">
         <div className="flex items-center gap-2 mb-2">
           <Lightbulb className="w-4 h-4 text-purple-400" />
           <span className="text-sm font-medium text-purple-400">Recommendation</span>
@@ -216,7 +216,7 @@ function DivergenceMeter({ score }: { score: number }) {
     percentage < 75 ? '#FF7043' : '#F44336'
 
   return (
-    <div className="bg-gray-800/50 rounded-xl p-4">
+    <div className="bg-gray-800/50 rounded-sm p-4">
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm text-gray-400">Reality Divergence</span>
         <span className="text-lg font-bold" style={{ color }}>{percentage}%</span>
@@ -321,12 +321,12 @@ export function ParallelRealityExplorer({
   }
 
   return (
-    <div className={`bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl border border-gray-800 overflow-hidden ${className}`}>
+    <div className={`bg-primary rounded-sm border border-gray-800 overflow-hidden ${className}`}>
       {/* Header */}
       <div className="p-5 border-b border-gray-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-gradient-to-br from-purple-500/20 to-cyan-500/20 rounded-xl">
+            <div className="p-2.5 bg-primary rounded-sm">
               <GitBranch className="w-6 h-6 text-purple-400" />
             </div>
             <div>
@@ -346,7 +346,7 @@ export function ParallelRealityExplorer({
               {onExplore && reality.explorationStatus === 'pending' && (
                 <button
                   onClick={onExplore}
-                  className="p-2 bg-purple-500/20 hover:bg-purple-500/30 rounded-lg transition-colors"
+                  className="p-2 bg-purple-500/20 hover:bg-purple-500/30 rounded-sm transition-colors"
                 >
                   <Play className="w-4 h-4 text-purple-400" />
                 </button>
@@ -354,7 +354,7 @@ export function ParallelRealityExplorer({
               {onReset && (
                 <button
                   onClick={onReset}
-                  className="p-2 bg-gray-700/50 hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-2 bg-gray-700/50 hover:bg-gray-700 rounded-sm transition-colors"
                 >
                   <RotateCcw className="w-4 h-4 text-gray-400" />
                 </button>
@@ -367,7 +367,7 @@ export function ParallelRealityExplorer({
         <BranchVisualization />
 
         {/* Tab navigation */}
-        <div className="flex gap-1 mt-2 bg-gray-800/50 rounded-lg p-1">
+        <div className="flex gap-1 mt-2 bg-gray-800/50 rounded-sm p-1">
           {(['scenario', 'emotions', 'outcomes', 'insights'] as const).map((tab) => (
             <button
               key={tab}
@@ -408,7 +408,7 @@ export function ParallelRealityExplorer({
               exit={{ opacity: 0, y: -10 }}
               className="space-y-4"
             >
-              <div className="bg-gray-800/50 rounded-xl p-4">
+              <div className="bg-gray-800/50 rounded-sm p-4">
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-sm font-medium text-white">Emotional State Comparison</span>
                   <div className="flex items-center gap-4 text-xs">
@@ -437,7 +437,7 @@ export function ParallelRealityExplorer({
               </div>
 
               {/* Dominant emotion shift */}
-              <div className="bg-gray-800/50 rounded-xl p-4">
+              <div className="bg-gray-800/50 rounded-sm p-4">
                 <div className="text-sm font-medium text-white mb-3">Dominant Emotion Shift</div>
                 <div className="flex items-center justify-center gap-4">
                   <div className="text-center">
@@ -499,7 +499,7 @@ export function ParallelRealityExplorer({
               exit={{ opacity: 0, y: -10 }}
               className="space-y-4"
             >
-              <div className="bg-gradient-to-br from-purple-500/10 to-cyan-500/10 rounded-xl p-4 border border-purple-500/20">
+              <div className="bg-primary rounded-sm p-4 border border-purple-500/20">
                 <div className="flex items-center gap-2 mb-3">
                   <Lightbulb className="w-5 h-5 text-amber-400" />
                   <span className="font-medium text-white">Key Insights</span>
@@ -516,13 +516,13 @@ export function ParallelRealityExplorer({
 
               {/* Personality shifts */}
               {reality.comparison.personalityShifts.length > 0 && (
-                <div className="bg-gray-800/50 rounded-xl p-4">
+                <div className="bg-gray-800/50 rounded-sm p-4">
                   <div className="text-sm font-medium text-white mb-3">Personality Shifts</div>
                   <div className="space-y-2">
                     {reality.comparison.personalityShifts.map((shift, i) => (
                       <div
                         key={i}
-                        className={`flex items-center justify-between p-2 rounded-lg ${
+                        className={`flex items-center justify-between p-2 rounded-sm ${
                           shift.significance === 'major' ? 'bg-red-500/10 border border-red-500/20' :
                           shift.significance === 'moderate' ? 'bg-amber-500/10 border border-amber-500/20' :
                           'bg-gray-700/50 border border-gray-600/50'
@@ -552,7 +552,7 @@ export function ParallelRealityExplorer({
               )}
 
               {/* Final recommendation */}
-              <div className="bg-cyan-500/10 rounded-xl p-4 border border-cyan-500/20">
+              <div className="bg-cyan-500/10 rounded-sm p-4 border border-cyan-500/20">
                 <div className="flex items-center gap-2 mb-2">
                   <Eye className="w-5 h-5 text-cyan-400" />
                   <span className="font-medium text-cyan-400">Final Recommendation</span>
