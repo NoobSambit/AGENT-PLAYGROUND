@@ -17,6 +17,7 @@ import {
   AgentRecord,
   MemoryRecord,
 } from '@/types/database'
+import { emotionalService } from './emotionalService'
 
 // Generate unique IDs
 function generateId(): string {
@@ -124,11 +125,11 @@ class DreamService {
    * Suggest a dream type based on emotional state
    */
   suggestDreamType(emotionalState?: EmotionalState): DreamType {
-    if (!emotionalState) {
+    const dominantEmotion = emotionalService.getDominantEmotion(emotionalState)
+    if (!dominantEmotion) {
       return 'symbolic'
     }
 
-    const dominantEmotion = emotionalState.dominantEmotion
     const types = EMOTION_DREAM_MAP[dominantEmotion]
 
     return types[Math.floor(Math.random() * types.length)]

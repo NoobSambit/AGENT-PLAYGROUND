@@ -6,12 +6,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/firebase'
-import { doc, getDoc, getDocs, collection } from 'firebase/firestore'
+import { AgentService } from '@/lib/services/agentService'
 import { MentorshipService } from '@/lib/services/mentorshipService'
 import { AgentRecord, MentorshipFocus } from '@/types/database'
 import { generateText } from '@/lib/llm/provider'
 import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
+
+async function getRequiredAgent(agentId: string): Promise<AgentRecord | null> {
+  return AgentService.getAgentById(agentId)
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -42,26 +45,15 @@ export async function GET(request: NextRequest) {
 
     // Find mentor matches for an agent
     if (findMatches && agentId) {
-      // Get the mentee agent
-      const agentRef = doc(db, 'agents', agentId)
-      const agentSnap = await getDoc(agentRef)
-
-      if (!agentSnap.exists()) {
+      const menteeAgent = await getRequiredAgent(agentId)
+      if (!menteeAgent) {
         return NextResponse.json(
           { error: 'Agent not found' },
           { status: 404 }
         )
       }
 
-      const menteeAgent = { id: agentSnap.id, ...agentSnap.data() } as AgentRecord
-
-      // Get all agents as potential mentors
-      const agentsRef = collection(db, 'agents')
-      const agentsSnap = await getDocs(agentsRef)
-      const availableAgents = agentsSnap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      })) as AgentRecord[]
+      const availableAgents = await AgentService.getAllAgents()
 
       // Find matches
       const matches = await MentorshipService.findMentorMatches(
@@ -279,24 +271,17 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Get both agents
-      const mentorRef = doc(db, 'agents', mentorId)
-      const menteeRef = doc(db, 'agents', menteeId)
-
-      const [mentorSnap, menteeSnap] = await Promise.all([
-        getDoc(mentorRef),
-        getDoc(menteeRef)
+      const [mentor, mentee] = await Promise.all([
+        getRequiredAgent(mentorId),
+        getRequiredAgent(menteeId)
       ])
 
-      if (!mentorSnap.exists() || !menteeSnap.exists()) {
+      if (!mentor || !mentee) {
         return NextResponse.json(
           { error: 'One or both agents not found' },
           { status: 404 }
         )
       }
-
-      const mentor = { id: mentorSnap.id, ...mentorSnap.data() } as AgentRecord
-      const mentee = { id: menteeSnap.id, ...menteeSnap.data() } as AgentRecord
 
       const compatibility = await MentorshipService.calculateCompatibility(mentor, mentee)
 
@@ -322,24 +307,17 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Get mentor and mentee agents
-      const mentorRef = doc(db, 'agents', mentorship.mentorId)
-      const menteeRef = doc(db, 'agents', mentorship.menteeId)
-
-      const [mentorSnap, menteeSnap] = await Promise.all([
-        getDoc(mentorRef),
-        getDoc(menteeRef)
+      const [mentor, mentee] = await Promise.all([
+        getRequiredAgent(mentorship.mentorId),
+        getRequiredAgent(mentorship.menteeId)
       ])
 
-      if (!mentorSnap.exists() || !menteeSnap.exists()) {
+      if (!mentor || !mentee) {
         return NextResponse.json(
           { error: 'Mentor or mentee agent not found' },
           { status: 404 }
         )
       }
-
-      const mentor = { id: mentorSnap.id, ...mentorSnap.data() } as AgentRecord
-      const mentee = { id: menteeSnap.id, ...menteeSnap.data() } as AgentRecord
 
       const prompt = MentorshipService.generateSessionPrompt(mentorship, mentor, mentee, topic)
 
@@ -365,24 +343,17 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Get mentor agent
-      const mentorRef = doc(db, 'agents', mentorship.mentorId)
-      const menteeRef = doc(db, 'agents', mentorship.menteeId)
-
-      const [mentorSnap, menteeSnap] = await Promise.all([
-        getDoc(mentorRef),
-        getDoc(menteeRef)
+      const [mentor, mentee] = await Promise.all([
+        getRequiredAgent(mentorship.mentorId),
+        getRequiredAgent(mentorship.menteeId)
       ])
 
-      if (!mentorSnap.exists() || !menteeSnap.exists()) {
+      if (!mentor || !mentee) {
         return NextResponse.json(
           { error: 'Mentor or mentee agent not found' },
           { status: 404 }
         )
       }
-
-      const mentor = { id: mentorSnap.id, ...mentorSnap.data() } as AgentRecord
-      const mentee = { id: menteeSnap.id, ...menteeSnap.data() } as AgentRecord
 
       const prompt = MentorshipService.generateSessionPrompt(mentorship, mentor, mentee, topic)
 

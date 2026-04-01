@@ -1,95 +1,33 @@
 # Development Guide
 
-This guide replaces the old scattered contributor notes with one focused engineering reference.
-
-## Engineering Expectations
-
-The project expects production-minded changes.
-
-That means:
-
-- prefer the smallest complete fix
-- keep types accurate
-- validate input at API boundaries
-- avoid duplicating business logic across UI and routes
-- think across layers, not only inside one file
-
-## Repository Shape
-
-Important directories:
-
-- `src/app`: pages and API routes
-- `src/components`: feature and UI components
-- `src/lib/services`: business logic
-- `src/lib/langchain`: model orchestration helpers
-- `src/stores`: Zustand state
-- `src/types`: shared types
-
-## Working Style
-
-1. Read the relevant implementation first.
-2. Change the smallest useful surface.
-3. Update all dependent layers touched by the change.
-4. Verify before finishing.
-5. Update docs if behavior or architecture changed.
-
-## Cross-Layer Checklist
-
-When you change one layer, check the others.
-
-- API change: update UI callers, route validation, and docs
-- type change: update producers and consumers together
-- Firestore shape change: update counters, serializers, queries, and UI assumptions
-- frontend behavior change: check loading, empty, error, accessibility, and mobile states
-
-## Verification
-
-Minimum required for meaningful code changes:
+## Commands
 
 ```bash
 npm run lint
-```
-
-Also run this for non-trivial work:
-
-```bash
 npm run build
+npm run db:migrate
+npm run db:export-firestore -- --out=./tmp/firestore-export.json
+npm run db:backfill -- --input=./tmp/firestore-export.json --dry-run
+npm run db:verify-parity -- --input=./tmp/firestore-export.json
 ```
 
-If you could not run one of these, say so clearly in the final change summary.
+## Persistence Rules
 
-## Environment And Cost Discipline
+- Add new persisted features through repositories and services first.
+- Keep Firestore fallback code limited to migration-era compatibility paths.
+- Preserve stable API contracts while storage changes behind the route.
+- Record mirror failures in `migration_outbox`; do not ignore them.
 
-The project is intentionally free-tier friendly.
+## Adding A New Feature
 
-Prefer approaches that:
+1. Add or extend the table in `src/lib/db/schema.ts` and the baseline SQL migration.
+2. Add or extend a repository in `src/lib/repositories`.
+3. Update the service layer.
+4. Update routes and any affected stores.
+5. Add or update the matching feature doc in `docs/features/`.
 
-- reduce Firestore reads and writes
-- avoid unnecessary LLM calls
-- keep request-time work bounded
-- do not require background workers
+## Verification
 
-## Branch And Commit Guidance
-
-Recommended branch prefixes:
-
-- `feature/`
-- `fix/`
-- `docs/`
-- `refactor/`
-- `test/`
-- `chore/`
-
-Use commit messages that describe the real change, not just the file touched.
-
-## Documentation Rule
-
-If you add or materially change:
-
-- a route
-- a workflow
-- a major feature
-- a data shape
-- a setup step
-
-update the relevant file in `docs/` in the same change.
+- Run `npm run lint`.
+- Run `npm run build` for non-trivial changes.
+- If the change affects persistence, run `npm run db:verify-parity` against a representative export.

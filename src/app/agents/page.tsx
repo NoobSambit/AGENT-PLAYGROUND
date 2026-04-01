@@ -261,7 +261,7 @@ export default function AgentsPage() {
             </div>
             <h3 className="text-2xl font-bold mb-3 text-foreground">No matching agents found</h3>
             <p className="text-muted-foreground max-w-md mb-8">
-              Your current filters didn't return any results. Try broadening your search terms or clearing the status filters.
+              Your current filters didn&apos;t return any results. Try broadening your search terms or clearing the status filters.
             </p>
             <div className="flex gap-4">
               <button onClick={() => { setSearch(''); setStatusFilter('all'); }} className="bg-surface-strong border border-border/40 px-6 py-2.5 rounded-sm font-bold text-sm hover:bg-surface text-foreground transition-colors">Clear Filters</button>

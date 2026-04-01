@@ -11,6 +11,7 @@ import {
   EmotionType,
   EMOTION_COLORS
 } from '@/types/database'
+import { emotionalService } from './emotionalService'
 
 // ============================================
 // EXTENDED TYPES FOR BRANCHING
@@ -322,12 +323,7 @@ export class ParallelRealityService {
     // Boost the new dominant emotion
     baseline[newDominant] = 0.8
 
-    return {
-      currentMood: baseline,
-      emotionalBaseline: baseline,
-      lastUpdated: new Date().toISOString(),
-      dominantEmotion: newDominant
-    }
+    return emotionalService.createStateFromMood(baseline)
   }
 
   // ============================================
@@ -611,18 +607,7 @@ export class ParallelRealityService {
   // ============================================
 
   private createDefaultEmotionalState(): EmotionalState {
-    return {
-      currentMood: {
-        joy: 0.5, sadness: 0.2, anger: 0.1, fear: 0.2,
-        surprise: 0.3, trust: 0.6, anticipation: 0.4, disgust: 0.1
-      },
-      emotionalBaseline: {
-        joy: 0.5, sadness: 0.2, anger: 0.1, fear: 0.2,
-        surprise: 0.3, trust: 0.6, anticipation: 0.4, disgust: 0.1
-      },
-      lastUpdated: new Date().toISOString(),
-      dominantEmotion: 'trust'
-    }
+    return emotionalService.createDormantEmotionalState()
   }
 
   private addDays(date: Date, days: number): Date {

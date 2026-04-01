@@ -3,7 +3,7 @@ import { ChatGroq } from '@langchain/groq'
 import { ChatOllama } from '@langchain/ollama'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { BaseMessage, SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
-import { LinguisticProfile, EmotionalState } from '@/types/database'
+import { LinguisticProfile, EmotionalProfile, EmotionalState } from '@/types/database'
 import { PersonalityService } from '@/lib/services/personalityService'
 import { emotionalService } from '@/lib/services/emotionalService'
 import {
@@ -25,6 +25,7 @@ export interface LLMConfig {
 // Phase 1 context for enhanced prompts
 export interface Phase1Context {
   linguisticProfile?: LinguisticProfile
+  emotionalProfile?: EmotionalProfile
   emotionalState?: EmotionalState
 }
 
@@ -298,6 +299,13 @@ Respond naturally and helpfully to user queries. Keep responses conversational b
 ${linguisticPrompt}`
     }
 
+    if (phase1Context?.emotionalProfile) {
+      const temperamentPrompt = emotionalService.getTemperamentPrompt(phase1Context.emotionalProfile)
+      systemPrompt += `
+
+${temperamentPrompt}`
+    }
+
     // Phase 1: Add emotional state context
     if (phase1Context?.emotionalState) {
       const emotionalPrompt = emotionalService.getEmotionalPrompt(phase1Context.emotionalState)
@@ -307,7 +315,10 @@ ${linguisticPrompt}`
 ${emotionalPrompt}`
       }
 
-      const microExpressionPrompt = emotionalService.getMicroExpressionPrompt(phase1Context.emotionalState)
+      const microExpressionPrompt = emotionalService.getMicroExpressionPrompt(
+        phase1Context.emotionalState,
+        phase1Context.emotionalProfile
+      )
       systemPrompt += `
 
 ${microExpressionPrompt}`
@@ -362,6 +373,7 @@ ${personalityContext}`
     memoryContext?: string
     personalityContext?: string
     linguisticProfile?: LinguisticProfile
+    emotionalProfile?: EmotionalProfile
     emotionalState?: EmotionalState
     psychologicalContext?: string
     knowledgeContext?: string
@@ -373,6 +385,7 @@ ${personalityContext}`
       params.personalityContext,
       {
         linguisticProfile: params.linguisticProfile,
+        emotionalProfile: params.emotionalProfile,
         emotionalState: params.emotionalState
       },
       params.agentName,

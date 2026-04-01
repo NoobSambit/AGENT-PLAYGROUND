@@ -6,10 +6,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/firebase'
-import { doc, getDoc, updateDoc } from 'firebase/firestore'
+import { AgentService } from '@/lib/services/agentService'
 import { psychologicalProfileService } from '@/lib/services/psychologicalProfileService'
-import { AgentRecord } from '@/types/database'
 
 export async function GET(
   request: NextRequest,
@@ -18,18 +16,13 @@ export async function GET(
   try {
     const { id: agentId } = await params
 
-    // Get agent data
-    const agentRef = doc(db, 'agents', agentId)
-    const agentSnap = await getDoc(agentRef)
-
-    if (!agentSnap.exists()) {
+    const agent = await AgentService.getAgentById(agentId)
+    if (!agent) {
       return NextResponse.json(
         { error: 'Agent not found' },
         { status: 404 }
       )
     }
-
-    const agent = { id: agentSnap.id, ...agentSnap.data() } as AgentRecord
 
     // Check if profile already exists
     if (agent.psychologicalProfile) {
@@ -47,8 +40,7 @@ export async function GET(
     // Generate new profile if it doesn't exist
     const profile = psychologicalProfileService.generateProfile(agent)
 
-    // Save to Firestore
-    await updateDoc(agentRef, {
+    await AgentService.updateAgent(agentId, {
       psychologicalProfile: profile,
     })
 
@@ -75,24 +67,18 @@ export async function POST(
     const { id: agentId } = await params
     await request.json()
 
-    // Get agent data
-    const agentRef = doc(db, 'agents', agentId)
-    const agentSnap = await getDoc(agentRef)
-
-    if (!agentSnap.exists()) {
+    const agent = await AgentService.getAgentById(agentId)
+    if (!agent) {
       return NextResponse.json(
         { error: 'Agent not found' },
         { status: 404 }
       )
     }
 
-    const agent = { id: agentSnap.id, ...agentSnap.data() } as AgentRecord
-
     // Generate (or regenerate) profile
     const profile = psychologicalProfileService.generateProfile(agent)
 
-    // Save to Firestore
-    await updateDoc(agentRef, {
+    await AgentService.updateAgent(agentId, {
       psychologicalProfile: profile,
     })
 

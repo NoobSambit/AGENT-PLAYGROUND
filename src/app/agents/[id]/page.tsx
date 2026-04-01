@@ -85,6 +85,14 @@ interface RelationshipApiStats {
   mostConnectedAgent: string | null
 }
 
+function formatEmotionLabel(emotion: string | null | undefined): string {
+  if (!emotion) {
+    return 'Dormant'
+  }
+
+  return emotion.charAt(0).toUpperCase() + emotion.slice(1)
+}
+
 const TAB_CONFIG = [
   { id: 'chat', icon: MessageCircle, label: 'Chat', description: 'Direct conversations and model responses.' },
   { id: 'emotions', icon: Heart, label: 'Emotions', description: 'Current emotional signals and recent shifts.' },
@@ -118,8 +126,8 @@ export default function AgentDetail() {
   const agentId = params.id as string
   const scenarioTemplates = parallelRealityService.getScenarioTemplates()
 
-  const { agents, currentAgent, setCurrentAgent, fetchAgentById, fetchAgents } = useAgentStore()
-  const { messages, sendMessage, fetchMessagesByAgentId, loading: messagesLoading } = useMessageStore()
+  const { agents, currentAgent, setCurrentAgent, fetchAgentById, fetchAgents, updateAgent } = useAgentStore()
+  const { messages, addMessage, fetchMessagesByAgentId, loading: messagesLoading } = useMessageStore()
   const selectedProvider = useLLMPreferenceStore((state) => state.provider)
 
   const [newMessage, setNewMessage] = useState('')
@@ -159,8 +167,14 @@ export default function AgentDetail() {
   // Get agent progress and stats with defaults
   const agentProgress = currentAgent?.progress || achievementService.createDefaultProgress()
   const agentStats = currentAgent?.stats || achievementService.createDefaultStats()
+  const agentEmotionalProfile = currentAgent?.emotionalProfile || emotionalService.createEmotionalProfile(currentAgent?.coreTraits)
   const agentEmotionalState = currentAgent?.emotionalState || emotionalService.createDefaultEmotionalState()
   const agentEmotionalHistory = currentAgent?.emotionalHistory || []
+  const agentTemperamentLead = emotionalService.getInfluentialEmotion(undefined, agentEmotionalProfile)
+  const temperamentRanking = useMemo(() => (
+    Object.entries(agentEmotionalProfile.temperament)
+      .sort((a, b) => b[1] - a[1])
+  ), [agentEmotionalProfile])
   const activeTabConfig = TAB_CONFIG.find((tab) => tab.id === activeTab) || TAB_CONFIG[0]
   const activeProviderModel = useMemo(() => {
     const latestModelForProvider = [...messages]
@@ -425,9 +439,6 @@ export default function AgentDetail() {
     if (!trimmedMessage || !currentAgent) return
 
     try {
-      // Send user message first
-      await sendMessage(trimmedMessage, currentAgent.id, undefined, 'user')
-
       const conversationHistory = messages
         .filter(msg => msg.agentId === currentAgent.id)
         .slice(-10)
@@ -436,38 +447,33 @@ export default function AgentDetail() {
           content: msg.content
         }))
 
-      // Generate agent response using LangChain
-      const response = await fetch('/api/llm', {
+      const response = await fetch(`/api/agents/${encodeURIComponent(currentAgent.id)}/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           prompt: trimmedMessage,
-          agentPersona: currentAgent.persona,
-          agentGoals: currentAgent.goals,
-          agentId: currentAgent.id,
           conversationHistory,
-          enableStreaming: false // Use non-streaming for now
         })
       })
 
       if (response.ok) {
         const data = await response.json()
-
-        // Send agent response with LangChain metadata
-        await sendMessage(data.content, currentAgent.id, {
-          langchain: data.langchain,
-          toolsUsed: data.toolsUsed,
-          reasoning: data.reasoning,
-          memoryUsed: data.memoryUsed,
-          model: data.model,
-          provider: data.provider
-        }, 'agent')
+        if (data.userMessage) {
+          addMessage(data.userMessage)
+        }
+        if (data.agentMessage) {
+          addMessage(data.agentMessage)
+        }
+        if (data.agent) {
+          updateAgent(data.agent.id, data.agent)
+          if (currentAgent.id === data.agent.id) {
+            setCurrentAgent(data.agent)
+          }
+        }
       } else {
-        console.error('Failed to get LangChain response')
-        // Fallback to regular message sending
-        await sendMessage('I apologize, but I\'m experiencing some technical difficulties. Could you please try again?', currentAgent.id, undefined, 'agent')
+        console.error('Failed to process chat turn')
       }
 
       setNewMessage('')
@@ -566,7 +572,7 @@ export default function AgentDetail() {
       <GradientOrb className="w-[600px] h-[600px] -top-[200px] -right-[200px] opacity-20" color="violet" />
       <GradientOrb className="w-[400px] h-[400px] top-1/2 -left-[200px] opacity-15" color="cyan" />
 
-      <div className="relative z-10 mx-auto max-w-7xl px-6 space-y-8">
+      <div className="relative z-10 mx-auto max-w-[1520px] px-6 space-y-8">
         <motion.section
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -674,7 +680,7 @@ export default function AgentDetail() {
           </div>
         </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]">
           {/* Agent Info */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
@@ -772,19 +778,21 @@ export default function AgentDetail() {
                   <div className="icon-container icon-container-pink">
                     <Heart className="h-5 w-5" />
                   </div>
-                  Current Mood
+                  Live Emotion
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center p-0">
                 <div className="mt-3 text-center">
                   <div className="text-lg font-medium capitalize">
-                    {agentEmotionalState.dominantEmotion}
+                    {agentEmotionalState.status === 'active'
+                      ? formatEmotionLabel(agentEmotionalState.dominantEmotion)
+                      : 'Dormant'}
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {emotionalService.getEmotionalSummary(agentEmotionalState)}
+                    {emotionalService.getEmotionalSummary(agentEmotionalState, agentEmotionalProfile)}
                   </div>
                 </div>
-              </CardContent>
+                </CardContent>
             </div>
 
             <div className="p-6 rounded-sm premium-card">
@@ -820,7 +828,7 @@ export default function AgentDetail() {
           </motion.div>
 
           {/* Main Content Area */}
-          <div className="lg:col-span-2">
+          <div className="min-w-0">
             {activeTab === 'chat' ? (
               /* Chat Interface */
               <div className="space-y-4">
@@ -1135,22 +1143,210 @@ export default function AgentDetail() {
                       <div className="p-2 rounded-sm bg-pink-500/10">
                         <Heart className="h-6 w-6 text-pink-500" />
                       </div>
-                      Emotional State
+                      Emotion Model
                     </CardTitle>
                     <CardDescription>
-                      {currentAgent.name}&apos;s current emotional state and history
+                      Temperament is stable. Live emotion only appears after actual turns or internal actions.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <div className="grid md:grid-cols-2 gap-8">
-                      <div className="flex flex-col items-center">
-                        <h4 className="text-sm font-medium text-muted-foreground mb-4">Emotion Radar</h4>
-                        <EmotionRadar emotionalState={agentEmotionalState} size={280} />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-medium text-muted-foreground mb-4">Emotion Levels</h4>
-                        <EmotionBars emotionalState={agentEmotionalState} />
-                      </div>
+                  <CardContent className="pt-2">
+                    <div className="grid gap-8 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+                      <section className="space-y-6 xl:border-r xl:border-border/60 xl:pr-8">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="max-w-2xl">
+                            <h4 className="text-sm font-medium text-muted-foreground">Live State</h4>
+                            <p className="mt-2 text-sm leading-7 text-muted-foreground">
+                              {agentEmotionalState.status === 'active'
+                                ? `${currentAgent.name} is actively reacting to recent events.`
+                                : 'Quiet by design. Live emotion stays asleep until something real happens.'}
+                            </p>
+                          </div>
+                          <div className="rounded-full border border-border/70 bg-card/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-primary/85">
+                            {agentEmotionalState.status}
+                          </div>
+                        </div>
+
+                        {agentEmotionalState.status === 'active' ? (
+                          <div className="grid gap-6 2xl:grid-cols-[280px_minmax(0,1fr)] 2xl:items-start">
+                            <div className="flex justify-center 2xl:justify-start">
+                              <EmotionRadar
+                                emotionalState={agentEmotionalState}
+                                emotionalProfile={agentEmotionalProfile}
+                                mode="live"
+                                size={280}
+                              />
+                            </div>
+                            <div className="min-w-0 space-y-5">
+                              <div className="grid gap-3 sm:grid-cols-3">
+                                <div className="rounded-sm border border-border/60 bg-card/70 p-4">
+                                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80">
+                                    Lead
+                                  </div>
+                                  <div className="mt-2 text-xl font-semibold">
+                                    {formatEmotionLabel(agentEmotionalState.dominantEmotion)}
+                                  </div>
+                                </div>
+                                <div className="rounded-sm border border-border/60 bg-card/70 p-4">
+                                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80">
+                                    Intensity
+                                  </div>
+                                  <div className="mt-2 text-xl font-semibold">
+                                    {agentEmotionalState.dominantEmotion
+                                      ? `${Math.round((agentEmotionalState.currentMood[agentEmotionalState.dominantEmotion] || 0) * 100)}%`
+                                      : '0%'}
+                                  </div>
+                                </div>
+                                <div className="rounded-sm border border-border/60 bg-card/70 p-4">
+                                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80">
+                                    Last Update
+                                  </div>
+                                  <div className="mt-2 text-xl font-semibold">
+                                    {new Date(agentEmotionalState.lastUpdated).toLocaleTimeString([], {
+                                      hour: 'numeric',
+                                      minute: '2-digit',
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="rounded-sm border border-border/60 bg-background/35 p-5">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80">
+                                  Live read
+                                </div>
+                                <p className="mt-3 text-sm leading-7 text-muted-foreground">
+                                  {emotionalService.getEmotionalSummary(agentEmotionalState, agentEmotionalProfile)}
+                                </p>
+                              </div>
+
+                              <EmotionBars
+                                emotionalState={agentEmotionalState}
+                                emotionalProfile={agentEmotionalProfile}
+                                mode="live"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-6">
+                            <div className="rounded-sm border border-border/60 bg-[radial-gradient(circle_at_top_left,rgba(203,166,247,0.12),transparent_55%),var(--surface)] p-6">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary/85">
+                                  Dormant
+                                </span>
+                                <span className="text-sm text-muted-foreground">
+                                  Temperament still leans {formatEmotionLabel(agentTemperamentLead.emotion)}.
+                                </span>
+                              </div>
+                              <h3 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">
+                                No live emotional surge yet
+                              </h3>
+                              <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
+                                The agent is calm right now. Nothing recent has created enough internal pressure to wake a live emotional spike.
+                              </p>
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-3">
+                              <div className="rounded-sm border border-border/60 bg-card/60 p-4">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80">
+                                  Wakes On
+                                </div>
+                                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                                  Real chat turns, journal entries, creative work, and dream generation.
+                                </p>
+                              </div>
+                              <div className="rounded-sm border border-border/60 bg-card/60 p-4">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80">
+                                  Cools Down
+                                </div>
+                                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                                  Live emotion fades after later turns until the state drops back to quiet.
+                                </p>
+                              </div>
+                              <div className="rounded-sm border border-border/60 bg-card/60 p-4">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80">
+                                  Natural Bias
+                                </div>
+                                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                                  This agent naturally defaults toward {formatEmotionLabel(agentTemperamentLead.emotion)}.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </section>
+
+                      <section className="space-y-6 xl:pl-2">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="max-w-2xl">
+                            <h4 className="text-sm font-medium text-muted-foreground">Temperament</h4>
+                            <p className="mt-2 text-sm leading-7 text-muted-foreground">
+                              The stable emotional style built from persona and core traits. This does not mean the agent feels this right now.
+                            </p>
+                          </div>
+                          <div className="rounded-sm border border-border/60 bg-card/70 px-4 py-3 text-right">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80">
+                              Lead
+                            </div>
+                            <div className="mt-1 text-lg font-semibold">
+                              {formatEmotionLabel(agentTemperamentLead.emotion)}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <div className="rounded-sm border border-border/60 bg-card/60 p-4">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80">
+                              Sensitivity
+                            </div>
+                            <div className="mt-2 text-xl font-semibold">
+                              {Math.round(agentEmotionalProfile.sensitivity * 100)}%
+                            </div>
+                          </div>
+                          <div className="rounded-sm border border-border/60 bg-card/60 p-4">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80">
+                              Resilience
+                            </div>
+                            <div className="mt-2 text-xl font-semibold">
+                              {Math.round(agentEmotionalProfile.resilience * 100)}%
+                            </div>
+                          </div>
+                          <div className="rounded-sm border border-border/60 bg-card/60 p-4">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80">
+                              Expressiveness
+                            </div>
+                            <div className="mt-2 text-xl font-semibold">
+                              {Math.round(agentEmotionalProfile.expressiveness * 100)}%
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_280px] 2xl:items-start">
+                          <div className="min-w-0">
+                            <EmotionBars
+                              emotionalProfile={agentEmotionalProfile}
+                              mode="temperament"
+                            />
+                          </div>
+
+                          <div className="rounded-sm border border-border/60 bg-background/35 p-5">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80">
+                              Top Tendencies
+                            </div>
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {temperamentRanking.slice(0, 3).map(([emotion, value]) => (
+                                <span
+                                  key={emotion}
+                                  className="rounded-full border border-border/70 bg-card/70 px-3 py-1 text-xs text-muted-foreground"
+                                >
+                                  {formatEmotionLabel(emotion)} {Math.round(value * 100)}%
+                                </span>
+                              ))}
+                            </div>
+                            <p className="mt-4 text-sm leading-7 text-muted-foreground">
+                              Temperament shapes how the agent tends to react once a real event wakes live emotion.
+                            </p>
+                          </div>
+                        </div>
+                      </section>
                     </div>
                   </CardContent>
                 </Card>
@@ -1161,10 +1357,10 @@ export default function AgentDetail() {
                       <div className="p-2 rounded-sm bg-purple-500/10">
                         <Clock className="h-6 w-6 text-purple-500" />
                       </div>
-                      Emotional Timeline
+                      Recent Causes
                     </CardTitle>
                     <CardDescription>
-                      Recent emotional events and triggers
+                      Every live shift is explained with cause, phase, and confidence.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>

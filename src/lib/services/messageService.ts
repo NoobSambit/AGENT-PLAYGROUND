@@ -1,191 +1,265 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
   orderBy,
+  query,
+  setDoc,
+  updateDoc,
+  where,
   limit,
-  Timestamp
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { MessageRecord, MessageDocument, CreateMessageData } from '@/types/database'
-import { stripUndefinedFields } from '@/lib/firestoreUtils'
+import { getPersistenceMode, readsFromPostgres } from '@/lib/db/persistence'
+import { generateId } from '@/lib/db/utils'
+import { runMirroredWrite } from '@/lib/persistence/writeMirror'
+import { MessageRepository } from '@/lib/repositories/messageRepository'
+import { CreateMessageData, MessageRecord } from '@/types/database'
 
 const MESSAGES_COLLECTION = 'messages'
 
-// Convert Firestore document to MessageRecord
-function firestoreDocToMessage(doc: { id: string; data: () => Record<string, unknown> }): MessageRecord {
-  const data = doc.data()
+function stripUndefinedFields<T extends Record<string, unknown>>(data: T): T {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined)
+  ) as T
+}
+
+function firestoreDocToMessage(docSnap: { id: string; data: () => Record<string, unknown> }): MessageRecord {
+  const data = docSnap.data()
   return {
-    id: doc.id,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    agentId: (data as any).agentId || '',
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    content: (data as any).content || '',
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    type: (data as any).type || 'user',
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    timestamp: (data as any).timestamp?.toDate?.()?.toISOString() || (data as any).timestamp || new Date().toISOString(),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    roomId: (data as any).roomId,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    metadata: (data as any).metadata,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    userId: (data as any).userId
+    id: docSnap.id,
+    agentId: data.agentId as string || '',
+    content: data.content as string || '',
+    type: (data.type as MessageRecord['type']) || 'user',
+    timestamp: data.timestamp as string || new Date().toISOString(),
+    roomId: data.roomId as string | undefined,
+    metadata: data.metadata as Record<string, unknown> | undefined,
+    userId: data.userId as string | undefined,
   }
 }
 
-// Convert MessageRecord to Firestore document
-function messageToFirestoreDoc(message: CreateMessageData): Omit<MessageDocument, 'timestamp'> & { timestamp?: Timestamp } {
-  const docData = {
+function messageToFirestoreDoc(message: MessageRecord): Record<string, unknown> {
+  return stripUndefinedFields({
     agentId: message.agentId,
     content: message.content,
     type: message.type,
     roomId: message.roomId,
     metadata: message.metadata,
     userId: message.userId,
-    timestamp: Timestamp.now()
-  }
-  return stripUndefinedFields(docData)
+    timestamp: message.timestamp,
+  })
 }
 
-function isMissingIndexError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error &&
-    (error as { code?: string }).code === 'failed-precondition'
+async function getMessageByIdFromFirestore(id: string): Promise<MessageRecord | null> {
+  const docSnap = await getDoc(doc(db, MESSAGES_COLLECTION, id))
+  return docSnap.exists() ? firestoreDocToMessage(docSnap) : null
+}
+
+async function getMessagesByAgentIdFromFirestore(agentId: string): Promise<MessageRecord[]> {
+  const snapshot = await getDocs(query(
+    collection(db, MESSAGES_COLLECTION),
+    where('agentId', '==', agentId),
+    orderBy('timestamp', 'asc')
+  ))
+  return snapshot.docs.map(firestoreDocToMessage)
+}
+
+async function getMessagesByRoomIdFromFirestore(roomId: string): Promise<MessageRecord[]> {
+  const snapshot = await getDocs(query(
+    collection(db, MESSAGES_COLLECTION),
+    where('roomId', '==', roomId),
+    orderBy('timestamp', 'asc')
+  ))
+  return snapshot.docs.map(firestoreDocToMessage)
+}
+
+async function getRecentMessagesFromFirestore(limitCount: number): Promise<MessageRecord[]> {
+  const snapshot = await getDocs(query(
+    collection(db, MESSAGES_COLLECTION),
+    orderBy('timestamp', 'desc'),
+    limit(limitCount)
+  ))
+  return snapshot.docs.map(firestoreDocToMessage).reverse()
+}
+
+async function upsertMessageInFirestore(message: MessageRecord): Promise<void> {
+  await setDoc(doc(db, MESSAGES_COLLECTION, message.id), messageToFirestoreDoc(message))
+}
+
+async function updateMessageInFirestore(id: string, updates: Partial<MessageRecord>): Promise<void> {
+  await updateDoc(doc(db, MESSAGES_COLLECTION, id), stripUndefinedFields({
+    content: updates.content,
+    type: updates.type,
+    roomId: updates.roomId,
+    metadata: updates.metadata,
+    userId: updates.userId,
+    timestamp: updates.timestamp,
+  }))
+}
+
+async function deleteMessageInFirestore(id: string): Promise<void> {
+  await deleteDoc(doc(db, MESSAGES_COLLECTION, id))
 }
 
 export class MessageService {
-  // Get all messages
   static async getAllMessages(): Promise<MessageRecord[]> {
     try {
-      const q = query(
-        collection(db, MESSAGES_COLLECTION),
-        orderBy('timestamp', 'desc')
-      )
+      if (readsFromPostgres(getPersistenceMode())) {
+        return MessageRepository.listAll()
+      }
 
-      const querySnapshot = await getDocs(q)
-      return querySnapshot.docs.map(firestoreDocToMessage)
+      return getRecentMessagesFromFirestore(500)
     } catch (error) {
       console.error('Error fetching messages:', error)
       return []
     }
   }
 
-  // Get message by ID
   static async getMessageById(id: string): Promise<MessageRecord | null> {
     try {
-      const docRef = doc(db, MESSAGES_COLLECTION, id)
-      const docSnap = await getDoc(docRef)
-
-      if (docSnap.exists()) {
-        return firestoreDocToMessage(docSnap)
+      if (readsFromPostgres(getPersistenceMode())) {
+        return MessageRepository.getById(id)
       }
-      return null
+
+      return getMessageByIdFromFirestore(id)
     } catch (error) {
       console.error('Error fetching message:', error)
       return null
     }
   }
 
-  // Get messages by agent ID
   static async getMessagesByAgentId(agentId: string): Promise<MessageRecord[]> {
     try {
-      const q = query(
-        collection(db, MESSAGES_COLLECTION),
-        where('agentId', '==', agentId),
-        orderBy('timestamp', 'asc')
-      )
-
-      const querySnapshot = await getDocs(q)
-      return querySnapshot.docs.map(firestoreDocToMessage)
-    } catch (error) {
-      if (isMissingIndexError(error)) {
-        const q = query(
-          collection(db, MESSAGES_COLLECTION),
-          where('agentId', '==', agentId)
-        )
-        const querySnapshot = await getDocs(q)
-        const messages = querySnapshot.docs.map(firestoreDocToMessage)
-        return messages.sort((a, b) =>
-          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-        )
+      if (readsFromPostgres(getPersistenceMode())) {
+        return MessageRepository.listByAgentId(agentId)
       }
+
+      return getMessagesByAgentIdFromFirestore(agentId)
+    } catch (error) {
       console.error('Error fetching messages by agent:', error)
       return []
     }
   }
 
-  // Get messages by room ID
   static async getMessagesByRoomId(roomId: string): Promise<MessageRecord[]> {
     try {
-      const q = query(
-        collection(db, MESSAGES_COLLECTION),
-        where('roomId', '==', roomId),
-        orderBy('timestamp', 'asc')
-      )
-
-      const querySnapshot = await getDocs(q)
-      return querySnapshot.docs.map(firestoreDocToMessage)
-    } catch (error) {
-      if (isMissingIndexError(error)) {
-        const q = query(
-          collection(db, MESSAGES_COLLECTION),
-          where('roomId', '==', roomId)
-        )
-        const querySnapshot = await getDocs(q)
-        const messages = querySnapshot.docs.map(firestoreDocToMessage)
-        return messages.sort((a, b) =>
-          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-        )
+      if (readsFromPostgres(getPersistenceMode())) {
+        return MessageRepository.listByRoomId(roomId)
       }
+
+      return getMessagesByRoomIdFromFirestore(roomId)
+    } catch (error) {
       console.error('Error fetching messages by room:', error)
       return []
     }
   }
 
-  // Get recent messages (last N messages)
   static async getRecentMessages(limitCount: number = 50): Promise<MessageRecord[]> {
     try {
-      const q = query(
-        collection(db, MESSAGES_COLLECTION),
-        orderBy('timestamp', 'desc'),
-        limit(limitCount)
-      )
+      if (readsFromPostgres(getPersistenceMode())) {
+        return MessageRepository.listRecent(limitCount)
+      }
 
-      const querySnapshot = await getDocs(q)
-      return querySnapshot.docs.map(firestoreDocToMessage).reverse() // Reverse to get chronological order
+      return getRecentMessagesFromFirestore(limitCount)
     } catch (error) {
       console.error('Error fetching recent messages:', error)
       return []
     }
   }
 
-  // Create new message
   static async createMessage(messageData: CreateMessageData): Promise<MessageRecord | null> {
     try {
-      const docData = messageToFirestoreDoc(messageData)
-      const docRef = await addDoc(collection(db, MESSAGES_COLLECTION), docData)
-      return await this.getMessageById(docRef.id)
+      const record: MessageRecord = {
+        id: generateId('message'),
+        agentId: messageData.agentId,
+        content: messageData.content,
+        type: messageData.type,
+        roomId: messageData.roomId,
+        metadata: messageData.metadata,
+        userId: messageData.userId,
+        timestamp: new Date().toISOString(),
+      }
+
+      const mode = getPersistenceMode()
+      if (mode === 'firestore') {
+        await upsertMessageInFirestore(record)
+        return record
+      }
+
+      if (mode === 'dual-write-firestore-read') {
+        return runMirroredWrite({
+          entityType: 'message',
+          entityId: record.id,
+          operation: 'create',
+          payload: messageToFirestoreDoc(record),
+          primary: async () => {
+            await upsertMessageInFirestore(record)
+            return record
+          },
+          secondary: async () => {
+            await MessageRepository.create(record)
+          },
+        })
+      }
+
+      return runMirroredWrite({
+        entityType: 'message',
+        entityId: record.id,
+        operation: 'create',
+        payload: messageToFirestoreDoc(record),
+        primary: async () => MessageRepository.create(record),
+        secondary: mode === 'dual-write-postgres-read'
+          ? async () => {
+              await upsertMessageInFirestore(record)
+            }
+          : undefined,
+      })
     } catch (error) {
       console.error('Error creating message:', error)
       return null
     }
   }
 
-  // Update message
-  static async updateMessage(id: string, updates: Partial<MessageDocument>): Promise<boolean> {
+  static async updateMessage(id: string, updates: Partial<MessageRecord>): Promise<boolean> {
     try {
-      const docRef = doc(db, MESSAGES_COLLECTION, id)
-      const updateData = stripUndefinedFields({
-        ...updates,
-        timestamp: Timestamp.now()
+      const mode = getPersistenceMode()
+
+      if (mode === 'firestore') {
+        await updateMessageInFirestore(id, updates)
+        return true
+      }
+
+      if (mode === 'dual-write-firestore-read') {
+        await runMirroredWrite({
+          entityType: 'message',
+          entityId: id,
+          operation: 'update',
+          payload: updates as Record<string, unknown>,
+          primary: async () => {
+            await updateMessageInFirestore(id, updates)
+            return true
+          },
+          secondary: async () => {
+            await MessageRepository.update(id, updates)
+          },
+        })
+        return true
+      }
+
+      await runMirroredWrite({
+        entityType: 'message',
+        entityId: id,
+        operation: 'update',
+        payload: updates as Record<string, unknown>,
+        primary: async () => MessageRepository.update(id, updates),
+        secondary: mode === 'dual-write-postgres-read'
+          ? async () => {
+              await updateMessageInFirestore(id, updates)
+            }
+          : undefined,
       })
-      await updateDoc(docRef, updateData)
       return true
     } catch (error) {
       console.error('Error updating message:', error)
@@ -193,10 +267,44 @@ export class MessageService {
     }
   }
 
-  // Delete message
   static async deleteMessage(id: string): Promise<boolean> {
     try {
-      await deleteDoc(doc(db, MESSAGES_COLLECTION, id))
+      const mode = getPersistenceMode()
+
+      if (mode === 'firestore') {
+        await deleteMessageInFirestore(id)
+        return true
+      }
+
+      if (mode === 'dual-write-firestore-read') {
+        await runMirroredWrite({
+          entityType: 'message',
+          entityId: id,
+          operation: 'delete',
+          payload: { id },
+          primary: async () => {
+            await deleteMessageInFirestore(id)
+            return true
+          },
+          secondary: async () => {
+            await MessageRepository.delete(id)
+          },
+        })
+        return true
+      }
+
+      await runMirroredWrite({
+        entityType: 'message',
+        entityId: id,
+        operation: 'delete',
+        payload: { id },
+        primary: async () => MessageRepository.delete(id),
+        secondary: mode === 'dual-write-postgres-read'
+          ? async () => {
+              await deleteMessageInFirestore(id)
+            }
+          : undefined,
+      })
       return true
     } catch (error) {
       console.error('Error deleting message:', error)

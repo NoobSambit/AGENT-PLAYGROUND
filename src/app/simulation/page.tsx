@@ -5,7 +5,6 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { GradientOrb } from '@/components/ui/animated-background'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
-import { SimulationService } from '@/lib/services/simulationService'
 import { SimulationRecord } from '@/types/database'
 import { ArrowRight, MessageCircle, Pause, Play, Plus, Trash2, Users, X } from 'lucide-react'
 import { Textarea } from '@/components/ui/input'
@@ -106,8 +105,13 @@ export default function SimulationPage() {
 
   const loadSimulations = async () => {
     try {
-      const sims = await SimulationService.getRecentSimulations(10)
-      setSimulations(sims)
+      const response = await fetch('/api/simulations?limit=10')
+      if (!response.ok) {
+        throw new Error('Failed to fetch simulations')
+      }
+
+      const data = await response.json()
+      setSimulations(data.simulations || [])
     } catch (error) {
       console.error('Failed to load simulations:', error)
       setUiError('Recent simulations could not be loaded.')

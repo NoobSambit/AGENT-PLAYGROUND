@@ -15,7 +15,7 @@ export interface LLMProviderPreference {
   model?: string | null
 }
 
-function isSupportedProvider(value: string | undefined): value is LLMProvider {
+function isSupportedProvider(value: string | null | undefined): value is LLMProvider {
   return value === 'gemini' || value === 'groq' || value === 'ollama'
 }
 

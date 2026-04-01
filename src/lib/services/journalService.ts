@@ -17,6 +17,7 @@ import {
   MemoryRecord,
   AgentRelationship,
 } from '@/types/database'
+import { emotionalService } from './emotionalService'
 
 // Generate unique IDs
 function generateId(): string {
@@ -135,11 +136,11 @@ class JournalService {
     hasGoals?: boolean,
     hasRelationships?: boolean
   ): JournalEntryType {
-    if (!emotionalState) {
+    const dominantEmotion = emotionalService.getDominantEmotion(emotionalState)
+    if (!dominantEmotion || !emotionalState) {
       return 'daily_reflection'
     }
 
-    const dominantEmotion = emotionalState.dominantEmotion
     const intensity = emotionalState.currentMood[dominantEmotion]
 
     // Strong emotions suggest emotional processing
@@ -166,11 +167,11 @@ class JournalService {
    * Determine mood from emotional state
    */
   determineMood(emotionalState?: EmotionalState): JournalMood {
-    if (!emotionalState) {
+    const dominantEmotion = emotionalService.getDominantEmotion(emotionalState)
+    if (!dominantEmotion) {
       return 'contemplative'
     }
 
-    const dominantEmotion = emotionalState.dominantEmotion
     const moods = EMOTION_MOOD_MAP[dominantEmotion]
 
     return moods[Math.floor(Math.random() * moods.length)]
@@ -342,30 +343,7 @@ Provide the response in JSON format:
    * Create default emotional state
    */
   private createDefaultEmotionalState(): EmotionalState {
-    return {
-      currentMood: {
-        joy: 0.5,
-        sadness: 0.2,
-        anger: 0.1,
-        fear: 0.2,
-        surprise: 0.3,
-        trust: 0.5,
-        anticipation: 0.4,
-        disgust: 0.1,
-      },
-      emotionalBaseline: {
-        joy: 0.5,
-        sadness: 0.2,
-        anger: 0.1,
-        fear: 0.2,
-        surprise: 0.3,
-        trust: 0.5,
-        anticipation: 0.4,
-        disgust: 0.1,
-      },
-      lastUpdated: new Date().toISOString(),
-      dominantEmotion: 'trust',
-    }
+    return emotionalService.createDormantEmotionalState()
   }
 
   /**

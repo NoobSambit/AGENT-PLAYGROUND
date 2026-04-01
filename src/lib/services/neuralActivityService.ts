@@ -36,9 +36,12 @@ export class NeuralActivityService {
     messages: MessageRecord[]
     memoryGraph: MemoryGraph | null
   }): NeuralActivitySnapshot {
-    const emotionalState = params.agent.emotionalState || emotionalService.createDefaultEmotionalState()
-    const dominantEmotion = emotionalState.dominantEmotion
-    const emotionalIntensity = emotionalState.currentMood[dominantEmotion]
+    const emotionalState = emotionalService.normalizeEmotionalState(params.agent.emotionalState)
+    const emotionalLead = emotionalService.getInfluentialEmotion(emotionalState, params.agent.emotionalProfile)
+    const dominantEmotion = emotionalLead.emotion
+    const emotionalIntensity = emotionalLead.source === 'live'
+      ? emotionalState.currentMood[dominantEmotion]
+      : emotionalLead.intensity
     const activeThemes = extractAttentionFocus(params.messages, params.memories)
     const nodes: NeuralActivityNode[] = []
     const edges: NeuralActivityEdge[] = []
@@ -49,7 +52,7 @@ export class NeuralActivityService {
       kind: 'emotion',
       weight: clamp(0.55 + emotionalIntensity, 0.4, 1),
       color: emotionalService.getEmotionColor(dominantEmotion),
-      description: `Dominant emotion at ${(emotionalIntensity * 100).toFixed(0)}% intensity.`,
+      description: `${emotionalLead.source === 'live' ? 'Live state' : 'Temperament'} is leaning ${dominantEmotion} at ${(emotionalIntensity * 100).toFixed(0)}%.`,
     })
 
     params.memories.slice(0, 4).forEach((memory, index) => {
@@ -130,7 +133,7 @@ export class NeuralActivityService {
     })
 
     const reasoningSummary = activeThemes.length > 0
-      ? `The agent is weighting ${activeThemes.slice(0, 3).join(', ')} against ${dominantEmotion} while shaping the next response.`
+      ? `The agent is weighting ${activeThemes.slice(0, 3).join(', ')} against ${dominantEmotion} ${emotionalLead.source === 'live' ? 'live emotion' : 'temperament'} while shaping the next response.`
       : `The agent is relying on ${dominantEmotion}-weighted memory recall to shape the next response.`
 
     return {

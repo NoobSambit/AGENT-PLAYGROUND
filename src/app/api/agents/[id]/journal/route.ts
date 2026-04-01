@@ -6,24 +6,56 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { collection, doc, getDocs, limit, orderBy, query, setDoc, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { doc, getDoc, collection, addDoc, getDocs, query, orderBy, limit, where } from 'firebase/firestore'
+import { getPersistenceMode, readsFromPostgres } from '@/lib/db/persistence'
+import { runMirroredWrite } from '@/lib/persistence/writeMirror'
+import { FeatureContentRepository } from '@/lib/repositories/featureContentRepository'
+import { RelationshipRepository } from '@/lib/repositories/relationshipRepository'
 import { journalService } from '@/lib/services/journalService'
 import { agentProgressService } from '@/lib/services/agentProgressService'
-import { JournalEntryType, AgentRecord, JournalEntry, MemoryRecord, AgentRelationship } from '@/types/database'
+import { AgentService } from '@/lib/services/agentService'
+import { emotionalService } from '@/lib/services/emotionalService'
+import { MemoryService } from '@/lib/services/memoryService'
+import { JournalEntryType, JournalEntry, AgentRelationship } from '@/types/database'
 import { generateText } from '@/lib/llm/provider'
 import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
 import type { LLMProviderInfo } from '@/lib/llmConfig'
 
-// Rate limiting: max 10 journal entries per day per agent
 const DAILY_LIMIT = 10
 const RATE_WINDOW_MS = 24 * 60 * 60 * 1000
 const JOURNAL_MIN_WORDS = 150
 const JOURNAL_MAX_WORDS = 300
+const JOURNAL_COLLECTION = 'journal_entries'
 
 interface CreateJournalRequest {
   type?: JournalEntryType
   customPrompt?: string
+}
+
+function journalEntryToFirestoreDoc(entry: JournalEntry): Record<string, unknown> {
+  const { id, ...data } = entry
+  void id
+  return data
+}
+
+function firestoreDocToJournalEntry(docSnap: { id: string; data: () => Record<string, unknown> }): JournalEntry {
+  return {
+    id: docSnap.id,
+    ...docSnap.data(),
+  } as JournalEntry
+}
+
+function orientRelationshipForAgent(agentId: string, relationship: AgentRelationship): AgentRelationship {
+  if (relationship.agentId1 === agentId) {
+    return relationship
+  }
+
+  return {
+    ...relationship,
+    agentId1: agentId,
+    agentId2: relationship.agentId1,
+  }
 }
 
 async function generateJournalContent(
@@ -44,6 +76,90 @@ async function generateJournalContent(
   return content
 }
 
+async function countJournalEntriesSince(agentId: string, start: string): Promise<number> {
+  if (readsFromPostgres(getPersistenceMode())) {
+    return FeatureContentRepository.countJournalEntriesSince(agentId, start)
+  }
+
+  const snapshot = await getDocs(query(
+    collection(db, 'agents', agentId, JOURNAL_COLLECTION),
+    where('createdAt', '>=', start),
+    orderBy('createdAt', 'desc'),
+    limit(DAILY_LIMIT)
+  ))
+  return snapshot.size
+}
+
+async function listJournalEntries(agentId: string, options?: {
+  type?: JournalEntryType
+  limit?: number
+}): Promise<JournalEntry[]> {
+  if (readsFromPostgres(getPersistenceMode())) {
+    return FeatureContentRepository.listJournalEntries(agentId, options)
+  }
+
+  const entriesRef = collection(db, 'agents', agentId, JOURNAL_COLLECTION)
+  const q = options?.type
+    ? query(entriesRef, where('type', '==', options.type), orderBy('createdAt', 'desc'), limit(options.limit || 20))
+    : query(entriesRef, orderBy('createdAt', 'desc'), limit(options?.limit || 20))
+
+  const snapshot = await getDocs(q)
+  return snapshot.docs.map(firestoreDocToJournalEntry)
+}
+
+async function listRelationshipsForAgent(agentId: string): Promise<AgentRelationship[]> {
+  if (readsFromPostgres(getPersistenceMode())) {
+    const relationships = await RelationshipRepository.listForAgent(agentId)
+    return relationships.map((relationship) => orientRelationshipForAgent(agentId, relationship))
+  }
+
+  const snapshot = await getDocs(collection(db, 'agents', agentId, 'relationships'))
+  return snapshot.docs.map((docSnap) => orientRelationshipForAgent(agentId, {
+    id: docSnap.id,
+    ...docSnap.data(),
+  } as AgentRelationship))
+}
+
+async function writeJournalEntryToFirestore(entry: JournalEntry): Promise<void> {
+  await setDoc(doc(db, 'agents', entry.agentId, JOURNAL_COLLECTION, entry.id), journalEntryToFirestoreDoc(entry))
+}
+
+async function saveJournalEntry(entry: JournalEntry): Promise<JournalEntry> {
+  const mode = getPersistenceMode()
+
+  if (mode === 'firestore') {
+    await writeJournalEntryToFirestore(entry)
+    return entry
+  }
+
+  if (mode === 'dual-write-firestore-read') {
+    return runMirroredWrite({
+      entityType: 'journal_entry',
+      entityId: entry.id,
+      operation: 'create',
+      payload: journalEntryToFirestoreDoc(entry),
+      primary: async () => {
+        await writeJournalEntryToFirestore(entry)
+        return entry
+      },
+      secondary: async () => FeatureContentRepository.saveJournalEntry(entry),
+    })
+  }
+
+  return runMirroredWrite({
+    entityType: 'journal_entry',
+    entityId: entry.id,
+    operation: 'create',
+    payload: journalEntryToFirestoreDoc(entry),
+    primary: async () => FeatureContentRepository.saveJournalEntry(entry),
+    secondary: mode === 'dual-write-postgres-read'
+      ? async () => {
+          await writeJournalEntryToFirestore(entry)
+        }
+      : undefined,
+  })
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -53,73 +169,40 @@ export async function POST(
     const body: CreateJournalRequest = await request.json()
     const providerInfo = getProviderInfoForRequest(request)
 
-    // Get agent data
-    const agentRef = doc(db, 'agents', agentId)
-    const agentSnap = await getDoc(agentRef)
-
-    if (!agentSnap.exists()) {
+    const agent = await AgentService.getAgentById(agentId)
+    if (!agent) {
       return NextResponse.json(
         { error: 'Agent not found' },
         { status: 404 }
       )
     }
 
-    const agent = { id: agentSnap.id, ...agentSnap.data() } as AgentRecord
-
-    // Enforce daily rate limit per agent
-    const journalsRef = collection(db, 'agents', agentId, 'journal_entries')
     const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
-    const rateQuery = query(
-      journalsRef,
-      where('createdAt', '>=', windowStart),
-      orderBy('createdAt', 'desc'),
-      limit(DAILY_LIMIT)
-    )
-    const rateSnap = await getDocs(rateQuery)
-    if (rateSnap.size >= DAILY_LIMIT) {
+    const usageCount = await countJournalEntriesSince(agentId, windowStart)
+    if (usageCount >= DAILY_LIMIT) {
       return NextResponse.json(
         { error: 'Daily journal limit reached. Try again tomorrow.' },
         { status: 429, headers: { 'X-RateLimit-Remaining': '0' } }
       )
     }
-    const remaining = Math.max(DAILY_LIMIT - rateSnap.size, 0)
 
-    // Get recent memories
-    const memoriesRef = collection(db, 'memories')
-    const memoriesQuery = query(
-      memoriesRef,
-      orderBy('timestamp', 'desc'),
-      limit(10)
-    )
-    const memoriesSnap = await getDocs(memoriesQuery)
-    const memories: MemoryRecord[] = memoriesSnap.docs
-      .filter(d => d.data().agentId === agentId)
-      .map(d => ({ id: d.id, ...d.data() })) as MemoryRecord[]
+    const remaining = Math.max(DAILY_LIMIT - usageCount - 1, 0)
+    const memories = await MemoryService.getRecentMemories(agentId, 10)
+    const relationships = await listRelationshipsForAgent(agentId)
 
-    // Get relationships (if any)
-    const relationshipsRef = collection(db, 'agents', agentId, 'relationships')
-    const relationshipsSnap = await getDocs(relationshipsRef)
-    const relationships: AgentRelationship[] = relationshipsSnap.docs.map(d => ({
-      id: d.id,
-      ...d.data(),
-    })) as AgentRelationship[]
-
-    // Determine journal entry type
     const entryType = body.type || journalService.suggestJournalType(
       agent.emotionalState,
-      agent.goals && agent.goals.length > 0,
+      Boolean(agent.goals && agent.goals.length > 0),
       relationships.length > 0
     )
 
-    // Generate journal prompt
-    const journalPrompt = journalService.generateJournalPrompt(
+    const journalPrompt = body.customPrompt || journalService.generateJournalPrompt(
       agent,
       entryType,
       memories,
       relationships
     )
 
-    // Call LLM to generate journal entry
     if (!providerInfo) {
       return NextResponse.json(
         { error: 'LLM provider not configured' },
@@ -133,14 +216,13 @@ Your persona: ${agent.persona}`
 
     const llmResponse = await generateJournalContent(systemPrompt, journalPrompt, providerInfo)
 
-    // Parse the journal response
     let journalEntry = journalService.parseJournalResponse(
       agentId,
       entryType,
       llmResponse,
       agent.emotionalState,
-      memories.map(m => m.id),
-      relationships.map(r => r.id)
+      memories.map((memory) => memory.id),
+      relationships.map((relationship) => relationship.id)
     )
 
     if (journalEntry.wordCount < JOURNAL_MIN_WORDS || journalEntry.wordCount > JOURNAL_MAX_WORDS) {
@@ -153,27 +235,37 @@ Your previous response was ${journalEntry.wordCount} words. Rewrite it to be bet
         entryType,
         retryResponse,
         agent.emotionalState,
-        memories.map(m => m.id),
-        relationships.map(r => r.id)
+        memories.map((memory) => memory.id),
+        relationships.map((relationship) => relationship.id)
       )
+
       if (retryEntry.wordCount >= JOURNAL_MIN_WORDS && retryEntry.wordCount <= JOURNAL_MAX_WORDS) {
         journalEntry = retryEntry
       }
     }
 
-    // Save to Firestore
-    const { id, ...journalData } = journalEntry
-    void id
-    const docRef = await addDoc(journalsRef, journalData)
+    const savedEntry = await saveJournalEntry(journalEntry)
     await agentProgressService.recordJournalEntry(agentId)
 
-    // Return the journal entry
-    const savedEntry = { ...journalEntry, id: docRef.id }
+    const refreshedAgent = await AgentService.getAgentById(agentId)
+    if (refreshedAgent) {
+      const emotionalUpdate = emotionalService.processInternalAction({
+        agent: refreshedAgent,
+        source: 'journal_entry',
+        content: journalEntry.content,
+        linkedActionId: savedEntry.id,
+      })
+
+      await AgentService.updateAgent(agentId, {
+        emotionalState: emotionalUpdate.emotionalState,
+        emotionalHistory: emotionalUpdate.emotionalHistory,
+      })
+    }
 
     return NextResponse.json({
       success: true,
       entry: savedEntry,
-      remaining
+      remaining,
     })
   } catch (error) {
     console.error('Journal API error:', error)
@@ -194,24 +286,11 @@ export async function GET(
     const type = searchParams.get('type') as JournalEntryType | null
     const limitCount = parseInt(searchParams.get('limit') || '20')
 
-    // Get journal entries from Firestore
-    const journalsRef = collection(db, 'agents', agentId, 'journal_entries')
-    let q = query(journalsRef, orderBy('createdAt', 'desc'), limit(limitCount))
-
-    if (type) {
-      q = query(journalsRef, where('type', '==', type), orderBy('createdAt', 'desc'), limit(limitCount))
-    }
-
-    const snapshot = await getDocs(q)
-    const entries: JournalEntry[] = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as JournalEntry[]
-
-    // Get stats
+    const entries = await listJournalEntries(agentId, {
+      type: type || undefined,
+      limit: limitCount,
+    })
     const stats = journalService.getJournalStats(entries)
-
-    // Get insights
     const insights = journalService.getJournalInsights(entries)
 
     return NextResponse.json({

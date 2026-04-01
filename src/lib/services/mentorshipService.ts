@@ -3,14 +3,16 @@ import {
   doc,
   getDoc,
   getDocs,
-  addDoc,
-  updateDoc,
-  query,
-  where,
   orderBy,
-  Timestamp
+  query,
+  setDoc,
+  where,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { getPersistenceMode, readsFromPostgres } from '@/lib/db/persistence'
+import { generateId } from '@/lib/db/utils'
+import { runMirroredWrite } from '@/lib/persistence/writeMirror'
+import { MentorshipRepository } from '@/lib/repositories/mentorshipRepository'
 import {
   Mentorship,
   MentorshipSession,
@@ -21,6 +23,74 @@ import {
 } from '@/types/database'
 
 const MENTORSHIPS_COLLECTION = 'mentorships'
+
+function mentorshipToFirestoreDoc(mentorship: Mentorship): Record<string, unknown> {
+  return {
+    mentorId: mentorship.mentorId,
+    menteeId: mentorship.menteeId,
+    focusAreas: mentorship.focusAreas,
+    currentFocus: mentorship.currentFocus,
+    sessions: mentorship.sessions,
+    totalSessions: mentorship.totalSessions,
+    completedSessions: mentorship.completedSessions,
+    mentorEffectiveness: mentorship.mentorEffectiveness,
+    menteeProgress: mentorship.menteeProgress,
+    skillsTransferred: mentorship.skillsTransferred,
+    status: mentorship.status,
+    createdAt: mentorship.createdAt,
+    updatedAt: mentorship.updatedAt,
+  }
+}
+
+function firestoreDocToMentorship(docSnap: { id: string; data: () => Record<string, unknown> }): Mentorship {
+  const data = docSnap.data()
+  return {
+    id: docSnap.id,
+    mentorId: data.mentorId as string,
+    menteeId: data.menteeId as string,
+    focusAreas: (data.focusAreas as Mentorship['focusAreas']) || [],
+    currentFocus: data.currentFocus as Mentorship['currentFocus'],
+    sessions: (data.sessions as MentorshipSession[]) || [],
+    totalSessions: data.totalSessions as number || 0,
+    completedSessions: data.completedSessions as number || 0,
+    mentorEffectiveness: data.mentorEffectiveness as number || 0.5,
+    menteeProgress: data.menteeProgress as number || 0,
+    skillsTransferred: (data.skillsTransferred as string[]) || [],
+    status: (data.status as Mentorship['status']) || 'active',
+    createdAt: data.createdAt as string || new Date().toISOString(),
+    updatedAt: data.updatedAt as string || new Date().toISOString(),
+  }
+}
+
+async function getAllMentorshipsFromFirestore(): Promise<Mentorship[]> {
+  const q = query(collection(db, MENTORSHIPS_COLLECTION), orderBy('createdAt', 'desc'))
+  const querySnapshot = await getDocs(q)
+  return querySnapshot.docs.map(firestoreDocToMentorship)
+}
+
+async function getMentorshipByIdFromFirestore(id: string): Promise<Mentorship | null> {
+  const docSnap = await getDoc(doc(db, MENTORSHIPS_COLLECTION, id))
+  return docSnap.exists() ? firestoreDocToMentorship(docSnap) : null
+}
+
+async function getAgentMentorshipsFromFirestore(agentId: string): Promise<{
+  asMentor: Mentorship[]
+  asMentee: Mentorship[]
+}> {
+  const [mentorSnapshot, menteeSnapshot] = await Promise.all([
+    getDocs(query(collection(db, MENTORSHIPS_COLLECTION), where('mentorId', '==', agentId))),
+    getDocs(query(collection(db, MENTORSHIPS_COLLECTION), where('menteeId', '==', agentId))),
+  ])
+
+  return {
+    asMentor: mentorSnapshot.docs.map(firestoreDocToMentorship),
+    asMentee: menteeSnapshot.docs.map(firestoreDocToMentorship),
+  }
+}
+
+async function upsertMentorshipInFirestore(mentorship: Mentorship): Promise<void> {
+  await setDoc(doc(db, MENTORSHIPS_COLLECTION, mentorship.id), mentorshipToFirestoreDoc(mentorship))
+}
 // Focus area skill mappings
 const FOCUS_AREA_SKILLS: Record<MentorshipFocus, string[]> = {
   communication: ['active listening', 'clear expression', 'empathy', 'persuasion', 'non-verbal cues'],
@@ -37,31 +107,11 @@ export class MentorshipService {
    */
   static async getAllMentorships(): Promise<Mentorship[]> {
     try {
-      const q = query(
-        collection(db, MENTORSHIPS_COLLECTION),
-        orderBy('createdAt', 'desc')
-      )
+      if (readsFromPostgres(getPersistenceMode())) {
+        return MentorshipRepository.listAll()
+      }
 
-      const querySnapshot = await getDocs(q)
-      return querySnapshot.docs.map(docSnap => {
-        const data = docSnap.data()
-        return {
-          id: docSnap.id,
-          mentorId: data.mentorId,
-          menteeId: data.menteeId,
-          focusAreas: data.focusAreas || [],
-          currentFocus: data.currentFocus,
-          sessions: data.sessions || [],
-          totalSessions: data.totalSessions || 0,
-          completedSessions: data.completedSessions || 0,
-          mentorEffectiveness: data.mentorEffectiveness || 0.5,
-          menteeProgress: data.menteeProgress || 0,
-          skillsTransferred: data.skillsTransferred || [],
-          status: data.status || 'active',
-          createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-          updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString()
-        } as Mentorship
-      })
+      return getAllMentorshipsFromFirestore()
     } catch (error) {
       console.error('Error fetching mentorships:', error)
       return []
@@ -73,28 +123,11 @@ export class MentorshipService {
    */
   static async getMentorshipById(id: string): Promise<Mentorship | null> {
     try {
-      const docRef = doc(db, MENTORSHIPS_COLLECTION, id)
-      const docSnap = await getDoc(docRef)
+      if (readsFromPostgres(getPersistenceMode())) {
+        return MentorshipRepository.getById(id)
+      }
 
-      if (!docSnap.exists()) return null
-
-      const data = docSnap.data()
-      return {
-        id: docSnap.id,
-        mentorId: data.mentorId,
-        menteeId: data.menteeId,
-        focusAreas: data.focusAreas || [],
-        currentFocus: data.currentFocus,
-        sessions: data.sessions || [],
-        totalSessions: data.totalSessions || 0,
-        completedSessions: data.completedSessions || 0,
-        mentorEffectiveness: data.mentorEffectiveness || 0.5,
-        menteeProgress: data.menteeProgress || 0,
-        skillsTransferred: data.skillsTransferred || [],
-        status: data.status || 'active',
-        createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString()
-      } as Mentorship
+      return getMentorshipByIdFromFirestore(id)
     } catch (error) {
       console.error('Error fetching mentorship:', error)
       return null
@@ -109,39 +142,15 @@ export class MentorshipService {
     asMentee: Mentorship[]
   }> {
     try {
-      // Get mentorships as mentor
-      const mentorQuery = query(
-        collection(db, MENTORSHIPS_COLLECTION),
-        where('mentorId', '==', agentId)
-      )
-      const mentorSnapshot = await getDocs(mentorQuery)
-      const asMentor = mentorSnapshot.docs.map(docSnap => {
-        const data = docSnap.data()
+      if (readsFromPostgres(getPersistenceMode())) {
+        const records = await MentorshipRepository.listByAgent(agentId)
         return {
-          id: docSnap.id,
-          ...data,
-          createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-          updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString()
-        } as Mentorship
-      })
+          asMentor: records.filter((record) => record.mentorId === agentId),
+          asMentee: records.filter((record) => record.menteeId === agentId),
+        }
+      }
 
-      // Get mentorships as mentee
-      const menteeQuery = query(
-        collection(db, MENTORSHIPS_COLLECTION),
-        where('menteeId', '==', agentId)
-      )
-      const menteeSnapshot = await getDocs(menteeQuery)
-      const asMentee = menteeSnapshot.docs.map(docSnap => {
-        const data = docSnap.data()
-        return {
-          id: docSnap.id,
-          ...data,
-          createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-          updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString()
-        } as Mentorship
-      })
-
-      return { asMentor, asMentee }
+      return getAgentMentorshipsFromFirestore(agentId)
     } catch (error) {
       console.error('Error fetching agent mentorships:', error)
       return { asMentor: [], asMentee: [] }
@@ -158,9 +167,9 @@ export class MentorshipService {
     initialFocus?: MentorshipFocus
   ): Promise<Mentorship | null> {
     try {
-      const now = Timestamp.now()
-
-      const mentorshipData = {
+      const now = new Date().toISOString()
+      const mentorship: Mentorship = {
+        id: generateId('mentorship'),
         mentorId,
         menteeId,
         focusAreas,
@@ -176,8 +185,40 @@ export class MentorshipService {
         updatedAt: now
       }
 
-      const docRef = await addDoc(collection(db, MENTORSHIPS_COLLECTION), mentorshipData)
-      return await this.getMentorshipById(docRef.id)
+      const mode = getPersistenceMode()
+      if (mode === 'firestore') {
+        await upsertMentorshipInFirestore(mentorship)
+        return mentorship
+      }
+
+      if (mode === 'dual-write-firestore-read') {
+        return runMirroredWrite({
+          entityType: 'mentorship',
+          entityId: mentorship.id,
+          operation: 'create',
+          payload: mentorshipToFirestoreDoc(mentorship),
+          primary: async () => {
+            await upsertMentorshipInFirestore(mentorship)
+            return mentorship
+          },
+          secondary: async () => {
+            await MentorshipRepository.upsert(mentorship)
+          },
+        })
+      }
+
+      return runMirroredWrite({
+        entityType: 'mentorship',
+        entityId: mentorship.id,
+        operation: 'create',
+        payload: mentorshipToFirestoreDoc(mentorship),
+        primary: async () => MentorshipRepository.upsert(mentorship),
+        secondary: mode === 'dual-write-postgres-read'
+          ? async () => {
+              await upsertMentorshipInFirestore(mentorship)
+            }
+          : undefined,
+      })
     } catch (error) {
       console.error('Error creating mentorship:', error)
       return null
@@ -215,12 +256,14 @@ export class MentorshipService {
       // Add session to mentorship
       const updatedSessions = [...mentorship.sessions, session]
 
-      const docRef = doc(db, MENTORSHIPS_COLLECTION, mentorshipId)
-      await updateDoc(docRef, {
+      const next: Mentorship = {
+        ...mentorship,
         sessions: updatedSessions,
         totalSessions: mentorship.totalSessions + 1,
-        updatedAt: Timestamp.now()
-      })
+        updatedAt: new Date().toISOString(),
+      }
+
+      await this.persistMentorship(next)
 
       return session
     } catch (error) {
@@ -291,14 +334,14 @@ export class MentorshipService {
       const allSkills = new Set(mentorship.skillsTransferred)
       feedback.skillsImproved.forEach(skill => allSkills.add(skill))
 
-      const docRef = doc(db, MENTORSHIPS_COLLECTION, mentorshipId)
-      await updateDoc(docRef, {
+      await this.persistMentorship({
+        ...mentorship,
         sessions: updatedSessions,
         completedSessions,
         mentorEffectiveness: Math.min(1, mentorship.mentorEffectiveness + completionRate * 0.1),
         menteeProgress: Math.min(1, totalCompletionRate),
         skillsTransferred: Array.from(allSkills),
-        updatedAt: Timestamp.now()
+        updatedAt: new Date().toISOString(),
       })
 
       return true
@@ -316,10 +359,13 @@ export class MentorshipService {
     status: Mentorship['status']
   ): Promise<boolean> {
     try {
-      const docRef = doc(db, MENTORSHIPS_COLLECTION, mentorshipId)
-      await updateDoc(docRef, {
+      const mentorship = await this.getMentorshipById(mentorshipId)
+      if (!mentorship) return false
+
+      await this.persistMentorship({
+        ...mentorship,
         status,
-        updatedAt: Timestamp.now()
+        updatedAt: new Date().toISOString(),
       })
       return true
     } catch (error) {
@@ -339,16 +385,58 @@ export class MentorshipService {
       const mentorship = await this.getMentorshipById(mentorshipId)
       if (!mentorship || !mentorship.focusAreas.includes(newFocus)) return false
 
-      const docRef = doc(db, MENTORSHIPS_COLLECTION, mentorshipId)
-      await updateDoc(docRef, {
+      await this.persistMentorship({
+        ...mentorship,
         currentFocus: newFocus,
-        updatedAt: Timestamp.now()
+        updatedAt: new Date().toISOString(),
       })
       return true
     } catch (error) {
       console.error('Error changing focus:', error)
       return false
     }
+  }
+
+  private static async persistMentorship(mentorship: Mentorship): Promise<void> {
+    const mode = getPersistenceMode()
+
+    if (mode === 'firestore') {
+      await upsertMentorshipInFirestore(mentorship)
+      return
+    }
+
+    if (mode === 'dual-write-firestore-read') {
+      await runMirroredWrite({
+        entityType: 'mentorship',
+        entityId: mentorship.id,
+        operation: 'update',
+        payload: mentorshipToFirestoreDoc(mentorship),
+        primary: async () => {
+          await upsertMentorshipInFirestore(mentorship)
+          return true
+        },
+        secondary: async () => {
+          await MentorshipRepository.upsert(mentorship)
+        },
+      })
+      return
+    }
+
+    await runMirroredWrite({
+      entityType: 'mentorship',
+      entityId: mentorship.id,
+      operation: 'update',
+      payload: mentorshipToFirestoreDoc(mentorship),
+      primary: async () => {
+        await MentorshipRepository.upsert(mentorship)
+        return true
+      },
+      secondary: mode === 'dual-write-postgres-read'
+        ? async () => {
+            await upsertMentorshipInFirestore(mentorship)
+          }
+        : undefined,
+    })
   }
 
   /**

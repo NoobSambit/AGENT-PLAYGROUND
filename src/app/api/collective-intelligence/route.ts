@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { addDoc, collection, getDocs, limit, orderBy, query } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 import { AgentService } from '@/lib/services/agentService'
 import { KnowledgeService } from '@/lib/services/knowledgeService'
 import { collectiveIntelligenceService } from '@/lib/services/collectiveIntelligenceService'
 import { KnowledgeBroadcast } from '@/types/enhancements'
+import { getPersistenceMode, readsFromPostgres } from '@/lib/db/persistence'
+import { BroadcastRepository } from '@/lib/repositories/broadcastRepository'
+import { runMirroredWrite } from '@/lib/persistence/writeMirror'
+import { generateId } from '@/lib/db/utils'
+import { collection, getDocs, orderBy, query, limit, setDoc, doc } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
 
 const BROADCASTS_COLLECTION = 'collective_broadcasts'
 
@@ -24,14 +28,61 @@ function asBroadcast(value: Record<string, unknown>, id: string): KnowledgeBroad
 
 async function getRecentBroadcasts(limitCount: number = 12): Promise<KnowledgeBroadcast[]> {
   try {
+    if (readsFromPostgres(getPersistenceMode())) {
+      return BroadcastRepository.listRecent(limitCount)
+    }
+
     const snapshot = await getDocs(
       query(collection(db, BROADCASTS_COLLECTION), orderBy('createdAt', 'desc'), limit(limitCount))
     )
-    return snapshot.docs.map((doc) => asBroadcast(doc.data(), doc.id))
+    return snapshot.docs.map((snapshotDoc) => asBroadcast(snapshotDoc.data(), snapshotDoc.id))
   } catch (error) {
     console.error('Failed to fetch collective broadcasts:', error)
     return []
   }
+}
+
+async function upsertBroadcastToFirestore(broadcast: KnowledgeBroadcast): Promise<void> {
+  const { id, ...docData } = broadcast
+  void id
+  await setDoc(doc(db, BROADCASTS_COLLECTION, broadcast.id), docData)
+}
+
+async function saveBroadcast(broadcast: KnowledgeBroadcast): Promise<KnowledgeBroadcast> {
+  const mode = getPersistenceMode()
+  if (mode === 'firestore') {
+    await upsertBroadcastToFirestore(broadcast)
+    return broadcast
+  }
+
+  if (mode === 'dual-write-firestore-read') {
+    return runMirroredWrite({
+      entityType: 'broadcast',
+      entityId: broadcast.id,
+      operation: 'upsert',
+      payload: broadcast as unknown as Record<string, unknown>,
+      primary: async () => {
+        await upsertBroadcastToFirestore(broadcast)
+        return broadcast
+      },
+      secondary: async () => {
+        await BroadcastRepository.upsert(broadcast)
+      },
+    })
+  }
+
+  return runMirroredWrite({
+    entityType: 'broadcast',
+    entityId: broadcast.id,
+    operation: 'upsert',
+    payload: broadcast as unknown as Record<string, unknown>,
+    primary: async () => BroadcastRepository.upsert(broadcast),
+    secondary: mode === 'dual-write-postgres-read'
+      ? async () => {
+          await upsertBroadcastToFirestore(broadcast)
+        }
+      : undefined,
+  })
 }
 
 export async function GET(request: NextRequest) {
@@ -88,14 +139,14 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      const broadcast = collectiveIntelligenceService.suggestBroadcast(agent, topic, summary, knowledgeId)
-      const { id, ...docData } = broadcast
-      void id
-      const docRef = await addDoc(collection(db, BROADCASTS_COLLECTION), docData)
+      const broadcast = await saveBroadcast({
+        ...collectiveIntelligenceService.suggestBroadcast(agent, topic, summary, knowledgeId),
+        id: generateId('broadcast'),
+      })
 
       return NextResponse.json({
         success: true,
-        broadcast: { ...broadcast, id: docRef.id },
+        broadcast,
       })
     }
 

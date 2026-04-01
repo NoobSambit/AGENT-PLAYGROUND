@@ -34,21 +34,51 @@ export type EmotionType =
   | 'anticipation'
   | 'disgust'
 
+export type EmotionalStateStatus = 'dormant' | 'active'
+export type EmotionalEventPhase = 'appraisal' | 'response' | 'reflection' | 'internal' | 'system'
+export type EmotionalEventSource =
+  | 'user_message'
+  | 'agent_response'
+  | 'journal_entry'
+  | 'creative_generation'
+  | 'dream_generation'
+  | 'achievement_unlock'
+  | 'relationship_shift'
+  | 'memory_recall'
+  | 'legacy_reset'
+  | 'system'
+
+export interface EmotionalProfile {
+  temperament: Record<EmotionType, number> // Stable tendencies derived from persona and traits
+  sensitivity: number // 0-1 how strongly the agent reacts to stimuli
+  resilience: number // 0-1 how quickly the agent settles after activation
+  expressiveness: number // 0-1 how much mood should influence delivery
+  optimism: number // 0-1 positive ↔ guarded baseline outlook
+  lastDerivedAt: string // ISO timestamp
+}
+
 export interface EmotionalState {
   currentMood: Record<EmotionType, number> // 0-1 for each emotion
-  emotionalBaseline: Record<EmotionType, number> // 0-1 default state
+  status: EmotionalStateStatus
   lastUpdated: string // ISO timestamp
-  dominantEmotion: EmotionType
+  dominantEmotion: EmotionType | null
 }
 
 export interface EmotionalEvent {
   id: string
   emotion: EmotionType
-  intensity: number // 0-1
-  trigger: string // What caused it (e.g., 'user_message', 'achievement_unlock')
+  intensity: number // 0-1 resulting level after the shift
+  delta: number // Signed change applied to the live state
+  phase: EmotionalEventPhase
+  source: EmotionalEventSource
+  trigger: string // Human-readable trigger label
+  explanation: string // Why the agent changed
+  confidence: number // 0-1 confidence in the appraisal
   context: string // Conversation snippet or description
   timestamp: string // ISO timestamp
-  decayRate: number // How fast it fades (0-1, default 0.1 = 10% per hour)
+  linkedMessageId?: string
+  linkedActionId?: string
+  metadata?: Record<string, unknown>
 }
 
 // ============================================
@@ -212,6 +242,7 @@ export interface AgentRecord {
   linguisticProfile?: LinguisticProfile
 
   // Phase 1: Emotional State System
+  emotionalProfile?: EmotionalProfile
   emotionalState?: EmotionalState
   emotionalHistory?: EmotionalEvent[] // Max 20 events
 
@@ -350,6 +381,7 @@ export interface UpdateAgentData {
   persona?: string
   goals?: string[]
   status?: AgentRecord['status']
+  updatedAt?: string
   settings?: Record<string, unknown>
   coreTraits?: Record<string, number>
   dynamicTraits?: Record<string, number>
@@ -357,6 +389,7 @@ export interface UpdateAgentData {
   totalInteractions?: number
   // Phase 1 fields
   linguisticProfile?: LinguisticProfile
+  emotionalProfile?: EmotionalProfile
   emotionalState?: EmotionalState
   emotionalHistory?: EmotionalEvent[]
   progress?: AgentProgress

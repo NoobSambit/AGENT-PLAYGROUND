@@ -1,131 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MessageService } from '@/lib/services/messageService'
-import { AgentService } from '@/lib/services/agentService'
-import { achievementService } from '@/lib/services/achievementService'
-import { emotionalService } from '@/lib/services/emotionalService'
-import { AgentProgress, AgentRecord, AgentStats, CreateMessageData, MessageRecord } from '@/types/database'
-
-const STOP_WORDS = new Set([
-  'the', 'and', 'for', 'are', 'but', 'not', 'you', 'that', 'with', 'this', 'from',
-  'have', 'will', 'your', 'about', 'what', 'when', 'where', 'which', 'who', 'why',
-  'how', 'can', 'could', 'should', 'would', 'there', 'their', 'they', 'them', 'then',
-  'than', 'into', 'onto', 'here', 'just', 'like', 'some', 'more', 'most', 'much',
-  'been', 'being', 'also', 'able', 'make', 'made', 'does', 'did', 'done', 'want'
-])
-
-const QUESTION_PREFIXES = new Set([
-  'what', 'why', 'how', 'when', 'where', 'who', 'which',
-  'can', 'could', 'should', 'would', 'do', 'does', 'did', 'is', 'are', 'will', 'may', 'might'
-])
-
-function extractTopicsFromText(text: string): string[] {
-  const cleaned = text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-  const words = cleaned.split(/\s+/).filter(Boolean)
-  const topics: string[] = []
-
-  for (const word of words) {
-    if (word.length < 4) continue
-    if (STOP_WORDS.has(word)) continue
-    if (!topics.includes(word)) {
-      topics.push(word)
-    }
-    if (topics.length >= 6) break
-  }
-
-  return topics
-}
-
-function isLikelyQuestion(text: string): boolean {
-  if (text.includes('?')) return true
-  const firstWord = text.trim().split(/\s+/)[0]?.toLowerCase()
-  return Boolean(firstWord && QUESTION_PREFIXES.has(firstWord))
-}
-
-function normalizeStats(stats?: AgentStats): AgentStats {
-  const base = achievementService.createDefaultStats()
-  return {
-    ...base,
-    ...stats,
-    uniqueTopics: [...(stats?.uniqueTopics || [])]
-  }
-}
-
-function normalizeProgress(progress?: AgentProgress): AgentProgress {
-  const base = achievementService.createDefaultProgress()
-  return {
-    ...base,
-    ...progress,
-    achievements: { ...(progress?.achievements || {}) },
-    allocatedSkills: { ...(progress?.allocatedSkills || {}) }
-  }
-}
-
-async function updateAgentFromMessage(message: MessageRecord): Promise<AgentRecord | null> {
-  const agent = await AgentService.getAgentById(message.agentId)
-  if (!agent) return null
-
-  const stats = normalizeStats(agent.stats)
-  const progress = normalizeProgress(agent.progress)
-  const baseline = emotionalService.generateBaselineFromTraits(agent.coreTraits || {})
-  let emotionalState = agent.emotionalState || emotionalService.createDefaultEmotionalState(baseline)
-  let emotionalHistory = agent.emotionalHistory || []
-
-  let emotionsDetected = 0
-  if (message.type === 'user') {
-    const emotionalUpdate = emotionalService.processMessage(
-      { ...agent, emotionalState, emotionalHistory } as AgentRecord,
-      message.content
-    )
-    emotionalState = emotionalUpdate.emotionalState
-    emotionalHistory = emotionalUpdate.emotionalHistory
-    emotionsDetected = emotionalUpdate.detectedEvents.length
-  }
-
-  const topics = extractTopicsFromText(message.content)
-  const isQuestion = isLikelyQuestion(message.content)
-  const isHelpful = message.type === 'agent' && message.content.trim().length >= 40
-  const hadMessages = stats.totalMessages > 0
-  const previousLastActive = stats.lastActiveDate
-  const today = new Date().toISOString().split('T')[0]
-
-  let updatedStats = achievementService.updateStatsFromInteraction(stats, {
-    messageContent: message.content,
-    isUserMessage: message.type === 'user',
-    topics,
-    isQuestion,
-    isHelpful,
-    emotionsDetected
-  })
-
-  if (message.type === 'user' && (!hadMessages || previousLastActive !== today)) {
-    updatedStats = achievementService.startConversation(updatedStats)
-  }
-
-  updatedStats = achievementService.updateLongestConversation(updatedStats, updatedStats.totalMessages)
-
-  const achievementsToUnlock = achievementService.checkAchievements({
-    ...agent,
-    stats: updatedStats,
-    progress
-  })
-
-  let updatedProgress = progress
-  if (achievementsToUnlock.length > 0) {
-    const unlockResult = achievementService.unlockAchievements(progress, achievementsToUnlock)
-    updatedProgress = unlockResult.progress
-  }
-
-  await AgentService.updateAgent(agent.id, {
-    stats: updatedStats,
-    progress: updatedProgress,
-    emotionalState,
-    emotionalHistory
-  })
-
-  return await AgentService.getAgentById(agent.id)
-}
+import { CreateMessageData } from '@/types/database'
 
 // GET /api/messages - Fetch messages (optionally filtered by room or agent)
 export async function GET(request: NextRequest) {
@@ -158,7 +33,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/messages - Send a new message
+// POST /api/messages - Persist a message without mutating agent state
 export async function POST(request: NextRequest) {
   try {
     const body: CreateMessageData = await request.json()
@@ -180,12 +55,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const updatedAgent = await updateAgentFromMessage(newMessage)
-
     return NextResponse.json({
       success: true,
-      data: newMessage,
-      agent: updatedAgent
+      data: newMessage
     }, { status: 201 })
   } catch (error) {
     console.error('Failed to create message:', error)

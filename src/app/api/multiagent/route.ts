@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { addDoc, collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { generateId, relationshipPairId } from '@/lib/db/utils'
+import { getPersistenceMode, readsFromPostgres } from '@/lib/db/persistence'
+import { runMirroredWrite } from '@/lib/persistence/writeMirror'
+import { BroadcastRepository } from '@/lib/repositories/broadcastRepository'
+import { ConflictRepository } from '@/lib/repositories/conflictRepository'
+import { RelationshipRepository } from '@/lib/repositories/relationshipRepository'
+import { SimulationRepository } from '@/lib/repositories/simulationRepository'
 import { AgentChain } from '@/lib/langchain/agentChain'
 import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
 import { AgentService } from '@/lib/services/agentService'
@@ -9,7 +16,7 @@ import { agentProgressService } from '@/lib/services/agentProgressService'
 import { collectiveIntelligenceService } from '@/lib/services/collectiveIntelligenceService'
 import { conflictResolutionService } from '@/lib/services/conflictResolutionService'
 import { relationshipService } from '@/lib/services/relationshipService'
-import { AgentRecord, AgentRelationship } from '@/types/database'
+import { AgentRecord, AgentRelationship, SimulationRecord } from '@/types/database'
 import {
   ConflictAnalysis,
   ConsensusSnapshot,
@@ -21,6 +28,7 @@ const MAX_ROUNDS = 6
 const MAX_CONTEXT_MESSAGES = 12
 const BROADCASTS_COLLECTION = 'collective_broadcasts'
 const CONFLICTS_COLLECTION = 'conflicts'
+const SIMULATIONS_COLLECTION = 'simulations'
 
 interface MultiAgentRequest {
   agents: Array<{
@@ -58,6 +66,64 @@ interface SimulationResponse {
   currentRound: number
   maxRounds: number
   metadata: SimulationMetadata
+}
+
+function stripUndefinedFields<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined)
+  ) as T
+}
+
+function relationshipToFirestoreDoc(relationship: AgentRelationship): Record<string, unknown> {
+  const { id, ...data } = relationship
+  void id
+  return stripUndefinedFields(data)
+}
+
+function conflictToFirestoreDoc(conflict: ConflictAnalysis): Record<string, unknown> {
+  const { id, ...data } = conflict
+  void id
+  return stripUndefinedFields(data)
+}
+
+function broadcastToFirestoreDoc(broadcast: KnowledgeBroadcast): Record<string, unknown> {
+  const { id, ...data } = broadcast
+  void id
+  return stripUndefinedFields(data)
+}
+
+function simulationToFirestoreDoc(simulation: SimulationRecord): Record<string, unknown> {
+  const { id, ...data } = simulation
+  void id
+  return stripUndefinedFields(data)
+}
+
+function firestoreRelationshipDocToRecord(
+  agentId1: string,
+  agentId2: string,
+  docSnap: { id: string; data: () => Record<string, unknown> }
+): AgentRelationship {
+  const data = docSnap.data()
+  return {
+    id: relationshipPairId(agentId1, agentId2),
+    agentId1: (data.agentId1 as string) || agentId1,
+    agentId2: (data.agentId2 as string) || agentId2,
+    status: (data.status as AgentRelationship['status']) || 'neutral',
+    metrics: (data.metrics as AgentRelationship['metrics']) || {
+      trust: 0.5,
+      respect: 0.5,
+      affection: 0.5,
+      familiarity: 0,
+      conflict: 0,
+    },
+    relationshipTypes: (data.relationshipTypes as AgentRelationship['relationshipTypes']) || [],
+    interactionCount: (data.interactionCount as number) || 0,
+    firstMeeting: (data.firstMeeting as string) || new Date().toISOString(),
+    lastInteraction: (data.lastInteraction as string) || new Date().toISOString(),
+    significantEvents: (data.significantEvents as AgentRelationship['significantEvents']) || [],
+    createdAt: (data.createdAt as string) || new Date().toISOString(),
+    updatedAt: (data.updatedAt as string) || new Date().toISOString(),
+  }
 }
 
 function clampRounds(rounds: number | undefined): number {
@@ -186,6 +252,10 @@ function buildBroadcastSummary(
 }
 
 async function getRelationship(agentId1: string, agentId2: string): Promise<AgentRelationship | null> {
+  if (readsFromPostgres(getPersistenceMode())) {
+    return RelationshipRepository.getPair(agentId1, agentId2)
+  }
+
   const relationshipRef = doc(collection(db, 'agents', agentId1, 'relationships'), agentId2)
   const snapshot = await getDoc(relationshipRef)
 
@@ -193,27 +263,64 @@ async function getRelationship(agentId1: string, agentId2: string): Promise<Agen
     return null
   }
 
-  return {
-    id: snapshot.id,
-    ...snapshot.data(),
-  } as AgentRelationship
+  return firestoreRelationshipDocToRecord(agentId1, agentId2, snapshot)
 }
 
-async function persistRelationship(relationship: AgentRelationship): Promise<void> {
-  const { id, ...data } = relationship
-  void id
-
-  const leftRef = doc(collection(db, 'agents', relationship.agentId1, 'relationships'), relationship.agentId2)
-  const rightRef = doc(collection(db, 'agents', relationship.agentId2, 'relationships'), relationship.agentId1)
-
+async function writeRelationshipToFirestore(relationship: AgentRelationship): Promise<void> {
   await Promise.all([
-    setDoc(leftRef, data),
-    setDoc(rightRef, data),
+    setDoc(
+      doc(collection(db, 'agents', relationship.agentId1, 'relationships'), relationship.agentId2),
+      relationshipToFirestoreDoc(relationship)
+    ),
+    setDoc(
+      doc(collection(db, 'agents', relationship.agentId2, 'relationships'), relationship.agentId1),
+      relationshipToFirestoreDoc(relationship)
+    ),
   ])
+}
+
+async function persistRelationship(relationship: AgentRelationship): Promise<AgentRelationship> {
+  const mode = getPersistenceMode()
+
+  if (mode === 'firestore') {
+    await writeRelationshipToFirestore(relationship)
+    return relationship
+  }
+
+  if (mode === 'dual-write-firestore-read') {
+    return runMirroredWrite({
+      entityType: 'relationship',
+      entityId: relationship.id,
+      operation: 'upsert',
+      payload: relationshipToFirestoreDoc(relationship),
+      primary: async () => {
+        await writeRelationshipToFirestore(relationship)
+        return relationship
+      },
+      secondary: async () => RelationshipRepository.upsert(relationship),
+    })
+  }
+
+  return runMirroredWrite({
+    entityType: 'relationship',
+    entityId: relationship.id,
+    operation: 'upsert',
+    payload: relationshipToFirestoreDoc(relationship),
+    primary: async () => RelationshipRepository.upsert(relationship),
+    secondary: mode === 'dual-write-postgres-read'
+      ? async () => {
+          await writeRelationshipToFirestore(relationship)
+        }
+      : undefined,
+  })
 }
 
 async function getRecentBroadcasts(limitCount: number = 8): Promise<KnowledgeBroadcast[]> {
   try {
+    if (readsFromPostgres(getPersistenceMode())) {
+      return BroadcastRepository.listRecent(limitCount)
+    }
+
     const snapshot = await getDocs(
       query(collection(db, BROADCASTS_COLLECTION), orderBy('createdAt', 'desc'), limit(limitCount))
     )
@@ -228,18 +335,124 @@ async function getRecentBroadcasts(limitCount: number = 8): Promise<KnowledgeBro
   }
 }
 
+async function writeConflictToFirestore(conflict: ConflictAnalysis): Promise<void> {
+  await setDoc(doc(db, CONFLICTS_COLLECTION, conflict.id), conflictToFirestoreDoc(conflict))
+}
+
 async function saveConflict(analysis: ConflictAnalysis): Promise<ConflictAnalysis> {
-  const { id, ...docData } = analysis
-  void id
-  const docRef = await addDoc(collection(db, CONFLICTS_COLLECTION), docData)
-  return { ...analysis, id: docRef.id }
+  const mode = getPersistenceMode()
+
+  if (mode === 'firestore') {
+    await writeConflictToFirestore(analysis)
+    return analysis
+  }
+
+  if (mode === 'dual-write-firestore-read') {
+    return runMirroredWrite({
+      entityType: 'conflict',
+      entityId: analysis.id,
+      operation: 'upsert',
+      payload: conflictToFirestoreDoc(analysis),
+      primary: async () => {
+        await writeConflictToFirestore(analysis)
+        return analysis
+      },
+      secondary: async () => ConflictRepository.upsert(analysis),
+    })
+  }
+
+  return runMirroredWrite({
+    entityType: 'conflict',
+    entityId: analysis.id,
+    operation: 'upsert',
+    payload: conflictToFirestoreDoc(analysis),
+    primary: async () => ConflictRepository.upsert(analysis),
+    secondary: mode === 'dual-write-postgres-read'
+      ? async () => {
+          await writeConflictToFirestore(analysis)
+        }
+      : undefined,
+  })
+}
+
+async function writeBroadcastToFirestore(broadcast: KnowledgeBroadcast): Promise<void> {
+  await setDoc(doc(db, BROADCASTS_COLLECTION, broadcast.id), broadcastToFirestoreDoc(broadcast))
 }
 
 async function saveBroadcast(broadcast: KnowledgeBroadcast): Promise<KnowledgeBroadcast> {
-  const { id, ...docData } = broadcast
-  void id
-  const docRef = await addDoc(collection(db, BROADCASTS_COLLECTION), docData)
-  return { ...broadcast, id: docRef.id }
+  const mode = getPersistenceMode()
+
+  if (mode === 'firestore') {
+    await writeBroadcastToFirestore(broadcast)
+    return broadcast
+  }
+
+  if (mode === 'dual-write-firestore-read') {
+    return runMirroredWrite({
+      entityType: 'broadcast',
+      entityId: broadcast.id,
+      operation: 'upsert',
+      payload: broadcastToFirestoreDoc(broadcast),
+      primary: async () => {
+        await writeBroadcastToFirestore(broadcast)
+        return broadcast
+      },
+      secondary: async () => BroadcastRepository.upsert(broadcast),
+    })
+  }
+
+  return runMirroredWrite({
+    entityType: 'broadcast',
+    entityId: broadcast.id,
+    operation: 'upsert',
+    payload: broadcastToFirestoreDoc(broadcast),
+    primary: async () => BroadcastRepository.upsert(broadcast),
+    secondary: mode === 'dual-write-postgres-read'
+      ? async () => {
+          await writeBroadcastToFirestore(broadcast)
+        }
+      : undefined,
+  })
+}
+
+async function writeSimulationToFirestore(simulation: SimulationRecord): Promise<void> {
+  await setDoc(doc(db, SIMULATIONS_COLLECTION, simulation.id), simulationToFirestoreDoc(simulation))
+}
+
+async function saveSimulation(record: SimulationRecord): Promise<SimulationRecord> {
+  const mode = getPersistenceMode()
+
+  if (mode === 'firestore') {
+    await writeSimulationToFirestore(record)
+    return record
+  }
+
+  if (mode === 'dual-write-firestore-read') {
+    return runMirroredWrite({
+      entityType: 'simulation',
+      entityId: record.id,
+      operation: 'upsert',
+      payload: simulationToFirestoreDoc(record),
+      primary: async () => {
+        await writeSimulationToFirestore(record)
+        return record
+      },
+      secondary: async () => SimulationRepository.upsert(record),
+    })
+  }
+
+  return runMirroredWrite({
+    entityType: 'simulation',
+    entityId: record.id,
+    operation: 'upsert',
+    payload: simulationToFirestoreDoc(record),
+    primary: async () => SimulationRepository.upsert(record),
+    secondary: mode === 'dual-write-postgres-read'
+      ? async () => {
+          await writeSimulationToFirestore(record)
+        }
+      : undefined,
+  })
 }
 
 export async function POST(request: NextRequest) {
@@ -269,7 +482,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const simulationId = `sim_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+    const simulationId = generateId('sim')
     const maxRounds = clampRounds(body.maxRounds)
     const initialPrompt = body.initialPrompt?.trim() || 'Collaborate on the shared task and explain your reasoning.'
 
@@ -346,13 +559,13 @@ export async function POST(request: NextRequest) {
         )
 
         const message: SimulationMessage = {
-          id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+          id: generateId('msg'),
           agentId: agent.id,
           agentName: agent.name,
           content: response.response,
           timestamp: new Date().toISOString(),
           round: currentRound,
-          metadata: {
+          metadata: stripUndefinedFields({
             provider: providerInfo.provider,
             model: providerInfo.model,
             toolsUsed: response.toolsUsed || [],
@@ -369,7 +582,7 @@ export async function POST(request: NextRequest) {
                   confidence: networkSnapshot.consensus[0].consensusRating,
                 }
               : undefined,
-          },
+          }),
         }
 
         messages.push(message)
@@ -387,8 +600,7 @@ export async function POST(request: NextRequest) {
           }
         )
 
-        relationships.set(activePairKey, nextRelationship)
-        await persistRelationship(nextRelationship)
+        relationships.set(activePairKey, await persistRelationship(nextRelationship))
 
         if (!priorRelationship) {
           await Promise.all([
@@ -426,8 +638,7 @@ export async function POST(request: NextRequest) {
         }
 
         conflictRegistry.add(conflictKey)
-        const savedConflict = await saveConflict(conflict)
-        conflicts.push(savedConflict)
+        conflicts.push(await saveConflict(conflict))
       }
     }
 
@@ -468,24 +679,23 @@ export async function POST(request: NextRequest) {
       broadcasts: generatedBroadcasts.slice(0, 4),
     }
 
-    try {
-      await setDoc(doc(db, 'simulations', simulationId), {
-        agents: selectedAgents.map((agent) => ({
-          id: agent.id,
-          name: agent.name,
-          persona: agent.persona,
-          goals: agent.goals,
-        })),
-        messages,
-        maxRounds,
-        createdAt: new Date().toISOString(),
-        isComplete: true,
-        finalRound: currentRound,
-        metadata,
-      })
-    } catch (firestoreError) {
-      console.error('Failed to save simulation to Firestore:', firestoreError)
+    const record: SimulationRecord = {
+      id: simulationId,
+      agents: selectedAgents.map((agent) => ({
+        id: agent.id,
+        name: agent.name,
+        persona: agent.persona,
+        goals: agent.goals,
+      })),
+      messages,
+      maxRounds,
+      createdAt: new Date().toISOString(),
+      isComplete: true,
+      finalRound: currentRound,
+      metadata: metadata as unknown as Record<string, unknown>,
     }
+
+    await saveSimulation(record)
 
     const simulationResponse: SimulationResponse = {
       simulationId,

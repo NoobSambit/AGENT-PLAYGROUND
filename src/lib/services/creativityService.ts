@@ -15,6 +15,7 @@ import {
   EmotionalState,
   AgentRecord,
 } from '@/types/database'
+import { emotionalService } from './emotionalService'
 
 // Generate unique IDs
 function generateId(): string {
@@ -168,12 +169,12 @@ class CreativityService {
    * Suggest a style based on the agent's current emotional state
    */
   suggestStyle(emotionalState?: EmotionalState): CreativeWorkStyle {
-    if (!emotionalState) {
+    const dominantEmotion = emotionalService.getDominantEmotion(emotionalState)
+    if (!dominantEmotion) {
       // Default to inspirational
       return 'inspirational'
     }
 
-    const dominantEmotion = emotionalState.dominantEmotion
     const styles = MOOD_STYLE_MAP[dominantEmotion]
 
     // Return random style from suggestions
@@ -224,8 +225,8 @@ class CreativityService {
 
     // Add emotional context
     if (agent.emotionalState) {
-      const emotion = agent.emotionalState.dominantEmotion
-      const intensity = agent.emotionalState.currentMood[emotion]
+      const emotion = emotionalService.getDominantEmotion(agent.emotionalState)
+      const intensity = emotion ? agent.emotionalState.currentMood[emotion] : 0
       if (intensity > 0.5) {
         basePrompt += `\n\nYou're currently feeling ${emotion} (intensity: ${intensity.toFixed(1)}). Let this subtly influence your creative expression.`
       }
@@ -277,7 +278,7 @@ class CreativityService {
           emotionalContext: emotionalState,
           wordCount: (parsed.content || response).split(/\s+/).length,
           themes: parsed.themes || [],
-          mood: emotionalState?.dominantEmotion || 'joy',
+          mood: emotionalService.getDominantEmotion(emotionalState) || 'joy',
           creativity: 0.7 + Math.random() * 0.3,
           coherence: 0.7 + Math.random() * 0.3,
           emotionalDepth: 0.6 + Math.random() * 0.4,
@@ -301,7 +302,7 @@ class CreativityService {
       emotionalContext: emotionalState,
       wordCount: response.split(/\s+/).length,
       themes: [],
-      mood: emotionalState?.dominantEmotion || 'joy',
+      mood: emotionalService.getDominantEmotion(emotionalState) || 'joy',
       creativity: 0.6 + Math.random() * 0.3,
       coherence: 0.6 + Math.random() * 0.3,
       emotionalDepth: 0.5 + Math.random() * 0.4,
@@ -391,7 +392,7 @@ class CreativityService {
 
     // Use emotional state for inspiration
     if (agent.emotionalState) {
-      const emotion = agent.emotionalState.dominantEmotion
+      const emotion = emotionalService.getDominantEmotion(agent.emotionalState) || 'joy'
       const prompts: Record<EmotionType, string[]> = {
         joy: ['a celebration of life', 'finding happiness in small things', 'a joyful discovery'],
         sadness: ['letting go', 'finding hope in darkness', 'memories of what was'],

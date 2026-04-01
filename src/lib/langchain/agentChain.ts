@@ -5,6 +5,7 @@ import { AgentService } from '@/lib/services/agentService'
 import { PersonalityService } from '@/lib/services/personalityService'
 import { KnowledgeService } from '@/lib/services/knowledgeService'
 import { collectiveIntelligenceService } from '@/lib/services/collectiveIntelligenceService'
+import { AgentRecord, EmotionalProfile, EmotionalState } from '@/types/database'
 import { BaseMessage } from '@langchain/core/messages'
 
 export interface AgentChainConfig {
@@ -22,6 +23,11 @@ export interface AgentResponse {
   toolsUsed?: string[]
   memoryUsed?: number
   personalityInsights?: string[]
+}
+
+interface AgentRuntimeOverrides {
+  emotionalProfile?: EmotionalProfile
+  emotionalState?: EmotionalState
 }
 
 export class AgentChain {
@@ -56,7 +62,8 @@ export class AgentChain {
   async generateResponse(
     userInput: string,
     conversationHistory: Array<{ role: 'user' | 'assistant', content: string }> = [],
-    llmConfig?: LLMConfig
+    llmConfig?: LLMConfig,
+    runtimeOverrides?: AgentRuntimeOverrides
   ): Promise<AgentResponse> {
     const startTime = Date.now()
 
@@ -75,7 +82,7 @@ export class AgentChain {
       const memoryMessages = await this.memoryChain.loadMemory()
 
       // Create system prompt with agent personality and memory
-      const systemPrompt = await this.createSystemPrompt(agentData, memoryMessages, userInput)
+      const systemPrompt = await this.createSystemPrompt(agentData, memoryMessages, userInput, runtimeOverrides)
 
       // Check if tools should be used
       const shouldUseTools = this.config.enableTools &&
@@ -132,7 +139,8 @@ export class AgentChain {
     userInput: string,
     conversationHistory: Array<{ role: 'user' | 'assistant', content: string }> = [],
     onToken?: (token: string) => void,
-    llmConfig?: LLMConfig
+    llmConfig?: LLMConfig,
+    runtimeOverrides?: AgentRuntimeOverrides
   ): Promise<AgentResponse> {
     const startTime = Date.now()
 
@@ -151,7 +159,7 @@ export class AgentChain {
       const memoryMessages = await this.memoryChain.loadMemory()
 
       // Create system prompt
-      const systemPrompt = await this.createSystemPrompt(agentData, memoryMessages, userInput)
+      const systemPrompt = await this.createSystemPrompt(agentData, memoryMessages, userInput, runtimeOverrides)
 
       // Check if tools should be used
       const shouldUseTools = this.config.enableTools &&
@@ -218,8 +226,12 @@ export class AgentChain {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async createSystemPrompt(_agent: any, memoryMessages: BaseMessage[], userInput?: string): Promise<string> {
+  private async createSystemPrompt(
+    _agent: AgentRecord,
+    memoryMessages: BaseMessage[],
+    userInput?: string,
+    runtimeOverrides?: AgentRuntimeOverrides
+  ): Promise<string> {
     const baseChain = this.baseChain
 
     // Get memory context from messages
@@ -238,7 +250,8 @@ export class AgentChain {
       memoryContext,
       personalityContext,
       linguisticProfile: _agent.linguisticProfile,
-      emotionalState: _agent.emotionalState,
+      emotionalProfile: runtimeOverrides?.emotionalProfile || _agent.emotionalProfile,
+      emotionalState: runtimeOverrides?.emotionalState || _agent.emotionalState,
       psychologicalContext: enhancementContext.psychologicalContext,
       knowledgeContext: enhancementContext.knowledgeContext
     })

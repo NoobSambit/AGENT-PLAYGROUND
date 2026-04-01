@@ -4,6 +4,9 @@ import {
   setDoc
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { getPersistenceMode, readsFromPostgres } from '@/lib/db/persistence'
+import { runMirroredWrite } from '@/lib/persistence/writeMirror'
+import { MemoryGraphRepository } from '@/lib/repositories/memoryGraphRepository'
 import {
   Concept,
   MemoryLink,
@@ -19,6 +22,34 @@ import { ConceptService } from './conceptService'
 import { MemoryService } from './memoryService'
 
 const MEMORY_GRAPH_COLLECTION = 'memory_graphs'
+
+async function getMemoryGraphFromFirestore(agentId: string): Promise<MemoryGraph | null> {
+  const docRef = doc(db, MEMORY_GRAPH_COLLECTION, agentId)
+  const docSnap = await getDoc(docRef)
+
+  if (!docSnap.exists()) {
+    return null
+  }
+
+  const data = docSnap.data()
+  return {
+    agentId: data.agentId as string,
+    concepts: (data.concepts as Concept[]) || [],
+    links: (data.links as MemoryLink[]) || [],
+    stats: (data.stats as MemoryGraph['stats']) || {
+      totalConcepts: 0,
+      totalLinks: 0,
+      averageLinkStrength: 0,
+      mostConnectedMemory: '',
+      conceptClusters: []
+    },
+    lastUpdated: data.lastUpdated as string || new Date().toISOString(),
+  }
+}
+
+async function upsertMemoryGraphInFirestore(graph: MemoryGraph): Promise<void> {
+  await setDoc(doc(db, MEMORY_GRAPH_COLLECTION, graph.agentId), graph)
+}
 // Color mapping for concept categories
 const CATEGORY_COLORS: Record<ConceptCategory, string> = {
   entity: '#4A90E2',      // Blue
@@ -54,27 +85,18 @@ export class MemoryGraphService {
    */
   static async getMemoryGraph(agentId: string): Promise<MemoryGraph | null> {
     try {
-      const docRef = doc(db, MEMORY_GRAPH_COLLECTION, agentId)
-      const docSnap = await getDoc(docRef)
-
-      if (docSnap.exists()) {
-        const data = docSnap.data()
-        return {
-          agentId: data.agentId,
-          concepts: data.concepts || [],
-          links: data.links || [],
-          stats: data.stats || {
-            totalConcepts: 0,
-            totalLinks: 0,
-            averageLinkStrength: 0,
-            mostConnectedMemory: '',
-            conceptClusters: []
-          },
-          lastUpdated: data.lastUpdated || new Date().toISOString()
+      if (readsFromPostgres(getPersistenceMode())) {
+        const graph = await MemoryGraphRepository.getByAgentId(agentId)
+        if (graph) {
+          return graph
+        }
+      } else {
+        const graph = await getMemoryGraphFromFirestore(agentId)
+        if (graph) {
+          return graph
         }
       }
 
-      // Create initial empty graph
       return await this.initializeMemoryGraph(agentId)
     } catch (error) {
       console.error('Error getting memory graph:', error)
@@ -101,8 +123,40 @@ export class MemoryGraphService {
     }
 
     try {
-      const docRef = doc(db, MEMORY_GRAPH_COLLECTION, agentId)
-      await setDoc(docRef, emptyGraph)
+      const mode = getPersistenceMode()
+      if (mode === 'firestore') {
+        await upsertMemoryGraphInFirestore(emptyGraph)
+      } else if (mode === 'dual-write-firestore-read') {
+        await runMirroredWrite({
+          entityType: 'memory_graph',
+          entityId: agentId,
+          operation: 'initialize',
+          payload: emptyGraph as unknown as Record<string, unknown>,
+          primary: async () => {
+            await upsertMemoryGraphInFirestore(emptyGraph)
+            return true
+          },
+          secondary: async () => {
+            await MemoryGraphRepository.upsert(emptyGraph)
+          },
+        })
+      } else {
+        await runMirroredWrite({
+          entityType: 'memory_graph',
+          entityId: agentId,
+          operation: 'initialize',
+          payload: emptyGraph as unknown as Record<string, unknown>,
+          primary: async () => {
+            await MemoryGraphRepository.upsert(emptyGraph)
+            return true
+          },
+          secondary: mode === 'dual-write-postgres-read'
+            ? async () => {
+                await upsertMemoryGraphInFirestore(emptyGraph)
+              }
+            : undefined,
+        })
+      }
     } catch (error) {
       console.error('Error initializing memory graph:', error)
     }
@@ -305,8 +359,44 @@ export class MemoryGraphService {
    */
   private static async saveMemoryGraph(graph: MemoryGraph): Promise<void> {
     try {
-      const docRef = doc(db, MEMORY_GRAPH_COLLECTION, graph.agentId)
-      await setDoc(docRef, graph)
+      const mode = getPersistenceMode()
+      if (mode === 'firestore') {
+        await upsertMemoryGraphInFirestore(graph)
+        return
+      }
+
+      if (mode === 'dual-write-firestore-read') {
+        await runMirroredWrite({
+          entityType: 'memory_graph',
+          entityId: graph.agentId,
+          operation: 'update',
+          payload: graph as unknown as Record<string, unknown>,
+          primary: async () => {
+            await upsertMemoryGraphInFirestore(graph)
+            return true
+          },
+          secondary: async () => {
+            await MemoryGraphRepository.upsert(graph)
+          },
+        })
+        return
+      }
+
+      await runMirroredWrite({
+        entityType: 'memory_graph',
+        entityId: graph.agentId,
+        operation: 'update',
+        payload: graph as unknown as Record<string, unknown>,
+        primary: async () => {
+          await MemoryGraphRepository.upsert(graph)
+          return true
+        },
+        secondary: mode === 'dual-write-postgres-read'
+          ? async () => {
+              await upsertMemoryGraphInFirestore(graph)
+            }
+          : undefined,
+      })
     } catch (error) {
       console.error('Error saving memory graph:', error)
     }

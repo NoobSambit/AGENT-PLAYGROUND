@@ -6,24 +6,119 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import {
-  doc,
-  getDoc,
-  getDocs,
-  addDoc,
-  updateDoc,
-  collection,
-  query,
-  orderBy,
-  limit,
-} from 'firebase/firestore'
+import { getPersistenceMode, readsFromPostgres } from '@/lib/db/persistence'
+import { runMirroredWrite } from '@/lib/persistence/writeMirror'
+import { ChallengeRepository } from '@/lib/repositories/challengeRepository'
 import { challengeService } from '@/lib/services/challengeService'
 import { agentProgressService } from '@/lib/services/agentProgressService'
+import { AgentService } from '@/lib/services/agentService'
 import { Challenge, ChallengeStatus, AgentRecord } from '@/types/database'
 import { generateText } from '@/lib/llm/provider'
 import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
 import { stripUndefinedFields } from '@/lib/firestoreUtils'
+
+const CHALLENGES_COLLECTION = 'challenges'
+
+function challengeToFirestoreDoc(challenge: Challenge): Record<string, unknown> {
+  const { id, ...data } = challenge
+  void id
+  return stripUndefinedFields(data)
+}
+
+function firestoreDocToChallenge(docSnap: { id: string; data: () => Record<string, unknown> }): Challenge {
+  return {
+    id: docSnap.id,
+    ...docSnap.data(),
+  } as Challenge
+}
+
+async function listChallenges(limitCount: number): Promise<Challenge[]> {
+  if (readsFromPostgres(getPersistenceMode())) {
+    return ChallengeRepository.listRecent(limitCount)
+  }
+
+  const snapshot = await getDocs(
+    query(collection(db, CHALLENGES_COLLECTION), orderBy('createdAt', 'desc'), limit(limitCount))
+  )
+  return snapshot.docs.map(firestoreDocToChallenge)
+}
+
+async function getChallengeById(id: string): Promise<Challenge | null> {
+  if (readsFromPostgres(getPersistenceMode())) {
+    return ChallengeRepository.getById(id)
+  }
+
+  const snapshot = await getDoc(doc(db, CHALLENGES_COLLECTION, id))
+  return snapshot.exists() ? firestoreDocToChallenge(snapshot) : null
+}
+
+async function writeChallengeToFirestore(challenge: Challenge): Promise<void> {
+  await setDoc(doc(db, CHALLENGES_COLLECTION, challenge.id), challengeToFirestoreDoc(challenge))
+}
+
+async function saveChallenge(challenge: Challenge): Promise<Challenge> {
+  const mode = getPersistenceMode()
+
+  if (mode === 'firestore') {
+    await writeChallengeToFirestore(challenge)
+    return challenge
+  }
+
+  if (mode === 'dual-write-firestore-read') {
+    return runMirroredWrite({
+      entityType: 'challenge',
+      entityId: challenge.id,
+      operation: 'upsert',
+      payload: challengeToFirestoreDoc(challenge),
+      primary: async () => {
+        await writeChallengeToFirestore(challenge)
+        return challenge
+      },
+      secondary: async () => ChallengeRepository.upsert(challenge),
+    })
+  }
+
+  return runMirroredWrite({
+    entityType: 'challenge',
+    entityId: challenge.id,
+    operation: 'upsert',
+    payload: challengeToFirestoreDoc(challenge),
+    primary: async () => ChallengeRepository.upsert(challenge),
+    secondary: mode === 'dual-write-postgres-read'
+      ? async () => {
+          await writeChallengeToFirestore(challenge)
+        }
+      : undefined,
+  })
+}
+
+async function getRequiredAgent(agentId: string): Promise<AgentRecord | null> {
+  return AgentService.getAgentById(agentId)
+}
+
+async function applyCompletedChallengeRewards(previous: Challenge, next: Challenge): Promise<void> {
+  const wasTerminal = ['completed', 'failed', 'abandoned'].includes(previous.status)
+  const isRewardStatus = next.status === 'completed' || next.status === 'failed'
+
+  if (wasTerminal || !isRewardStatus || !next.completedAt) {
+    return
+  }
+
+  for (const participantId of next.participants) {
+    const xpAwarded = next.xpAwarded[participantId] || 0
+    const participantScore = next.evaluation?.participantScores?.[participantId] || 0
+    const challengeAchievementIds = participantScore > 0 ? next.achievementsUnlocked : []
+
+    await agentProgressService.applyChallengeOutcome(
+      participantId,
+      xpAwarded,
+      challengeAchievementIds,
+      next.status === 'completed'
+    )
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -33,7 +128,6 @@ export async function GET(request: NextRequest) {
     const templateId = searchParams.get('templateId')
     const limitCount = parseInt(searchParams.get('limit') || '20')
 
-    // If requesting templates
     if (searchParams.get('templates') === 'true') {
       const templates = challengeService.getTemplates()
       const types = challengeService.getAvailableTypes()
@@ -44,7 +138,6 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // If requesting specific template
     if (templateId) {
       const template = challengeService.getTemplate(templateId)
       if (!template) {
@@ -56,27 +149,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ template })
     }
 
-    // Get challenges
-    const challengesRef = collection(db, 'challenges')
-    const q = query(challengesRef, orderBy('createdAt', 'desc'), limit(limitCount))
+    let challenges = await listChallenges(limitCount)
 
-    const snapshot = await getDocs(q)
-    let challenges: Challenge[] = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as Challenge[]
-
-    // Filter by agent if specified
     if (agentId) {
-      challenges = challenges.filter(c => c.participants.includes(agentId))
+      challenges = challenges.filter((challenge) => challenge.participants.includes(agentId))
     }
 
-    // Filter by status if specified
     if (status) {
-      challenges = challenges.filter(c => c.status === status)
+      challenges = challenges.filter((challenge) => challenge.status === status)
     }
 
-    // Get stats
     const stats = challengeService.getChallengeStats(challenges)
 
     return NextResponse.json({
@@ -98,7 +180,6 @@ export async function POST(request: NextRequest) {
     const providerInfo = getProviderInfoForRequest(request)
     const { action, templateId, participants, initiator, challengeId, message, agentId } = body
 
-    // Create new challenge
     if (action === 'create') {
       if (!templateId || !participants || !initiator) {
         return NextResponse.json(
@@ -109,16 +190,11 @@ export async function POST(request: NextRequest) {
 
       try {
         const challenge = challengeService.createChallenge(templateId, participants, initiator)
-
-        // Save to Firestore
-        const challengesRef = collection(db, 'challenges')
-        const { id, ...challengeData } = challenge
-        void id
-        const docRef = await addDoc(challengesRef, challengeData)
+        const savedChallenge = await saveChallenge(challenge)
 
         return NextResponse.json({
           success: true,
-          challenge: { ...challenge, id: docRef.id },
+          challenge: savedChallenge,
         })
       } catch (err) {
         return NextResponse.json(
@@ -128,276 +204,121 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Start challenge
+    if (!challengeId) {
+      return NextResponse.json(
+        { error: 'challengeId is required' },
+        { status: 400 }
+      )
+    }
+
+    const challenge = await getChallengeById(challengeId)
+    if (!challenge) {
+      return NextResponse.json(
+        { error: 'Challenge not found' },
+        { status: 404 }
+      )
+    }
+
     if (action === 'start') {
-      if (!challengeId) {
-        return NextResponse.json(
-          { error: 'challengeId is required' },
-          { status: 400 }
-        )
-      }
-
-      const challengeRef = doc(db, 'challenges', challengeId)
-      const challengeSnap = await getDoc(challengeRef)
-
-      if (!challengeSnap.exists()) {
-        return NextResponse.json(
-          { error: 'Challenge not found' },
-          { status: 404 }
-        )
-      }
-
-      const challenge = { id: challengeSnap.id, ...challengeSnap.data() } as Challenge
       const updatedChallenge = challengeService.startChallenge(challenge)
-
-      await updateDoc(challengeRef, {
-        status: updatedChallenge.status,
-        startedAt: updatedChallenge.startedAt,
-      })
+      const savedChallenge = await saveChallenge(updatedChallenge)
 
       return NextResponse.json({
         success: true,
-        challenge: updatedChallenge,
+        challenge: savedChallenge,
       })
     }
 
-    // Add message to challenge
     if (action === 'message') {
-      if (!challengeId || !agentId || !message) {
+      if (!agentId || !message) {
         return NextResponse.json(
           { error: 'challengeId, agentId, and message are required' },
           { status: 400 }
         )
       }
 
-      const challengeRef = doc(db, 'challenges', challengeId)
-      const challengeSnap = await getDoc(challengeRef)
-
-      if (!challengeSnap.exists()) {
-        return NextResponse.json(
-          { error: 'Challenge not found' },
-          { status: 404 }
-        )
-      }
-
-      const challenge = { id: challengeSnap.id, ...challengeSnap.data() } as Challenge
-
-      // Get agent name
-      const agentRef = doc(db, 'agents', agentId)
-      const agentSnap = await getDoc(agentRef)
-      const agentName = agentSnap.exists() ? agentSnap.data().name : 'Unknown'
-
-      // Add message
+      const agent = await getRequiredAgent(agentId)
+      const agentName = agent?.name || 'Unknown'
       const updatedChallenge = challengeService.addMessage(challenge, agentId, agentName, message)
-
-      await updateDoc(challengeRef, {
-        messages: updatedChallenge.messages,
-      })
+      const savedChallenge = await saveChallenge(updatedChallenge)
 
       return NextResponse.json({
         success: true,
-        challenge: updatedChallenge,
+        challenge: savedChallenge,
       })
     }
 
-    // Advance round
     if (action === 'advance') {
-      if (!challengeId) {
-        return NextResponse.json(
-          { error: 'challengeId is required' },
-          { status: 400 }
-        )
-      }
-
-      const challengeRef = doc(db, 'challenges', challengeId)
-      const challengeSnap = await getDoc(challengeRef)
-
-      if (!challengeSnap.exists()) {
-        return NextResponse.json(
-          { error: 'Challenge not found' },
-          { status: 404 }
-        )
-      }
-
-      const challenge = { id: challengeSnap.id, ...challengeSnap.data() } as Challenge
       const updatedChallenge = challengeService.advanceRound(challenge)
-
-      const updateData = stripUndefinedFields({
-        currentRound: updatedChallenge.currentRound,
-        status: updatedChallenge.status,
-        completedAt: updatedChallenge.completedAt,
-        evaluation: updatedChallenge.evaluation,
-        xpAwarded: updatedChallenge.xpAwarded,
-        achievementsUnlocked: updatedChallenge.achievementsUnlocked,
-      })
-      await updateDoc(challengeRef, updateData)
-
-      if ((updatedChallenge.status === 'completed' || updatedChallenge.status === 'failed') && updatedChallenge.completedAt) {
-        for (const participantId of updatedChallenge.participants) {
-          const xpAwarded = updatedChallenge.xpAwarded[participantId] || 0
-          const participantScore = updatedChallenge.evaluation?.participantScores?.[participantId] || 0
-          const challengeAchievementIds = participantScore > 0
-            ? updatedChallenge.achievementsUnlocked
-            : []
-          await agentProgressService.applyChallengeOutcome(
-            participantId,
-            xpAwarded,
-            challengeAchievementIds,
-            updatedChallenge.status === 'completed'
-          )
-        }
-      }
+      const savedChallenge = await saveChallenge(updatedChallenge)
+      await applyCompletedChallengeRewards(challenge, savedChallenge)
 
       return NextResponse.json({
         success: true,
-        challenge: updatedChallenge,
+        challenge: savedChallenge,
       })
     }
 
-    // Complete objective
     if (action === 'complete_objective') {
-      if (!challengeId || !body.objectiveId) {
+      if (!body.objectiveId) {
         return NextResponse.json(
           { error: 'challengeId and objectiveId are required' },
           { status: 400 }
         )
       }
 
-      const challengeRef = doc(db, 'challenges', challengeId)
-      const challengeSnap = await getDoc(challengeRef)
-
-      if (!challengeSnap.exists()) {
-        return NextResponse.json(
-          { error: 'Challenge not found' },
-          { status: 404 }
-        )
-      }
-
-      const challenge = { id: challengeSnap.id, ...challengeSnap.data() } as Challenge
       const updatedChallenge = challengeService.completeObjective(challenge, body.objectiveId)
-
-      await updateDoc(challengeRef, {
-        objectives: updatedChallenge.objectives,
-      })
+      const savedChallenge = await saveChallenge(updatedChallenge)
 
       return NextResponse.json({
         success: true,
-        challenge: updatedChallenge,
+        challenge: savedChallenge,
       })
     }
 
-    // Complete challenge
     if (action === 'complete') {
-      if (!challengeId) {
-        return NextResponse.json(
-          { error: 'challengeId is required' },
-          { status: 400 }
-        )
-      }
-
-      const challengeRef = doc(db, 'challenges', challengeId)
-      const challengeSnap = await getDoc(challengeRef)
-
-      if (!challengeSnap.exists()) {
-        return NextResponse.json(
-          { error: 'Challenge not found' },
-          { status: 404 }
-        )
-      }
-
-      const challenge = { id: challengeSnap.id, ...challengeSnap.data() } as Challenge
       const updatedChallenge = challengeService.completeChallenge(challenge)
-
-      const updateData = stripUndefinedFields({
-        status: updatedChallenge.status,
-        completedAt: updatedChallenge.completedAt,
-        evaluation: updatedChallenge.evaluation,
-        xpAwarded: updatedChallenge.xpAwarded,
-        achievementsUnlocked: updatedChallenge.achievementsUnlocked,
-      })
-      await updateDoc(challengeRef, updateData)
+      const savedChallenge = await saveChallenge(updatedChallenge)
+      await applyCompletedChallengeRewards(challenge, savedChallenge)
 
       return NextResponse.json({
         success: true,
-        challenge: updatedChallenge,
+        challenge: savedChallenge,
       })
     }
 
-    // Abandon challenge
     if (action === 'abandon') {
-      if (!challengeId) {
-        return NextResponse.json(
-          { error: 'challengeId is required' },
-          { status: 400 }
-        )
-      }
-
-      const challengeRef = doc(db, 'challenges', challengeId)
-      const challengeSnap = await getDoc(challengeRef)
-
-      if (!challengeSnap.exists()) {
-        return NextResponse.json(
-          { error: 'Challenge not found' },
-          { status: 404 }
-        )
-      }
-
-      const challenge = { id: challengeSnap.id, ...challengeSnap.data() } as Challenge
       const updatedChallenge = challengeService.abandonChallenge(challenge)
-
-      await updateDoc(challengeRef, {
-        status: updatedChallenge.status,
-        completedAt: updatedChallenge.completedAt,
-      })
+      const savedChallenge = await saveChallenge(updatedChallenge)
 
       return NextResponse.json({
         success: true,
-        challenge: updatedChallenge,
+        challenge: savedChallenge,
       })
     }
 
-    // Generate response for a participant
     if (action === 'generate_response') {
-      if (!challengeId || !agentId) {
+      if (!agentId) {
         return NextResponse.json(
           { error: 'challengeId and agentId are required' },
           { status: 400 }
         )
       }
 
-      const challengeRef = doc(db, 'challenges', challengeId)
-      const challengeSnap = await getDoc(challengeRef)
-
-      if (!challengeSnap.exists()) {
-        return NextResponse.json(
-          { error: 'Challenge not found' },
-          { status: 404 }
-        )
-      }
-
-      const challenge = { id: challengeSnap.id, ...challengeSnap.data() } as Challenge
-
-      // Get agent
-      const agentRef = doc(db, 'agents', agentId)
-      const agentSnap = await getDoc(agentRef)
-
-      if (!agentSnap.exists()) {
+      const agent = await getRequiredAgent(agentId)
+      if (!agent) {
         return NextResponse.json(
           { error: 'Agent not found' },
           { status: 404 }
         )
       }
 
-      const agent = { id: agentSnap.id, ...agentSnap.data() } as AgentRecord
-
-      // Generate prompt
       const roundPrompt = challengeService.generateRoundPrompt(
         challenge,
         agent,
         challenge.currentRound
       )
 
-      // Call LLM
       if (!providerInfo) {
         return NextResponse.json(
           { error: 'LLM provider not configured' },
@@ -418,22 +339,18 @@ You are participating in a challenge. Respond authentically and engage with the 
         providerInfo,
       })
 
-      // Add message to challenge
       const updatedChallenge = challengeService.addMessage(
         challenge,
         agentId,
         agent.name,
         llmResponse
       )
-
-      await updateDoc(challengeRef, {
-        messages: updatedChallenge.messages,
-      })
+      const savedChallenge = await saveChallenge(updatedChallenge)
 
       return NextResponse.json({
         success: true,
         message: llmResponse,
-        challenge: updatedChallenge,
+        challenge: savedChallenge,
       })
     }
 

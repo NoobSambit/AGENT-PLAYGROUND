@@ -6,17 +6,91 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import {
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  collection
-} from 'firebase/firestore'
+import { getPersistenceMode, readsFromPostgres } from '@/lib/db/persistence'
+import { runMirroredWrite } from '@/lib/persistence/writeMirror'
+import { RelationshipRepository } from '@/lib/repositories/relationshipRepository'
+import { relationshipPairId } from '@/lib/db/utils'
 import { relationshipService } from '@/lib/services/relationshipService'
 import { agentProgressService } from '@/lib/services/agentProgressService'
+import { AgentService } from '@/lib/services/agentService'
 import { AgentRelationship } from '@/types/database'
+
+async function getRelationshipsFromFirestore(agentId: string): Promise<AgentRelationship[]> {
+  const relationshipsRef = collection(db, 'agents', agentId, 'relationships')
+  const snapshot = await getDocs(relationshipsRef)
+
+  return snapshot.docs.map((snapshotDoc) => ({
+    id: snapshotDoc.id,
+    ...snapshotDoc.data(),
+  })) as AgentRelationship[]
+}
+
+async function getRelationshipPair(agentId1: string, agentId2: string): Promise<AgentRelationship | null> {
+  if (readsFromPostgres(getPersistenceMode())) {
+    return RelationshipRepository.getPair(agentId1, agentId2)
+  }
+
+  const relationshipDoc = doc(collection(db, 'agents', agentId1, 'relationships'), agentId2)
+  const existingSnap = await getDoc(relationshipDoc)
+  if (!existingSnap.exists()) {
+    return null
+  }
+
+  return { id: relationshipPairId(agentId1, agentId2), ...existingSnap.data() } as AgentRelationship
+}
+
+async function persistRelationshipToFirestore(relationship: AgentRelationship): Promise<void> {
+  const { id, ...relationshipData } = relationship
+  void id
+  await Promise.all([
+    setDoc(doc(collection(db, 'agents', relationship.agentId1, 'relationships'), relationship.agentId2), relationshipData),
+    setDoc(doc(collection(db, 'agents', relationship.agentId2, 'relationships'), relationship.agentId1), relationshipData),
+  ])
+}
+
+async function persistRelationship(relationship: AgentRelationship): Promise<void> {
+  const mode = getPersistenceMode()
+
+  if (mode === 'firestore') {
+    await persistRelationshipToFirestore(relationship)
+    return
+  }
+
+  if (mode === 'dual-write-firestore-read') {
+    await runMirroredWrite({
+      entityType: 'relationship',
+      entityId: relationship.id,
+      operation: 'upsert',
+      payload: relationship as unknown as Record<string, unknown>,
+      primary: async () => {
+        await persistRelationshipToFirestore(relationship)
+        return true
+      },
+      secondary: async () => {
+        await RelationshipRepository.upsert(relationship)
+      },
+    })
+    return
+  }
+
+  await runMirroredWrite({
+    entityType: 'relationship',
+    entityId: relationship.id,
+    operation: 'upsert',
+    payload: relationship as unknown as Record<string, unknown>,
+    primary: async () => {
+      await RelationshipRepository.upsert(relationship)
+      return true
+    },
+    secondary: mode === 'dual-write-postgres-read'
+      ? async () => {
+          await persistRelationshipToFirestore(relationship)
+        }
+      : undefined,
+  })
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,36 +104,29 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get relationships for the agent
-    const relationshipsRef = collection(db, 'agents', agentId, 'relationships')
-    const snapshot = await getDocs(relationshipsRef)
+    const relationships = readsFromPostgres(getPersistenceMode())
+      ? await RelationshipRepository.listForAgent(agentId)
+      : await getRelationshipsFromFirestore(agentId)
 
-    const relationships: AgentRelationship[] = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as AgentRelationship[]
-
-    // Calculate network stats
     const stats = relationshipService.calculateNetworkStats(relationships)
 
-    // Get agent names for graph data
     const agentIds = new Set<string>()
     for (const rel of relationships) {
       agentIds.add(rel.agentId1)
       agentIds.add(rel.agentId2)
     }
 
-    const agents: Array<{ id: string; name: string }> = []
-    for (const id of agentIds) {
-      const agentRef = doc(db, 'agents', id)
-      const agentSnap = await getDoc(agentRef)
-      if (agentSnap.exists()) {
-        agents.push({ id, name: agentSnap.data().name })
-      }
-    }
+    const agents = await Promise.all(
+      [...agentIds].map(async (id) => {
+        const agent = await AgentService.getAgentById(id)
+        return agent ? { id, name: agent.name } : null
+      })
+    )
 
-    // Generate graph data
-    const graphData = relationshipService.generateNetworkGraphData(relationships, agents)
+    const graphData = relationshipService.generateNetworkGraphData(
+      relationships,
+      agents.filter(Boolean) as Array<{ id: string; name: string }>
+    )
 
     return NextResponse.json({
       relationships,
@@ -87,23 +154,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get or create relationship
-    const relationshipsRef = collection(db, 'agents', agentId1, 'relationships')
-    const relationshipDoc = doc(relationshipsRef, agentId2)
-    const existingSnap = await getDoc(relationshipDoc)
+    let relationship = await getRelationshipPair(agentId1, agentId2)
+    const isNewRelationship = !relationship
 
-    let relationship: AgentRelationship
-
-    const isNewRelationship = !existingSnap.exists()
-
-    if (existingSnap.exists()) {
-      relationship = { id: existingSnap.id, ...existingSnap.data() } as AgentRelationship
-    } else {
-      // Create new relationship
+    if (!relationship) {
       relationship = relationshipService.createRelationship(agentId1, agentId2)
     }
 
-    // If updating relationship
     if (action === 'update' && interactionType) {
       const interaction = relationshipService.analyzeInteraction(
         context?.agent1Message || '',
@@ -116,15 +173,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Save to Firestore (both directions for easy querying)
-    const { id, ...relationshipData } = relationship
-    void id
-    await setDoc(relationshipDoc, relationshipData)
-
-    // Also save in the other agent's relationships
-    const reverseRelationshipsRef = collection(db, 'agents', agentId2, 'relationships')
-    const reverseDoc = doc(reverseRelationshipsRef, agentId1)
-    await setDoc(reverseDoc, relationshipData)
+    await persistRelationship(relationship)
 
     if (isNewRelationship) {
       await Promise.all([
@@ -133,7 +182,6 @@ export async function POST(request: NextRequest) {
       ])
     }
 
-    // Get summary for response
     const summary = relationshipService.getRelationshipSummary(relationship)
     const trend = relationshipService.getRelationshipTrend(relationship)
 

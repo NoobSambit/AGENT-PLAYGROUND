@@ -1,38 +1,53 @@
 # AGENT-PLAYGROUND
 
-`AGENT-PLAYGROUND` is an inspectable AI agent platform built with Next.js, React, TypeScript, Firestore, and LLM-backed workflows.
+`AGENT-PLAYGROUND` is an inspectable AI agent platform built with Next.js, React, TypeScript, PostgreSQL, Drizzle, and LLM-backed workflows.
 
-It focuses on agents that have:
-
-- persistent identity
-- emotional and personality state
-- memory and progression
-- relationship and mentorship systems
-- multi-agent simulation and shared knowledge workflows
+The app centers on agents with persistent identity, emotional state, memory, relationships, mentorship, creativity, challenges, and multi-agent simulation features.
 
 ## Quick Start
 
 ```bash
 npm install
+npm run db:migrate
 npm run dev
 ```
 
-Create `.env.local` from `.env.example` before running feature flows that depend on Firebase or model providers. The app now exposes a provider toggle in the UI, but Gemini and Groq still require server-side keys, and Ollama still requires a local model to be available.
+Create `.env.local` from `.env.example` before running the app. Runtime now uses `DATABASE_URL` and `PERSISTENCE_MODE`; Firestore admin credentials are only needed for export and backfill scripts.
+
+## Core Commands
+
+```bash
+npm run dev
+npm run lint
+npm run build
+npm run db:migrate
+npm run db:export-firestore -- --out=./tmp/firestore-export.json
+npm run db:backfill -- --input=./tmp/firestore-export.json --dry-run
+npm run db:verify-parity -- --input=./tmp/firestore-export.json
+npm run db:reset -- --confirm-reset
+```
+
+## Persistence Modes
+
+- `firestore`: legacy runtime, Firestore only.
+- `dual-write-firestore-read`: Firestore is primary for reads and writes; PostgreSQL mirrors writes.
+- `dual-write-postgres-read`: PostgreSQL is primary for reads and writes; Firestore mirrors writes.
+- `postgres`: PostgreSQL only.
 
 ## Documentation
 
-The full documentation system now lives in [`docs/`](./docs/README.md).
-
-Start here:
+The documentation set is in [`docs/`](./docs/README.md).
 
 - [Documentation Home](./docs/README.md)
 - [Getting Started](./docs/getting-started.md)
-- [Feature Guide](./docs/features.md)
-- [Architecture Guide](./docs/architecture.md)
-- [Workflow Guide](./docs/workflows.md)
-- [API Reference](./docs/api-reference.md)
+- [Feature Index](./docs/features.md)
+- [Architecture](./docs/architecture.md)
 - [Data Model](./docs/data-model.md)
-- [Development Guide](./docs/development.md)
+- [API Reference](./docs/api-reference.md)
+- [Workflows](./docs/workflows.md)
+- [Development](./docs/development.md)
+- [PostgreSQL Schema](./docs/database/postgresql-schema.md)
+- [Cutover Runbook](./docs/database/cutover-runbook.md)
 
 ## Main Routes
 
@@ -43,28 +58,17 @@ Start here:
 - `/agents/[id]`
 - `/simulation`
 
-## Core Commands
-
-```bash
-npm run dev
-npm run lint
-npm run build
-npm run db:reset -- --confirm-project=your_project_id
-```
-
-## Tech Stack
+## Stack
 
 - Next.js 15
 - React 19
 - TypeScript
 - Tailwind CSS v4
-- Firebase Firestore
+- PostgreSQL
+- Drizzle ORM
+- Firebase Firestore and Firebase Admin for migration tooling
 - Zustand
 - LangChain
 - Google Gemini
 - Groq
 - Ollama
-
----
-
-**Built with passion to create truly intelligent AI agents** ✨

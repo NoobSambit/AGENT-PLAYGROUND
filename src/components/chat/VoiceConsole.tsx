@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react'
 import { EmotionalState, LinguisticProfile } from '@/types/database'
 import { VoiceProfile } from '@/types/enhancements'
+import { emotionalService } from '@/lib/services/emotionalService'
 
 interface RecognitionEventLike {
   results: ArrayLike<ArrayLike<{ transcript: string }>>
@@ -33,8 +34,9 @@ function buildVoiceProfile(
   linguisticProfile?: LinguisticProfile,
   emotionalState?: EmotionalState
 ): VoiceProfile {
-  const dominantEmotion = emotionalState?.dominantEmotion
-  const dominantIntensity = dominantEmotion ? emotionalState?.currentMood[dominantEmotion] || 0 : 0
+  const liveState = emotionalService.normalizeEmotionalState(emotionalState)
+  const dominantEmotion = liveState.dominantEmotion
+  const dominantIntensity = dominantEmotion ? liveState.currentMood[dominantEmotion] || 0 : 0
 
   const rate = Math.max(0.8, Math.min(1.25, 0.92 + (linguisticProfile?.verbosity || 0.5) * 0.25))
   const pitchBase = 0.95 + (linguisticProfile?.expressiveness || 0.5) * 0.25
@@ -48,7 +50,7 @@ function buildVoiceProfile(
     rate,
     pitch: Math.max(0.7, Math.min(1.4, pitchBase + pitchEmotionOffset)),
     volume: 1,
-    styleHint: dominantIntensity > 0.55
+    styleHint: dominantIntensity > 0.55 && dominantEmotion
       ? `${dominantEmotion} is currently influencing delivery.`
       : 'Balanced delivery with subtle emotional coloring.',
   }
@@ -71,6 +73,27 @@ export function VoiceConsole({
   const voiceProfile = buildVoiceProfile(linguisticProfile, emotionalState)
 
   const lastAgentMessage = [...messages].reverse().find((message) => message.type === 'agent')
+
+  const speak = useCallback((text: string) => {
+    if (!voiceEnabled || !text.trim()) {
+      return
+    }
+
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.rate = voiceProfile.rate
+    utterance.pitch = voiceProfile.pitch
+    utterance.volume = voiceProfile.volume
+    utterance.lang = 'en-US'
+
+    const voices = window.speechSynthesis.getVoices()
+    const preferred = voices.find((voice) => /en/i.test(voice.lang) && /female|male|natural|samantha|daniel/i.test(voice.name))
+    if (preferred) {
+      utterance.voice = preferred
+    }
+
+    window.speechSynthesis.speak(utterance)
+  }, [voiceEnabled, voiceProfile.pitch, voiceProfile.rate, voiceProfile.volume])
 
   useEffect(() => {
     const speechWindow = window as Window & {
@@ -127,27 +150,6 @@ export function VoiceConsole({
     recognitionRef.current?.stop()
     setIsListening(false)
   }
-
-  const speak = useCallback((text: string) => {
-    if (!voiceEnabled || !text.trim()) {
-      return
-    }
-
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.rate = voiceProfile.rate
-    utterance.pitch = voiceProfile.pitch
-    utterance.volume = voiceProfile.volume
-    utterance.lang = 'en-US'
-
-    const voices = window.speechSynthesis.getVoices()
-    const preferred = voices.find((voice) => /en/i.test(voice.lang) && /female|male|natural|samantha|daniel/i.test(voice.name))
-    if (preferred) {
-      utterance.voice = preferred
-    }
-
-    window.speechSynthesis.speak(utterance)
-  }, [voiceEnabled, voiceProfile.pitch, voiceProfile.rate, voiceProfile.volume])
 
   return (
     <div className="mt-4 rounded-sm border border-border/60 bg-background/45 p-4">
