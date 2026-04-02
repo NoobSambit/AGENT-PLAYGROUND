@@ -4,7 +4,8 @@
 
 - `agents`: canonical agent identity, counters, traits, emotional state, profile data.
 - `messages`: stored chat and simulation-adjacent turns.
-- `memories`: active and soft-deleted memory records.
+- `memories`: active and soft-deleted memory records with origin and linked message IDs.
+- `agent_personality_events`: trait-evolution history used by the Profile experience.
 - `memory_graphs`: one graph payload per agent.
 - `agent_relationships`: normalized pair records.
 

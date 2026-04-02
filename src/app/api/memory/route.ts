@@ -147,11 +147,26 @@ Please provide a concise summary that captures the key information, patterns, an
   }
 }
 
-async function handleDelete(body: { agentId: string; memoryId: string }) {
+async function handleDelete(body: { agentId?: string; memoryId?: string }) {
   try {
-    if (!body.agentId || !body.memoryId) {
+    if (!body.memoryId) {
       return NextResponse.json(
-        { error: 'agentId and memoryId are required' },
+        { error: 'memoryId is required' },
+        { status: 400 }
+      )
+    }
+
+    const memory = await MemoryService.getMemoryById(body.memoryId)
+    if (!memory) {
+      return NextResponse.json(
+        { error: 'Memory not found' },
+        { status: 404 }
+      )
+    }
+
+    if (body.agentId && memory.agentId !== body.agentId) {
+      return NextResponse.json(
+        { error: 'Memory does not belong to the provided agentId' },
         { status: 400 }
       )
     }

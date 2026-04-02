@@ -6,6 +6,7 @@ This docs set is organized around operating the app, changing the codebase, and 
 
 - [`getting-started.md`](./getting-started.md): local setup, env vars, runtime modes.
 - [`architecture.md`](./architecture.md): service boundaries, route responsibilities, persistence flow.
+- [`agent-tab-refresh-plan.md`](./agent-tab-refresh-plan.md): simple refresh model for live core state and lazy heavy tabs on the agent page.
 - [`data-model.md`](./data-model.md): canonical PostgreSQL storage model.
 - [`api-reference.md`](./api-reference.md): route contracts and major query modes.
 - [`workflows.md`](./workflows.md): common operator and cutover workflows.
@@ -23,6 +24,9 @@ Each feature file documents:
 - service and repository ownership
 - PostgreSQL tables
 - read and write lifecycle
+- workflow details
+- update timing
+- scenario-based examples
 - limits, provider dependencies, and failure modes
 
 ## Database Docs

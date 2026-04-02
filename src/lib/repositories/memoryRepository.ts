@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, lte } from 'drizzle-orm'
 import { getDb } from '@/lib/db/client'
 import { memories } from '@/lib/db/schema'
 import { asIsoString, compact } from '@/lib/db/utils'
@@ -17,6 +17,8 @@ function mapMemoryRow(row: MemoryRow): MemoryRecord {
     importance: row.importance,
     context: row.context,
     timestamp: asIsoString(row.timestamp),
+    origin: row.origin as MemoryRecord['origin'],
+    linkedMessageIds: row.linkedMessageIds || [],
     metadata: row.metadata || undefined,
     userId: row.userId || undefined,
     isActive: row.isActive,
@@ -34,15 +36,19 @@ export class MemoryRepository {
   static async listByAgent(agentId: string, options?: {
     activeOnly?: boolean
     type?: MemoryRecord['type']
+    origin?: MemoryRecord['origin']
     limit?: number
     createdAfter?: string
+    createdBefore?: string
     ascending?: boolean
   }): Promise<MemoryRecord[]> {
     const conditions = [
       eq(memories.agentId, agentId),
       options?.activeOnly === false ? undefined : eq(memories.isActive, true),
       options?.type ? eq(memories.type, options.type) : undefined,
+      options?.origin ? eq(memories.origin, options.origin) : undefined,
       options?.createdAfter ? gte(memories.timestamp, asIsoString(options.createdAfter)) : undefined,
+      options?.createdBefore ? lte(memories.timestamp, asIsoString(options.createdBefore)) : undefined,
     ].filter(Boolean)
 
     const where = conditions.length > 1
@@ -68,6 +74,8 @@ export class MemoryRepository {
       keywords: record.keywords || [],
       importance: record.importance,
       context: record.context,
+      origin: record.origin,
+      linkedMessageIds: record.linkedMessageIds || [],
       metadata: record.metadata ?? null,
       userId: record.userId,
       isActive: record.isActive,
@@ -85,6 +93,8 @@ export class MemoryRepository {
       keywords: updates.keywords,
       importance: updates.importance,
       context: updates.context,
+      origin: updates.origin,
+      linkedMessageIds: updates.linkedMessageIds,
       metadata: 'metadata' in updates ? updates.metadata ?? null : undefined,
       userId: updates.userId,
       isActive: updates.isActive,

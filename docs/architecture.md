@@ -26,6 +26,8 @@ Services own the branch between Firestore and PostgreSQL for core entities. Rout
 - Services own business rules, ranking, counters, and model prompts.
 - Repositories own PostgreSQL reads and writes only.
 - Firestore remains available only for migration and short-lived dual-write cutover paths.
+- Agent chat is the canonical write point for chat-turn side effects such as trait updates, memory persistence, and stale-domain invalidation.
+- Chat-turn side effects now include structured fact extraction, canonical fact-memory upserts, emotion appraisal, and evidence-based trait analysis.
 
 ## Migration-Specific Components
 

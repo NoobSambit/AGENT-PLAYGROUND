@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
 import { MemoryRecord, MessageRecord, AgentRecord, AgentRelationship } from '@/types/database'
-import { ArrowLeft, Send, User, MessageCircle, Brain, TrendingUp, Trash2, Calendar, Star, Award, Heart, Clock, Palette, Moon, BookOpen, Target, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles } from 'lucide-react'
+import { ArrowLeft, Send, User, MessageCircle, Brain, TrendingUp, Calendar, Star, Award, Heart, Clock, Palette, Moon, BookOpen, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles } from 'lucide-react'
 import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { motion } from 'framer-motion'
 import { GradientOrb } from '@/components/ui/animated-background'
@@ -26,13 +26,13 @@ import { CreativePortfolio } from '@/components/creative/CreativePortfolio'
 import { DreamJournal } from '@/components/dreams/DreamJournal'
 import { JournalViewer } from '@/components/journal/JournalViewer'
 import { ProfileViewer } from '@/components/profile/ProfileViewer'
+import { MemoryConsole } from '@/components/memory/MemoryConsole'
 import { ChallengeHub } from '@/components/challenges/ChallengeHub'
 import { RelationshipGraph } from '@/components/relationships/RelationshipGraph'
 import { RelationshipCard } from '@/components/relationships/RelationshipCard'
 import { MetaLearningDashboard } from '@/components/learning/MetaLearningDashboard'
 import { FuturePlanningView } from '@/components/planning/FuturePlanningView'
 import { ParallelRealityExplorer } from '@/components/parallel/ParallelRealityExplorer'
-import { LinguisticProfileCard } from '@/components/linguistic/LinguisticProfileCard'
 import { VoiceConsole } from '@/components/chat/VoiceConsole'
 
 // Phase 3 Components
@@ -134,18 +134,6 @@ export default function AgentDetail() {
   const [activeTab, setActiveTab] = useState<TabType>('chat')
   const [agentResolved, setAgentResolved] = useState(false)
   const [memories, setMemories] = useState<MemoryRecord[]>([])
-  const [memoryStats, setMemoryStats] = useState<{
-    totalMemories: number
-    memoriesByType: Record<string, number>
-    averageImportance: number
-    oldestMemory?: string
-    newestMemory?: string
-  }>({
-    totalMemories: 0,
-    memoriesByType: {},
-    averageImportance: 0
-  })
-  const [loadingMemories, setLoadingMemories] = useState(false)
   const [relationships, setRelationships] = useState<AgentRelationship[]>([])
   const [relationshipAgents, setRelationshipAgents] = useState<Array<{ id: string; name: string }>>([])
   const [relationshipStats, setRelationshipStats] = useState<RelationshipApiStats | null>(null)
@@ -156,6 +144,8 @@ export default function AgentDetail() {
   const [futurePlan, setFuturePlan] = useState<FuturePlan | null>(null)
   const [parallelReality, setParallelReality] = useState<ParallelRealityExtended | null>(null)
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>(scenarioTemplates[0]?.id || '')
+  const [memoryRefreshToken, setMemoryRefreshToken] = useState(0)
+  const [profileRefreshToken, setProfileRefreshToken] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Phase 1: Achievement notifications
@@ -234,20 +224,13 @@ export default function AgentDetail() {
       return memories
     }
 
-    setLoadingMemories(true)
     try {
-      const [memoriesData, statsData] = await Promise.all([
-        useAgentStore.getState().fetchAgentMemories(currentAgent.id),
-        useAgentStore.getState().getMemoryStats(currentAgent.id)
-      ])
+      const memoriesData = await useAgentStore.getState().fetchAgentMemories(currentAgent.id)
       setMemories(memoriesData)
-      setMemoryStats(statsData)
       return memoriesData
     } catch (error) {
       console.error('Failed to load memories:', error)
       return []
-    } finally {
-      setLoadingMemories(false)
     }
   }
 
@@ -472,57 +455,66 @@ export default function AgentDetail() {
             setCurrentAgent(data.agent)
           }
         }
+
+        const changedDomains = Array.isArray(data.changedDomains) ? data.changedDomains as string[] : []
+        const staleDomains = Array.isArray(data.staleDomains) ? data.staleDomains as string[] : []
+
+        if (changedDomains.includes('memory') || staleDomains.includes('memory')) {
+          setMemoryRefreshToken((value) => value + 1)
+        }
+
+        if (changedDomains.includes('profile_traits') || staleDomains.includes('profile_analysis')) {
+          setProfileRefreshToken((value) => value + 1)
+        }
+
+        if (
+          (changedDomains.includes('memory') || staleDomains.includes('memory'))
+          && (activeTab === 'timeline' || activeTab === 'planning')
+        ) {
+          await loadMemories(true)
+          await loadTimelineEvents()
+          if (activeTab === 'planning') {
+            await loadPlanningData()
+          }
+        }
+
+        if (activeTab === 'learning') {
+          await loadLearningData()
+        }
       } else {
         console.error('Failed to process chat turn')
       }
 
       setNewMessage('')
-
-      if (activeTab === 'memory') {
-        await loadMemories(true)
-      }
-
-      if (activeTab === 'timeline' || activeTab === 'planning') {
-        await loadTimelineEvents()
-        if (activeTab === 'planning') {
-          await loadPlanningData()
-        }
-      }
-
-      if (activeTab === 'learning') {
-        await loadLearningData()
-      }
     } catch (error) {
       console.error('Failed to send message:', error)
     }
   }
 
-  const handleDeleteMemory = async (memoryId: string) => {
-    const deleted = await useAgentStore.getState().deleteMemory(memoryId)
-    if (!deleted) {
+  const handleMemoryMutation = async () => {
+    await loadMemories(true)
+    setTimelineEvents([])
+    setFuturePlan(null)
+  }
+
+  const handleMemoryCountChange = useCallback((count: number) => {
+    const latestAgent = useAgentStore.getState().currentAgent
+    if (!latestAgent) {
       return
     }
 
-    setMemories(prev => prev.filter(memory => memory.id !== memoryId))
-    setMemoryStats(prev => ({
-      ...prev,
-      totalMemories: Math.max((prev.totalMemories || 0) - 1, 0)
-    }))
-
-    if (currentAgent) {
-      setCurrentAgent({
-        ...currentAgent,
-        memoryCount: Math.max((currentAgent.memoryCount || 0) - 1, 0)
-      })
+    if ((latestAgent.memoryCount || 0) === count) {
+      return
     }
 
-    if (activeTab === 'timeline' || activeTab === 'planning') {
-      await loadTimelineEvents()
-      if (activeTab === 'planning') {
-        await loadPlanningData()
-      }
+    const updatedAgent = {
+      ...latestAgent,
+      memoryCount: count,
     }
-  }
+
+    setCurrentAgent(updatedAgent)
+    updateAgent(updatedAgent.id, { memoryCount: count })
+  }, [setCurrentAgent, updateAgent])
 
   if (!currentAgent && !agentResolved) {
     return (
@@ -958,182 +950,13 @@ export default function AgentDetail() {
                 />
               </div>
             ) : activeTab === 'memory' ? (
-              /* Memory & Growth Interface */
-              <div className="space-y-6">
-                {/* Personality Traits */}
-                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                  <CardHeader className="space-y-4">
-                    <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-sm bg-accent/10">
-                        <TrendingUp className="h-6 w-6 text-accent" />
-                      </div>
-                      Personality Evolution
-                    </CardTitle>
-                    <CardDescription>
-                      {currentAgent.name}&apos;s personality traits evolve based on interactions
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {/* Core Traits */}
-                    <div className="space-y-4">
-                      <h4 className="text-sm font-medium text-muted-foreground">Core Traits (Immutable)</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        {currentAgent.coreTraits && Object.entries(currentAgent.coreTraits).map(([trait, score]) => (
-                          <div key={trait} className="space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-medium capitalize">{trait}</span>
-                              <span className="text-xs text-muted-foreground">{Math.round(score * 100)}%</span>
-                            </div>
-                            <div className="w-full bg-muted/30 rounded-full h-2">
-                              <div
-                                className="bg-primary h-2 rounded-full transition-all duration-500"
-                                style={{ width: `${score * 100}%` }}
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Dynamic Traits */}
-                    <div className="space-y-4">
-                      <h4 className="text-sm font-medium text-muted-foreground">Dynamic Traits (Evolving)</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        {currentAgent.dynamicTraits && Object.entries(currentAgent.dynamicTraits).map(([trait, score]) => (
-                          <div key={trait} className="space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-medium capitalize">{trait}</span>
-                              <span className="text-xs text-muted-foreground">{Math.round(score * 100)}%</span>
-                            </div>
-                            <div className="w-full bg-muted/30 rounded-full h-2">
-                              <div
-                                className="bg-accent h-2 rounded-full transition-all duration-500"
-                                style={{ width: `${score * 100}%` }}
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Memory Timeline */}
-                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                  <CardHeader className="space-y-4">
-                    <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-sm bg-primary/10">
-                        <Brain className="h-6 w-6 text-primary" />
-                      </div>
-                      Memory Timeline
-                    </CardTitle>
-                    <CardDescription>
-                      Important memories and insights stored by {currentAgent.name}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {loadingMemories ? (
-                      <div className="flex items-center justify-center py-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                      </div>
-                    ) : memories.length === 0 ? (
-                      <div className="text-center py-8 text-muted-foreground">
-                        No memories stored yet. Start chatting to build {currentAgent.name}&apos;s memory!
-                      </div>
-                    ) : (
-                      <div className="space-y-4 max-h-96 overflow-y-auto">
-                        {memories.slice(0, 20).map((memory) => (
-                          <div key={memory.id} className="flex gap-4 p-4 rounded-sm bg-muted/30 border border-border/50">
-                            <div className="flex-shrink-0">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
-                                memory.type === 'conversation' ? 'bg-[var(--color-pastel-blue)]/20 text-[var(--color-pastel-blue)]' :
-                                memory.type === 'fact' ? 'bg-green-100 text-green-700' :
-                                memory.type === 'interaction' ? 'bg-purple-100 text-purple-700' :
-                                'bg-orange-100 text-orange-700'
-                              }`}>
-                                {memory.type === 'conversation' ? '💬' :
-                                 memory.type === 'fact' ? '📚' :
-                                 memory.type === 'interaction' ? '🤝' : '💡'}
-                              </div>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start justify-between gap-2 mb-2">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium capitalize">{memory.type}</span>
-                                  <div className="flex items-center gap-1">
-                                    {Array.from({ length: Math.floor(memory.importance / 2) }).map((_, i) => (
-                                      <Star key={i} className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                                    ))}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-muted-foreground">
-                                    {new Date(memory.timestamp).toLocaleDateString()}
-                                  </span>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleDeleteMemory(memory.id)}
-                                    className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              </div>
-                              <p className="text-sm text-muted-foreground mb-1">{memory.summary}</p>
-                              <div className="flex flex-wrap gap-1">
-                                {memory.keywords.slice(0, 3).map((keyword: string) => (
-                                  <span key={keyword} className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
-                                    {keyword}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Memory Statistics */}
-                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                  <CardHeader className="space-y-4">
-                    <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-sm bg-secondary/10">
-                        <Calendar className="h-6 w-6 text-secondary" />
-                      </div>
-                      Memory Statistics
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="text-center p-4 rounded-sm bg-primary/5">
-                        <div className="text-2xl font-bold text-primary mb-1">{memoryStats.totalMemories || 0}</div>
-                        <div className="text-sm text-muted-foreground">Total Memories</div>
-                      </div>
-                      <div className="text-center p-4 rounded-sm bg-accent/5">
-                        <div className="text-2xl font-bold text-accent mb-1">
-                          {Object.keys(memoryStats.memoriesByType || {}).length}
-                        </div>
-                        <div className="text-sm text-muted-foreground">Memory Types</div>
-                      </div>
-                      <div className="text-center p-4 rounded-sm bg-secondary/5">
-                        <div className="text-2xl font-bold text-secondary mb-1">
-                          {memoryStats.averageImportance ? Math.round(memoryStats.averageImportance * 10) / 10 : 0}
-                        </div>
-                        <div className="text-sm text-muted-foreground">Avg. Importance</div>
-                      </div>
-                      <div className="text-center p-4 rounded-sm bg-muted/30">
-                        <div className="text-2xl font-bold text-muted-foreground mb-1">
-                          {currentAgent.totalInteractions || 0}
-                        </div>
-                        <div className="text-sm text-muted-foreground">Interactions</div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+              <MemoryConsole
+                agentId={currentAgent.id}
+                agentName={currentAgent.name}
+                refreshToken={memoryRefreshToken}
+                onMemoryCountChange={handleMemoryCountChange}
+                onMemoryMutation={() => void handleMemoryMutation()}
+              />
             ) : activeTab === 'emotions' ? (
               /* Emotions Tab */
               <div className="space-y-6">
@@ -1719,46 +1542,7 @@ export default function AgentDetail() {
                 </CardContent>
               </Card>
             ) : activeTab === 'profile' ? (
-              <div className="space-y-6">
-                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                  <CardHeader className="space-y-4">
-                    <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-sm bg-cyan-500/10">
-                        <Target className="h-6 w-6 text-cyan-500" />
-                      </div>
-                      Psychological Profile
-                    </CardTitle>
-                    <CardDescription>
-                      {currentAgent.name}&apos;s personality assessments (Big Five, MBTI, Enneagram)
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ProfileViewer agentId={currentAgent.id} agentName={currentAgent.name} />
-                  </CardContent>
-                </Card>
-
-                {currentAgent.linguisticProfile && (
-                  <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                    <CardHeader className="space-y-4">
-                      <CardTitle className="flex items-center gap-3 text-xl">
-                        <div className="p-2 rounded-sm bg-violet-500/10">
-                          <Languages className="h-6 w-6 text-violet-500" />
-                        </div>
-                        Linguistic Personality
-                      </CardTitle>
-                      <CardDescription>
-                        Communication style, vocabulary bias, and expressive tendencies generated from the persona definition
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <LinguisticProfileCard
-                        profile={currentAgent.linguisticProfile}
-                        agentName={currentAgent.name}
-                      />
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
+              <ProfileViewer agent={currentAgent as AgentRecord} refreshToken={profileRefreshToken} />
             ) : activeTab === 'challenges' ? (
               /* Phase 2: Challenges Tab */
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">

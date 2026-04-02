@@ -141,14 +141,19 @@ export class MemoryChain {
 
   private async getRelevantMemories(): Promise<MemoryRecord[]> {
     try {
-      // Get recent memories for this agent
-      const recentMemories = await MemoryService.getRecentMemories(
-        this.config.agentId,
-        this.config.maxMemories || 10
-      )
+      const maxMemories = this.config.maxMemories || 10
+      const factMemories = await MemoryService.getMemoriesByType(this.config.agentId, 'fact')
+      const recentMemories = await MemoryService.getRecentMemories(this.config.agentId, maxMemories)
 
-      // Filter by memory types and importance
-      const filteredMemories = recentMemories.filter(memory => {
+      const filteredFacts = factMemories
+        .filter((memory) => memory.importance >= 6 && memory.isActive !== false)
+        .sort((a, b) => (
+          b.importance - a.importance
+          || new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        ))
+        .slice(0, Math.min(4, Math.max(2, Math.floor(maxMemories / 3))))
+
+      const filteredRecents = recentMemories.filter(memory => {
         if (!this.config.memoryTypes?.includes(memory.type)) {
           return false
         }
@@ -161,7 +166,12 @@ export class MemoryChain {
         return memory.isActive !== false
       })
 
-      return filteredMemories
+      const merged = [...filteredFacts, ...filteredRecents]
+      const deduped = merged.filter((memory, index) => (
+        merged.findIndex((candidate) => candidate.id === memory.id) === index
+      ))
+
+      return deduped.slice(0, maxMemories)
     } catch (error) {
       console.error('Error getting relevant memories:', error)
       return []
@@ -169,19 +179,31 @@ export class MemoryChain {
   }
 
   private memoryToMessage(memory: MemoryRecord): BaseMessage {
-    const content = `[${memory.type.toUpperCase()}] ${memory.summary || memory.content}`
+    const normalizedContent = memory.content.replace(/\s+/g, ' ').trim()
+    const contentPreview = normalizedContent.length > 280
+      ? `${normalizedContent.slice(0, 277)}...`
+      : normalizedContent
+    const summary = memory.summary?.trim() || contentPreview
+    const detailBlock = contentPreview && contentPreview !== summary
+      ? `Summary: ${summary}\nDetails: ${contentPreview}`
+      : summary
+    const factHint = memory.metadata?.factType
+      ? `Fact type: ${String(memory.metadata.factType)}\n`
+      : ''
 
     switch (memory.type) {
       case 'conversation':
-        return new SystemMessage(content)
+        return new SystemMessage(`[CONVERSATION MEMORY]\n${detailBlock}`)
       case 'fact':
-        return new SystemMessage(`[FACT] ${content}`)
+        return new SystemMessage(
+          `[FACT MEMORY]\n${factHint}${detailBlock}\nUse factual memory details exactly when they answer the user's question.`
+        )
       case 'interaction':
-        return new SystemMessage(`[INTERACTION] ${content}`)
+        return new SystemMessage(`[INTERACTION MEMORY]\n${detailBlock}`)
       case 'personality_insight':
-        return new SystemMessage(`[PERSONALITY] ${content}`)
+        return new SystemMessage(`[PERSONALITY MEMORY]\n${detailBlock}`)
       default:
-        return new SystemMessage(content)
+        return new SystemMessage(`[MEMORY]\n${detailBlock}`)
     }
   }
 

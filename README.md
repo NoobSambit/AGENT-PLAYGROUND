@@ -13,6 +13,7 @@ npm run dev
 ```
 
 Create `.env.local` from `.env.example` before running the app. Runtime now uses `DATABASE_URL` and `PERSISTENCE_MODE`; Firestore admin credentials are only needed for export and backfill scripts.
+`npm run dev` now wraps the Next.js server, starts a repo-local PostgreSQL instance when needed, runs migrations, and then starts Next.js.
 
 ## Core Commands
 
@@ -26,6 +27,8 @@ npm run db:backfill -- --input=./tmp/firestore-export.json --dry-run
 npm run db:verify-parity -- --input=./tmp/firestore-export.json
 npm run db:reset -- --confirm-reset
 ```
+
+The default local setup uses `LOCAL_PG_DATA_DIR`, `LOCAL_PG_LOG_FILE`, and `LOCAL_PG_SOCKET_DIR` so PostgreSQL only runs while `npm run dev` is active. Keep those paths outside the repo so Next.js does not scan PostgreSQL socket files. If you prefer managing PostgreSQL via OS commands, set `LOCAL_PG_START_CMD` and `LOCAL_PG_STOP_CMD` instead.
 
 ## Persistence Modes
 

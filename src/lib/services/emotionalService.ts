@@ -84,8 +84,11 @@ const PRAISE_MARKERS = ['smart', 'clever', 'good job', 'well done', 'impressive'
 const CURIOSITY_MARKERS = ['why', 'how', 'what if', 'could', 'can', 'explore', 'discover', 'learn']
 const NOVELTY_MARKERS = ['new', 'unexpected', 'surprise', 'wild', 'novel', 'bold', 'invent']
 const DISTRESS_MARKERS = ['sad', 'hurt', 'lonely', 'lost', 'upset', 'grief', 'regret', 'sorry']
+const VULNERABILITY_MARKERS = ['stressed', 'overwhelmed', 'anxious', 'worried', 'scared', 'frustrated', 'burned out']
+const HELP_SEEKING_MARKERS = ['need help', 'can you help', 'please help', 'i need help', 'support', 'guide me', 'help me']
+const FRUSTRATION_MARKERS = ['went badly', 'didn’t work', 'did not work', 'failed', 'mess', 'stuck', 'problem', 'issue']
 const UNCERTAINTY_MARKERS = ['not sure', 'uncertain', 'risk', 'worry', 'concern', 'stuck', 'problem', 'issue']
-const HOSTILE_MARKERS = ['hate', 'stupid', 'bad', 'terrible', 'awful', 'annoying', 'wrong', 'fake', 'shit']
+const HOSTILE_MARKERS = ['hate', 'stupid', 'terrible', 'awful', 'annoying', 'fake', 'shit', 'useless', 'idiot']
 const DISGUST_MARKERS = ['gross', 'disgusting', 'nasty', 'garbage']
 const HELPFUL_RESPONSE_MARKERS = ['here', 'let us', 'let\'s', 'can do', 'step', 'plan', 'fix']
 const HEDGING_MARKERS = ['maybe', 'might', 'possibly', 'not sure', 'unclear', 'perhaps']
@@ -113,8 +116,26 @@ function clampSignedDelta(value: number, maxAbs = MAX_EVENT_DELTA): number {
   return Math.max(-maxAbs, Math.min(maxAbs, value))
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 function countMatches(text: string, markers: string[]): number {
-  return markers.reduce((count, marker) => count + (text.includes(marker) ? 1 : 0), 0)
+  return markers.reduce((count, marker) => {
+    const pattern = marker.includes(' ')
+      ? escapeRegex(marker)
+      : `\\b${escapeRegex(marker)}\\b`
+
+    return count + (new RegExp(pattern, 'i').test(text) ? 1 : 0)
+  }, 0)
+}
+
+function hasDirectedHostility(text: string): boolean {
+  if (!countMatches(text, HOSTILE_MARKERS)) {
+    return false
+  }
+
+  return /\b(you|your|yours|assistant|agent|this app|this tool|this system)\b/i.test(text)
 }
 
 function hasQuestionEnergy(message: string): boolean {
@@ -441,8 +462,11 @@ export class EmotionalService {
     const curiosity = countMatches(text, CURIOSITY_MARKERS) + (hasQuestionEnergy(userMessage) ? 1 : 0)
     const novelty = countMatches(text, NOVELTY_MARKERS)
     const distress = countMatches(text, DISTRESS_MARKERS)
+    const vulnerability = countMatches(text, VULNERABILITY_MARKERS)
+    const helpSeeking = countMatches(text, HELP_SEEKING_MARKERS)
+    const frustration = countMatches(text, FRUSTRATION_MARKERS)
     const uncertainty = countMatches(text, UNCERTAINTY_MARKERS)
-    const hostility = countMatches(text, HOSTILE_MARKERS)
+    const hostility = hasDirectedHostility(text) ? countMatches(text, HOSTILE_MARKERS) : 0
     const disgust = countMatches(text, DISGUST_MARKERS)
     const continuity = Math.min(recentMessages.length, 6)
 
@@ -464,23 +488,37 @@ export class EmotionalService {
       confidence += 0.08
     }
 
-    if (distress > 0) {
-      deltas.sadness += 0.03 + distress * 0.02 + profile.sensitivity * 0.03
-      deltas.trust += 0.02 + profile.temperament.trust * 0.02
-      reasons.set('sadness', 'The message described strain or loss, which the agent registered as emotional weight.')
-      reasons.set('trust', 'The user shared something vulnerable, which increased relational openness.')
+    if (distress > 0 || vulnerability > 0 || helpSeeking > 0) {
+      deltas.sadness += 0.02 + distress * 0.015 + vulnerability * 0.015 + profile.sensitivity * 0.02
+      deltas.trust += 0.04 + helpSeeking * 0.02 + profile.temperament.trust * 0.02
+      deltas.anticipation += 0.03 + helpSeeking * 0.015
+      reasons.set('sadness', 'The message described strain or emotional load, which the agent registered as weight.')
+      reasons.set('trust', 'The user shared something vulnerable or asked for help, which increased relational openness.')
+      reasons.set('anticipation', 'The request invited supportive action, which focused the agent on helping.')
       confidence += 0.06
     }
 
     if (uncertainty > 0) {
-      deltas.fear += 0.04 + uncertainty * 0.02 + profile.sensitivity * 0.03
+      deltas.fear += 0.02 + uncertainty * 0.015 + profile.sensitivity * 0.02
       deltas.anticipation += 0.02 + profile.temperament.anticipation * 0.02
       reasons.set('fear', 'The situation sounded uncertain or risky, which raised caution.')
       confidence += 0.06
     }
 
+    if (frustration > 0 && hostility === 0) {
+      deltas.sadness += 0.02 + frustration * 0.015
+      deltas.anticipation += 0.015 + frustration * 0.01
+      if (!reasons.has('sadness')) {
+        reasons.set('sadness', 'The message described a setback, which the agent read as strain rather than aggression.')
+      }
+      if (!reasons.has('anticipation')) {
+        reasons.set('anticipation', 'A setback created pressure to help with the next step.')
+      }
+      confidence += 0.05
+    }
+
     if (hostility > 0) {
-      deltas.anger += 0.05 + hostility * 0.025 + profile.sensitivity * 0.02
+      deltas.anger += 0.04 + hostility * 0.025 + profile.sensitivity * 0.02
       deltas.trust -= 0.05 + hostility * 0.02
       reasons.set('anger', 'The message carried friction or hostility, which made the agent more defensive.')
       reasons.set('trust', 'The interaction reduced relational comfort for the moment.')

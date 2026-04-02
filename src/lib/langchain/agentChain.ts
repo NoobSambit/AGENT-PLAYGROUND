@@ -2,7 +2,7 @@ import { BaseChain, type LLMConfig } from './baseChain'
 import { MemoryChain } from './memoryChain'
 import { ToolExecutor } from './tools'
 import { AgentService } from '@/lib/services/agentService'
-import { PersonalityService } from '@/lib/services/personalityService'
+import { PersonalityService, type TraitAnalysis } from '@/lib/services/personalityService'
 import { KnowledgeService } from '@/lib/services/knowledgeService'
 import { collectiveIntelligenceService } from '@/lib/services/collectiveIntelligenceService'
 import { AgentRecord, EmotionalProfile, EmotionalState } from '@/types/database'
@@ -22,7 +22,7 @@ export interface AgentResponse {
   reasoning?: string
   toolsUsed?: string[]
   memoryUsed?: number
-  personalityInsights?: string[]
+  personalityAnalyses?: TraitAnalysis[]
 }
 
 interface AgentRuntimeOverrides {
@@ -65,8 +65,6 @@ export class AgentChain {
     llmConfig?: LLMConfig,
     runtimeOverrides?: AgentRuntimeOverrides
   ): Promise<AgentResponse> {
-    const startTime = Date.now()
-
     try {
       // Load agent information
       const agent = await AgentService.getAgentById(this.config.agentId)
@@ -78,7 +76,8 @@ export class AgentChain {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const agentData = agent as any
 
-      // Load memory context
+      // Refresh cross-turn memory cache so newly persisted memories are available immediately.
+      this.memoryChain.clearCache()
       const memoryMessages = await this.memoryChain.loadMemory()
 
       // Create system prompt with agent personality and memory
@@ -107,24 +106,16 @@ export class AgentChain {
         )
       }
 
-      // Apply personality evolution if enabled
-      if (this.config.enablePersonality) {
-        await this.applyPersonalityEvolution(userInput, response, agentData)
-      }
-
-      // Save conversation to memory
-      await this.memoryChain.saveMemory(userInput, response, {
-        responseTime: Date.now() - startTime,
-        toolsUsed: toolsUsed.length > 0,
-        reasoning: reasoning.substring(0, 200) // Truncate for metadata
-      })
+      const personalityAnalyses = this.config.enablePersonality
+        ? await this.collectPersonalityAnalyses(userInput, response, agentData)
+        : []
 
       return {
         response,
         reasoning,
         toolsUsed,
         memoryUsed: memoryMessages.length,
-        personalityInsights: reasoning ? [reasoning] : undefined
+        personalityAnalyses,
       }
 
     } catch (error) {
@@ -142,8 +133,6 @@ export class AgentChain {
     llmConfig?: LLMConfig,
     runtimeOverrides?: AgentRuntimeOverrides
   ): Promise<AgentResponse> {
-    const startTime = Date.now()
-
     try {
       // Load agent information
       const agent = await AgentService.getAgentById(this.config.agentId)
@@ -155,7 +144,8 @@ export class AgentChain {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const agentData = agent as any
 
-      // Load memory context
+      // Refresh cross-turn memory cache so newly persisted memories are available immediately.
+      this.memoryChain.clearCache()
       const memoryMessages = await this.memoryChain.loadMemory()
 
       // Create system prompt
@@ -194,24 +184,16 @@ export class AgentChain {
         )
       }
 
-      // Apply personality evolution if enabled
-      if (this.config.enablePersonality) {
-        await this.applyPersonalityEvolution(userInput, fullResponse, agentData)
-      }
-
-      // Save conversation to memory
-      await this.memoryChain.saveMemory(userInput, fullResponse, {
-        responseTime: Date.now() - startTime,
-        toolsUsed: toolsUsed.length > 0,
-        reasoning: reasoning.substring(0, 200)
-      })
+      const personalityAnalyses = this.config.enablePersonality
+        ? await this.collectPersonalityAnalyses(userInput, fullResponse, agentData)
+        : []
 
       return {
         response: fullResponse,
         reasoning,
         toolsUsed,
         memoryUsed: memoryMessages.length,
-        personalityInsights: reasoning ? [reasoning] : undefined
+        personalityAnalyses,
       }
 
     } catch (error) {
@@ -461,27 +443,22 @@ export class AgentChain {
     }, onToken)
   }
 
-  private async applyPersonalityEvolution(
+  private async collectPersonalityAnalyses(
     input: string,
     output: string,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     _agent: any
-  ): Promise<void> {
+  ): Promise<TraitAnalysis[]> {
     try {
-      // Analyze interaction for personality insights
-      const analyses = await PersonalityService.analyzeInteraction(
+      return await PersonalityService.analyzeInteraction(
         this.config.agentId,
         input,
         output,
         `Agent persona: ${_agent.persona}`
       )
-
-      if (analyses.length > 0) {
-        await PersonalityService.updatePersonality(this.config.agentId, analyses)
-      }
     } catch (error) {
       console.error('Error applying personality evolution:', error)
-      // Don't throw - personality evolution should not break conversation
+      return []
     }
   }
 

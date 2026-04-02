@@ -1,23 +1,255 @@
 # Workflows
 
+This file explains the main runtime workflows in simple language.
+
+The goal is to describe what actually happens across UI, route, service, and database layers.
+
 ## Create A New Agent
+
+### High-Level Flow
 
 1. Open `/agents/new`.
 2. Submit name, persona, and goals.
-3. The server derives personality, linguistic, emotional, progression, and profile state.
-4. The agent record is persisted to PostgreSQL, or mirrored during cutover.
+3. The server derives:
+   - core personality
+   - dynamic trait defaults
+   - linguistic profile
+   - emotional profile
+   - dormant emotional state
+   - progress defaults
+   - stats defaults
+   - psychological profile
+4. The agent record is persisted.
+
+### What Updates
+
+- `agents`
+
+### What Does Not Exist Yet
+
+At creation time there are no:
+
+- messages
+- memories
+- evolution events
+- live emotional events
 
 ## Run Chat
 
+This is the most important workflow for the refactored system because chat is now the main write point for memory, emotion, and profile side effects.
+
+### High-Level Flow
+
 1. Open `/agents/[id]`.
-2. Send a message through the chat panel.
-3. The server writes messages, updates emotional state, progression, and counters, then returns the refreshed agent snapshot.
+2. Send a message in the chat panel.
+3. `POST /api/agents/[id]/chat` runs.
+4. The server:
+   - stores the user message
+   - appraises the emotional impact of the user message
+   - loads memory context for the prompt
+   - generates the assistant response
+   - evaluates the emotional effect of the response
+   - stores the assistant message
+   - updates stats and progress
+   - writes conversation memory
+   - extracts and upserts fact memories
+   - analyzes trait evidence
+   - stores personality evolution event if applicable
+   - returns the refreshed agent snapshot plus `changedDomains` and `staleDomains`
+
+### What Updates On Every Normal Turn
+
+- `messages`
+- `agents.emotional_state`
+- `agents.emotional_history`
+- `agents.stats`
+- `agents.progress`
+- `agents.total_interactions`
+
+### What May Also Update
+
+- `memories`
+- `agents.memory_count`
+- `agent_personality_events`
+- `agents.dynamic_traits`
+
+### Why Chat Is The Canonical Side-Effect Point
+
+The agent chain no longer hides these writes internally.
+
+That is important because:
+
+- message IDs exist before memory and event rows are created
+- the route response can accurately say what changed
+- the UI can refresh only the tabs that need it
+
+## Chat Turn Breakdown By Feature
+
+### Emotion Side
+
+The server first appraises the user message.
+
+Then it appraises the assistant response.
+
+Then it may run a small reflection pass.
+
+Result:
+
+- updated live mood
+- updated emotional event history
+- emotion summary returned to the UI
+
+### Memory Side
+
+The chat turn writes:
+
+- one conversation memory
+- zero or more fact memories
+
+Fact memories are used for canonical recall such as:
+
+- user name
+- active project
+- stated preference
+
+### Profile Side
+
+The chat turn analyzes:
+
+- empathy evidence
+- structured guidance
+- topic retention
+- confidence signals
+- adaptability signals
+
+Then it:
+
+- slightly updates dynamic traits if warranted
+- stores an evolution event
+- marks deep psychological profile as stale when needed
+
+## Scenario: Stress + Identity + Project
+
+User says:
+
+`My name is Riya. I am stressed because my tea subscription app launch went badly today. Please remember that I am building a tea subscription app.`
+
+What happens:
+
+1. user message row is created
+2. emotion system reads the turn as:
+   - vulnerability
+   - need for help
+   - setback
+3. assistant responds
+4. assistant message row is created
+5. conversation memory is written
+6. fact memory `identity:name` is written or refreshed
+7. fact memory for the tea subscription project is written or refreshed
+8. empathy and knowledge evidence can be recorded in profile evolution
+9. chat response returns updated agent, emotion summary, and changed domains
+
+Expected outcome:
+
+- Emotions should lean toward `trust`, `sadness`, and `anticipation`
+- Memory should remember `Riya` and `tea subscription app`
+- Profile may record empathy evidence without forcing a big trait jump
+
+## Scenario: Immediate Recall On Next Turn
+
+User then says:
+
+`Without asking me again, tell me my name and what product I am building.`
+
+What happens:
+
+1. the chat system clears memory cache
+2. fact memories are loaded first into prompt memory
+3. recent conversation memories are loaded after that
+4. the model sees canonical fact memory for:
+   - `User name is Riya`
+   - `User is building a tea subscription app`
+5. assistant responds using those facts
+
+Expected outcome:
+
+- much lower hallucination risk than transcript-only memory
+
+## Memory Console Workflow
+
+### List View
+
+1. UI calls `GET /api/agents/[id]/memories`
+2. filters are applied:
+   - query
+   - type
+   - origin
+   - minimum importance
+   - sort
+3. legacy `personality_insight` rows are excluded from normal console reads
+
+### Stats View
+
+1. UI calls `GET /api/agents/[id]/memories/stats`
+2. service calculates:
+   - total memories
+   - memories by type
+   - memories by origin
+   - average importance
+   - newest and oldest timestamps
+
+### Recall Query
+
+1. UI calls `POST /api/agents/[id]/memories/recall`
+2. service scores memories by:
+   - keyword overlap
+   - shared terms
+   - summary/content/context match
+   - importance
+   - fact-memory boost
+3. results return with match reasons
+
+### Delete
+
+1. UI calls `DELETE /api/agents/[id]/memories/[memoryId]`
+2. memory is soft-deleted
+3. `agents.memory_count` is updated
+4. the console refreshes
+
+## Profile Workflow
+
+### Evolution View
+
+1. UI calls `GET /api/agents/[id]/profile/evolution`
+2. response returns:
+   - core traits
+   - dynamic traits
+   - total interactions
+   - last trait update time
+   - recent evolution events
+
+### Psychological Profile View
+
+1. UI calls `GET /api/agents/[id]/profile`
+2. route checks whether the deep profile is older than the latest trait update
+3. response includes:
+   - profile document
+   - `stale`
+   - `lastTraitUpdateAt`
+
+### Regenerate
+
+1. UI calls `POST /api/agents/[id]/profile`
+2. profile is recomputed from current agent state
+3. embedded profile is updated
+4. stale badge clears
 
 ## Generate Agent Content
 
-1. Use the creative, dream, journal, or learning tabs on `/agents/[id]`.
+1. Use creative, dream, journal, or learning tabs on `/agents/[id]`.
 2. Rate limits are checked server-side.
-3. Generated output is persisted and reflected into agent counters and emotional state where applicable.
+3. Generated output is persisted.
+4. Related counters and emotional state may update depending on the feature.
 
 ## Run Multi-Agent Simulation
 

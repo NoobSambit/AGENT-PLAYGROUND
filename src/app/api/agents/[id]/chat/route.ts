@@ -39,6 +39,8 @@ export async function POST(
       userMessage: turn.userMessage,
       agentMessage: turn.agentMessage,
       agent: turn.agent,
+      changedDomains: turn.changedDomains,
+      staleDomains: turn.staleDomains,
       emotionSummary: turn.emotionSummary,
       reasoning: turn.response.reasoning,
       toolsUsed: turn.response.toolsUsed,

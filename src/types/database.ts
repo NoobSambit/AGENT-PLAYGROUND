@@ -267,19 +267,76 @@ export interface AgentRecord {
   }
 }
 
+export type MemoryType = 'conversation' | 'fact' | 'interaction' | 'personality_insight'
+export type MemoryOrigin = 'conversation' | 'tool' | 'manual' | 'system' | 'imported'
+
 export interface MemoryRecord {
   id: string
   agentId: string
-  type: 'conversation' | 'fact' | 'interaction' | 'personality_insight'
+  type: MemoryType
   content: string // The actual memory content
   summary: string // AI-generated summary for quick recall
   keywords: string[] // Array of keywords for relevance matching
   importance: number // 1-10 scale of how important this memory is
   context: string // Context where this memory was formed (e.g., "user complimented agent")
   timestamp: string // ISO timestamp
+  origin: MemoryOrigin
+  linkedMessageIds: string[]
   metadata?: Record<string, unknown> // Additional metadata (e.g., message IDs, interaction types)
   userId?: string // For multi-user support
   isActive: boolean // For soft delete functionality
+}
+
+export interface PersonalityTraitDelta {
+  trait: string
+  before?: number | null
+  after?: number | null
+  delta?: number | null
+  confidence?: number
+  score?: number
+  indicators?: string[]
+}
+
+export interface PersonalityEventRecord {
+  id: string
+  agentId: string
+  source: 'conversation' | 'migration' | 'manual' | 'system'
+  trigger: string
+  summary: string
+  traitDeltas: PersonalityTraitDelta[]
+  beforeTraits?: Record<string, number>
+  afterTraits?: Record<string, number>
+  linkedMessageIds: string[]
+  metadata?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface MemoryListQuery {
+  searchQuery?: string
+  type?: MemoryType | 'all'
+  origin?: MemoryOrigin | 'all'
+  minImportance?: number
+  sort?: 'newest' | 'oldest' | 'importance'
+  limit?: number
+  before?: string
+  beforeId?: string
+}
+
+export interface MemoryStatsSummary {
+  totalMemories: number
+  memoriesByType: Record<string, number>
+  memoriesByOrigin: Record<string, number>
+  averageImportance: number
+  highImportanceMemories: number
+  oldestMemory?: string
+  newestMemory?: string
+  lastSavedAt?: string
+}
+
+export interface MemoryRecallResult {
+  memory: MemoryRecord
+  score: number
+  reasons: string[]
 }
 
 export interface MessageRecord {
@@ -410,12 +467,14 @@ export interface UpdateAgentData {
 
 export interface CreateMemoryData {
   agentId: string
-  type: MemoryRecord['type']
+  type: MemoryType
   content: string
   summary: string
   keywords: string[]
   importance: number
   context: string
+  origin?: MemoryOrigin
+  linkedMessageIds?: string[]
   metadata?: Record<string, unknown>
   userId?: string
 }
@@ -426,6 +485,8 @@ export interface UpdateMemoryData {
   keywords?: string[]
   importance?: number
   context?: string
+  origin?: MemoryOrigin
+  linkedMessageIds?: string[]
   metadata?: Record<string, unknown>
   isActive?: boolean
 }

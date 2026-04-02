@@ -26,6 +26,7 @@ import type {
   MemoryRecord,
   Mentorship,
   MessageRecord,
+  PersonalityEventRecord,
   PsychologicalProfile,
   SharedKnowledge,
   SimulationRecord,
@@ -99,6 +100,8 @@ export const memories = pgTable('memories', {
   keywords: text('keywords').array().notNull().default(sql`'{}'::text[]`),
   importance: integer('importance').notNull(),
   context: text('context').notNull(),
+  origin: text('origin').notNull().default('imported'),
+  linkedMessageIds: text('linked_message_ids').array().notNull().default(sql`'{}'::text[]`),
   metadata: jsonb('metadata').$type<MemoryRecord['metadata'] | null>(),
   userId: text('user_id'),
   isActive: boolean('is_active').notNull().default(true),
@@ -106,6 +109,7 @@ export const memories = pgTable('memories', {
 }, (table) => [
   index('memories_agent_type_active_timestamp_idx').on(table.agentId, table.type, table.isActive, table.timestamp),
   index('memories_agent_active_timestamp_idx').on(table.agentId, table.isActive, table.timestamp),
+  index('memories_agent_origin_active_timestamp_idx').on(table.agentId, table.origin, table.isActive, table.timestamp),
 ])
 
 export const memoryGraphs = pgTable('memory_graphs', {
@@ -113,6 +117,23 @@ export const memoryGraphs = pgTable('memory_graphs', {
   payload: jsonb('payload').$type<MemoryGraph>().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull(),
 })
+
+export const agentPersonalityEvents = pgTable('agent_personality_events', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  source: text('source').notNull(),
+  trigger: text('trigger').notNull(),
+  summary: text('summary').notNull(),
+  traitDeltas: jsonb('trait_deltas').$type<PersonalityEventRecord['traitDeltas']>().notNull().default(sql`'[]'::jsonb`),
+  beforeTraits: jsonb('before_traits').$type<PersonalityEventRecord['beforeTraits'] | null>(),
+  afterTraits: jsonb('after_traits').$type<PersonalityEventRecord['afterTraits'] | null>(),
+  linkedMessageIds: text('linked_message_ids').array().notNull().default(sql`'{}'::text[]`),
+  metadata: jsonb('metadata').$type<PersonalityEventRecord['metadata'] | null>(),
+  createdAt,
+}, (table) => [
+  index('agent_personality_events_agent_created_idx').on(table.agentId, table.createdAt),
+  index('agent_personality_events_source_created_idx').on(table.source, table.createdAt),
+])
 
 export const agentRelationships = pgTable('agent_relationships', {
   id: text('id').primaryKey(),
@@ -332,6 +353,7 @@ export const schema = {
   messages,
   memories,
   memoryGraphs,
+  agentPersonalityEvents,
   agentRelationships,
   creativeWorks,
   dreams,

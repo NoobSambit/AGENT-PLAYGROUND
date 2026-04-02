@@ -9,6 +9,10 @@
 - `POST /api/agents/[id]/chat`
 - `GET /api/messages`
 - `POST /api/messages`
+- `GET /api/agents/[id]/memories`
+- `GET /api/agents/[id]/memories/stats`
+- `POST /api/agents/[id]/memories/recall`
+- `DELETE /api/agents/[id]/memories/[memoryId]`
 - `GET /api/memory`
 - `POST /api/memory`
 - `GET /api/agents/[id]/memory-graph`
@@ -20,6 +24,7 @@
 - `GET|POST /api/agents/[id]/journal`
 - `GET|POST /api/agents/[id]/learning`
 - `GET|POST /api/agents/[id]/profile`
+- `GET /api/agents/[id]/profile/evolution`
 
 ## Social And Network Routes
 
@@ -40,3 +45,6 @@
 - API shapes remain stable across persistence modes.
 - Dual-write behavior is hidden behind services and route helpers.
 - Counters and derived stats are updated server-side; clients should not compute them optimistically as source of truth.
+- `POST /api/agents/[id]/chat` now returns `changedDomains` and `staleDomains` so tabs can refresh selectively.
+- `GET /api/agents/[id]/memories` can now return canonical `fact` memories created from chat turns.
+- `POST /api/agents/[id]/memories/recall` returns mixed conversational and fact matches, with reasons that include canonical fact hits.

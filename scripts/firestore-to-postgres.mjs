@@ -418,6 +418,10 @@ function buildImportPlan(data) {
   ]
 }
 
+const CONFLICT_COLUMNS = {
+  memory_graphs: ['agent_id'],
+}
+
 async function main() {
   const exportData = await loadExportFile(inputPath)
   const importPlan = buildImportPlan(exportData)
@@ -432,12 +436,12 @@ async function main() {
   await withPgClient(async (client) => {
     await client.query('BEGIN')
 
-    try {
-      for (const [tableName, rows] of importPlan) {
-        for (const row of rows) {
-          await upsertRow(client, tableName, row)
+      try {
+        for (const [tableName, rows] of importPlan) {
+          for (const row of rows) {
+            await upsertRow(client, tableName, row, CONFLICT_COLUMNS[tableName] || ['id'])
+          }
         }
-      }
 
       await client.query('COMMIT')
     } catch (error) {

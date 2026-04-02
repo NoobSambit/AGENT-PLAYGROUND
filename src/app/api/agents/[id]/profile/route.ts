@@ -7,10 +7,25 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { AgentService } from '@/lib/services/agentService'
+import { PersonalityEventService } from '@/lib/services/personalityEventService'
 import { psychologicalProfileService } from '@/lib/services/psychologicalProfileService'
 
+async function getProfileFreshness(agentId: string, profileUpdatedAt?: string) {
+  const latestEvent = await PersonalityEventService.getLatestByAgent(agentId)
+  const lastTraitUpdateAt = latestEvent?.createdAt || null
+
+  return {
+    stale: Boolean(
+      profileUpdatedAt
+      && lastTraitUpdateAt
+      && new Date(lastTraitUpdateAt).getTime() > new Date(profileUpdatedAt).getTime()
+    ),
+    lastTraitUpdateAt,
+  }
+}
+
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -26,6 +41,7 @@ export async function GET(
 
     // Check if profile already exists
     if (agent.psychologicalProfile) {
+      const freshness = await getProfileFreshness(agentId, agent.psychologicalProfile.updatedAt)
       return NextResponse.json({
         profile: agent.psychologicalProfile,
         mbtiDescription: psychologicalProfileService.getMBTIDescription(
@@ -34,6 +50,7 @@ export async function GET(
         enneagramInfo: psychologicalProfileService.getEnneagramInfo(
           agent.psychologicalProfile.enneagram.primaryType
         ),
+        ...freshness,
       })
     }
 
@@ -44,11 +61,14 @@ export async function GET(
       psychologicalProfile: profile,
     })
 
+    const freshness = await getProfileFreshness(agentId, profile.updatedAt)
+
     return NextResponse.json({
       profile,
       mbtiDescription: psychologicalProfileService.getMBTIDescription(profile.mbti.type),
       enneagramInfo: psychologicalProfileService.getEnneagramInfo(profile.enneagram.primaryType),
       generated: true,
+      ...freshness,
     })
   } catch (error) {
     console.error('Profile API error:', error)
@@ -82,11 +102,14 @@ export async function POST(
       psychologicalProfile: profile,
     })
 
+    const freshness = await getProfileFreshness(agentId, profile.updatedAt)
+
     return NextResponse.json({
       success: true,
       profile,
       mbtiDescription: psychologicalProfileService.getMBTIDescription(profile.mbti.type),
       enneagramInfo: psychologicalProfileService.getEnneagramInfo(profile.enneagram.primaryType),
+      ...freshness,
     })
   } catch (error) {
     console.error('Profile generation error:', error)

@@ -1,6 +1,14 @@
 import { AgentService } from './agentService'
-import { MemoryService } from './memoryService'
-import { MemoryRecord, LinguisticProfile } from '@/types/database'
+import { PersonalityEventService } from './personalityEventService'
+import { AgentRecord, LinguisticProfile, PersonalityEventRecord } from '@/types/database'
+
+const STOP_WORDS = new Set([
+  'the', 'and', 'for', 'are', 'but', 'not', 'you', 'that', 'with', 'this', 'from',
+  'have', 'will', 'your', 'about', 'what', 'when', 'where', 'which', 'who', 'why',
+  'how', 'can', 'could', 'should', 'would', 'there', 'their', 'they', 'them', 'then',
+  'than', 'into', 'onto', 'here', 'just', 'like', 'some', 'more', 'most', 'much',
+  'been', 'being', 'also', 'able', 'make', 'made', 'does', 'did', 'done', 'want',
+])
 
 // Personality trait definitions with their evolution rules
 export const PERSONALITY_TRAITS = {
@@ -62,6 +70,7 @@ export interface TraitAnalysis {
 
 export interface PersonalityUpdate {
   agentId: string
+  previousTraitUpdates: Record<DynamicPersonalityTrait, TraitScore>
   traitUpdates: Record<DynamicPersonalityTrait, TraitScore>
   interactionCount: number
   analysis: TraitAnalysis[]
@@ -71,30 +80,62 @@ export interface PersonalityUpdate {
 export class PersonalityService {
   // Analyze a conversation and extract personality insights
   static async analyzeInteraction(
-    agentId: string,
+    _agentId: string,
     userMessage: string,
-    agentResponse: string,
-    context?: string
+    agentResponse: string
   ): Promise<TraitAnalysis[]> {
     try {
       const analyses: TraitAnalysis[] = []
+      const userText = userMessage.toLowerCase()
+      const responseText = agentResponse.toLowerCase()
+      const userKeywords = this.extractSignalWords(userText)
+      const responseKeywordMatches = userKeywords.filter((keyword) => responseText.includes(keyword))
+      const userNeedsSupport = /\b(stressed|overwhelmed|anxious|upset|frustrated|worried|help)\b/i.test(userMessage)
+      const responseShowsEmpathy = /\b(understand|sorry|that sounds|i hear|calm|together|support)\b/i.test(agentResponse)
+      const responseHasPlan = /\b(first|next|step|plan|let's|we can|here's|here are)\b/i.test(agentResponse)
+      const responseHasHedging = /\b(maybe|might|perhaps|not sure|unclear)\b/i.test(agentResponse)
+      const responseFailed = /\b(can't|cannot|unable|error|failed|don't know)\b/i.test(agentResponse)
+      const adaptationSignal = /\b(without asking|be brief|short answer|one line|bullet|step by step)\b/i.test(userMessage)
+      const responseAskedQuestion = agentResponse.includes('?')
 
-      // Analyze each dynamic trait (core traits are immutable)
-      const dynamicTraits: DynamicPersonalityTrait[] = ['confidence', 'knowledge', 'empathy', 'adaptability']
+      this.pushAnalysis(analyses, this.buildTraitAnalysis('empathy', {
+        score: userNeedsSupport && responseShowsEmpathy ? 0.76 : responseShowsEmpathy ? 0.64 : null,
+        confidence: userNeedsSupport && responseShowsEmpathy ? 0.68 : responseShowsEmpathy ? 0.42 : 0,
+        indicators: [
+          ...(userNeedsSupport ? ['user_vulnerable'] : []),
+          ...(responseShowsEmpathy ? ['supportive_response'] : []),
+        ],
+      }))
 
-      for (const trait of dynamicTraits) {
-        const traitDef = PERSONALITY_TRAITS[trait]
-        const analysis = await this.analyzeTrait(
-          trait,
-          traitDef,
-          userMessage,
-          agentResponse,
-          context
-        )
-        if (analysis) {
-          analyses.push(analysis)
-        }
-      }
+      this.pushAnalysis(analyses, this.buildTraitAnalysis('knowledge', {
+        score: responseHasPlan || responseKeywordMatches.length >= 2 ? 0.64 : responseFailed ? 0.36 : null,
+        confidence: responseHasPlan ? 0.52 : responseKeywordMatches.length >= 2 ? 0.46 : responseFailed ? 0.48 : 0,
+        indicators: [
+          ...(responseHasPlan ? ['structured_guidance'] : []),
+          ...responseKeywordMatches.slice(0, 3).map((keyword) => `retained:${keyword}`),
+          ...(responseFailed ? ['response_failure'] : []),
+        ],
+      }))
+
+      this.pushAnalysis(analyses, this.buildTraitAnalysis('confidence', {
+        score: responseFailed ? 0.34 : responseHasPlan && !responseHasHedging ? 0.66 : responseHasHedging ? 0.44 : null,
+        confidence: responseFailed ? 0.5 : responseHasPlan ? 0.46 : responseHasHedging ? 0.38 : 0,
+        indicators: [
+          ...(responseHasPlan ? ['clear_structure'] : []),
+          ...(responseHasHedging ? ['hedging_language'] : []),
+          ...(responseFailed ? ['explicit_failure'] : []),
+        ],
+      }))
+
+      this.pushAnalysis(analyses, this.buildTraitAnalysis('adaptability', {
+        score: adaptationSignal && !responseAskedQuestion ? 0.68 : responseKeywordMatches.length >= 2 ? 0.58 : null,
+        confidence: adaptationSignal && !responseAskedQuestion ? 0.56 : responseKeywordMatches.length >= 2 ? 0.34 : 0,
+        indicators: [
+          ...(adaptationSignal ? ['user_constraint_detected'] : []),
+          ...(adaptationSignal && !responseAskedQuestion ? ['constraint_respected'] : []),
+          ...(responseKeywordMatches.length >= 2 ? ['topic_alignment'] : []),
+        ],
+      }))
 
       return analyses
     } catch (error) {
@@ -103,117 +144,98 @@ export class PersonalityService {
     }
   }
 
-  // Analyze a specific trait based on conversation
-  private static async analyzeTrait(
-    trait: DynamicPersonalityTrait,
-    traitDef: typeof PERSONALITY_TRAITS[DynamicPersonalityTrait],
-    userMessage: string,
-    agentResponse: string,
-    context?: string
-  ): Promise<TraitAnalysis | null> {
-    const combinedText = `${userMessage} ${agentResponse} ${context || ''}`.toLowerCase()
-    const indicators: string[] = []
-
-    let positiveScore = 0
-    let negativeScore = 0
-
-    // Check for positive indicators
-    traitDef.positiveIndicators.forEach(indicator => {
-      if (combinedText.includes(indicator)) {
-        positiveScore += 1
-        indicators.push(`+${indicator}`)
-      }
-    })
-
-    // Check for negative indicators
-    traitDef.negativeIndicators.forEach(indicator => {
-      if (combinedText.includes(indicator)) {
-        negativeScore += 1
-        indicators.push(`-${indicator}`)
-      }
-    })
-
-    // Calculate trait score (0.0 to 1.0)
-    const totalIndicators = positiveScore + negativeScore
-    if (totalIndicators === 0) {
-      return null // No indicators found
-    }
-
-    const rawScore = Math.max(0, Math.min(1, positiveScore / (positiveScore + negativeScore)))
-    const confidence = Math.min(1, totalIndicators / 5) // More indicators = higher confidence
-
-    return {
-      trait,
-      score: Math.round(rawScore * 100) / 100, // Round to 2 decimal places
-      confidence,
-      indicators
+  private static pushAnalysis(analyses: TraitAnalysis[], analysis: TraitAnalysis | null) {
+    if (analysis) {
+      analyses.push(analysis)
     }
   }
 
+  private static buildTraitAnalysis(
+    trait: DynamicPersonalityTrait,
+    config: { score: number | null; confidence: number; indicators: string[] }
+  ): TraitAnalysis | null {
+    if (config.score === null || config.indicators.length === 0 || config.confidence < 0.28) {
+      return null
+    }
+
+    return {
+      trait,
+      score: Math.round(Math.max(0, Math.min(1, config.score)) * 100) / 100,
+      confidence: Math.round(Math.max(0, Math.min(1, config.confidence)) * 100) / 100,
+      indicators: config.indicators,
+    }
+  }
+
+  private static extractSignalWords(text: string): string[] {
+    return [...new Set(
+      text
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter((word) => word.length >= 4)
+        .filter((word) => !STOP_WORDS.has(word))
+    )].slice(0, 12)
+  }
+
   // Update agent personality traits based on analysis
-  static async updatePersonality(
-    agentId: string,
+  static preparePersonalityUpdate(
+    agent: AgentRecord,
     analyses: TraitAnalysis[]
-  ): Promise<PersonalityUpdate | null> {
+  ): PersonalityUpdate | null {
+    if (analyses.length === 0) {
+      return null
+    }
+
+    const previousTraitUpdates: Record<DynamicPersonalityTrait, TraitScore> = {
+      confidence: agent.dynamicTraits?.confidence || 0.5,
+      knowledge: agent.dynamicTraits?.knowledge || 0.5,
+      empathy: agent.dynamicTraits?.empathy || 0.5,
+      adaptability: agent.dynamicTraits?.adaptability || 0.5,
+    }
+
+    const traitUpdates: Record<DynamicPersonalityTrait, TraitScore> = {
+      ...previousTraitUpdates,
+    }
+    const currentInteractions = agent.totalInteractions || 0
+
+    analyses.forEach((analysis) => {
+      const currentScore = traitUpdates[analysis.trait] || 0.5
+      const updateWeight = analysis.confidence * 0.05
+      const newScore = currentScore + (analysis.score - currentScore) * updateWeight
+      traitUpdates[analysis.trait] = Math.max(0, Math.min(1, Math.round(newScore * 100) / 100))
+    })
+
+    return {
+      agentId: agent.id,
+      previousTraitUpdates,
+      traitUpdates,
+      interactionCount: currentInteractions + 1,
+      analysis: analyses,
+      summary: this.generatePersonalitySummary(previousTraitUpdates, traitUpdates, analyses),
+    }
+  }
+
+  static async updatePersonality(agentId: string, analyses: TraitAnalysis[]): Promise<PersonalityUpdate | null> {
     try {
       const agent = await AgentService.getAgentById(agentId)
       if (!agent) {
         return null
       }
 
-      const traitUpdates: Record<DynamicPersonalityTrait, TraitScore> = {
-        confidence: agent.dynamicTraits?.confidence || 0.5,
-        knowledge: agent.dynamicTraits?.knowledge || 0.5,
-        empathy: agent.dynamicTraits?.empathy || 0.5,
-        adaptability: agent.dynamicTraits?.adaptability || 0.5
+      const update = this.preparePersonalityUpdate(agent, analyses)
+      if (!update) {
+        return null
       }
-      const currentInteractions = agent.totalInteractions || 0
 
-      // Apply weighted updates based on analysis confidence
-      analyses.forEach(analysis => {
-        const currentScore = traitUpdates[analysis.trait] || 0.5
-        const updateWeight = analysis.confidence * 0.1 // Conservative updates (10% max per interaction)
-        const newScore = currentScore + (analysis.score - currentScore) * updateWeight
-        traitUpdates[analysis.trait] = Math.max(0, Math.min(1, Math.round(newScore * 100) / 100))
-      })
-
-      // Update agent in database
       const success = await AgentService.updateAgent(agentId, {
-        dynamicTraits: traitUpdates,
-        totalInteractions: currentInteractions + 1
+        dynamicTraits: update.traitUpdates,
+        totalInteractions: update.interactionCount,
       })
 
       if (!success) {
         return null
       }
 
-      // Create a memory of this personality insight
-      const summary = this.generatePersonalitySummary(analyses)
-      await MemoryService.createMemory({
-        agentId,
-        type: 'personality_insight',
-        content: `Personality analysis: ${analyses.map(a => `${a.trait}(${a.score})`).join(', ')}`,
-        summary,
-        keywords: analyses.map(a => a.trait),
-        importance: Math.round(analyses.reduce((sum, a) => sum + a.confidence, 0) / analyses.length * 10),
-        context: 'Automated personality evolution based on interaction analysis',
-        metadata: {
-          analyses: analyses.map(a => ({
-            trait: a.trait,
-            score: a.score,
-            confidence: a.confidence,
-            indicators: a.indicators
-          }))
-        }
-      })
-
-      return {
-        agentId,
-        traitUpdates,
-        interactionCount: currentInteractions + 1,
-        analysis: analyses,
-        summary
-      }
+      return update
     } catch (error) {
       console.error('Error updating personality:', error)
       return null
@@ -221,24 +243,48 @@ export class PersonalityService {
   }
 
   // Generate a human-readable summary of personality changes
-  private static generatePersonalitySummary(analyses: TraitAnalysis[]): string {
-    const significantChanges = analyses.filter(a => a.confidence > 0.5)
+  static generatePersonalitySummary(
+    previousTraitUpdates: Record<DynamicPersonalityTrait, TraitScore>,
+    traitUpdates: Record<DynamicPersonalityTrait, TraitScore>,
+    analyses: TraitAnalysis[]
+  ): string {
+    const significantChanges = analyses
+      .filter(a => a.confidence >= 0.45)
+      .map((analysis) => {
+        const before = previousTraitUpdates[analysis.trait]
+        const after = traitUpdates[analysis.trait]
+        const delta = Math.round((after - before) * 100) / 100
+
+        return {
+          trait: analysis.trait,
+          delta,
+        }
+      })
+      .filter((entry) => Math.abs(entry.delta) >= 0.01)
 
     if (significantChanges.length === 0) {
-      return 'No significant personality changes detected in this interaction.'
+      const evidenceTraits = analyses
+        .filter((analysis) => analysis.confidence >= 0.35)
+        .map((analysis) => analysis.trait)
+
+      if (evidenceTraits.length === 0) {
+        return 'Only small trait evidence was detected in this interaction.'
+      }
+
+      return `Trait evidence was observed for ${[...new Set(evidenceTraits)].join(', ')}, but scores stayed mostly steady.`
     }
 
-    const changes = significantChanges.map(a => {
-      const direction = a.score > 0.6 ? 'increased' : a.score < 0.4 ? 'decreased' : 'maintained'
-      return `${a.trait} ${direction}`
+    const changes = significantChanges.map((entry) => {
+      const direction = entry.delta > 0 ? 'increased' : 'decreased'
+      return `${entry.trait} ${direction}`
     })
 
     return `Personality evolved: ${changes.join(', ')} based on interaction patterns.`
   }
 
   // Get personality evolution history for an agent
-  static async getPersonalityHistory(agentId: string): Promise<MemoryRecord[]> {
-    return await MemoryService.getMemoriesByType(agentId, 'personality_insight')
+  static async getPersonalityHistory(agentId: string): Promise<PersonalityEventRecord[]> {
+    return PersonalityEventService.listByAgent(agentId)
   }
 
   // Generate initial personality traits for a new agent

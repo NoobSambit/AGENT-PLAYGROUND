@@ -7,6 +7,7 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - `agents`
 - `messages`
 - `memories`
+- `agent_personality_events`
 - `memory_graphs`
 - `agent_relationships`
 
@@ -39,6 +40,7 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - Keep nested, high-variance payloads in `jsonb`.
 - Keep query-critical fields typed and indexed beside the payload column.
 - Keep relationship pairs normalized to one row per sorted agent pair.
+- Store structured memory facts in `memories` as `type='fact'` rows, with canonical identifiers such as `factKey` and `factType` inside `metadata`.
 
 ## Detailed References
 
