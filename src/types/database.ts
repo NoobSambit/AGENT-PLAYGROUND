@@ -42,7 +42,6 @@ export type EmotionalEventSource =
   | 'journal_entry'
   | 'creative_generation'
   | 'dream_generation'
-  | 'achievement_unlock'
   | 'relationship_shift'
   | 'memory_recall'
   | 'legacy_reset'
@@ -81,45 +80,6 @@ export interface EmotionalEvent {
   metadata?: Record<string, unknown>
 }
 
-// ============================================
-// PHASE 1: Achievement System Types
-// ============================================
-
-export type AchievementRarity = 'common' | 'rare' | 'epic' | 'legendary'
-export type AchievementCategory = 'conversational' | 'knowledge' | 'personality' | 'relationship' | 'special'
-
-export interface AchievementRequirement {
-  type: 'count' | 'threshold' | 'combination'
-  metric: string
-  target: number
-  condition?: 'greater' | 'less' | 'equal'
-}
-
-export interface Achievement {
-  id: string
-  name: string
-  description: string
-  category: AchievementCategory
-  icon: string
-  rarity: AchievementRarity
-  requirement: AchievementRequirement
-  rewardXP: number
-}
-
-export interface UnlockedAchievement {
-  unlockedAt: string // ISO timestamp
-  progress?: number // For partial progress achievements
-}
-
-export interface AgentProgress {
-  level: number
-  experiencePoints: number
-  nextLevelXP: number
-  achievements: Record<string, UnlockedAchievement> // achievementId → unlock info
-  skillPoints: number
-  allocatedSkills: Record<string, number> // skill name → points allocated
-}
-
 export interface AgentStats {
   conversationCount: number
   totalMessages: number
@@ -150,7 +110,6 @@ export type TimelineEventType =
   | 'emotion'
   | 'relationship'
   | 'dream'
-  | 'achievement'
   | 'creative'
   | 'journal'
 
@@ -246,8 +205,6 @@ export interface AgentRecord {
   emotionalState?: EmotionalState
   emotionalHistory?: EmotionalEvent[] // Max 20 events
 
-  // Phase 1: Achievement System
-  progress?: AgentProgress
   stats?: AgentStats
 
   // Phase 2: Psychological Profile
@@ -449,7 +406,6 @@ export interface UpdateAgentData {
   emotionalProfile?: EmotionalProfile
   emotionalState?: EmotionalState
   emotionalHistory?: EmotionalEvent[]
-  progress?: AgentProgress
   stats?: AgentStats
   psychologicalProfile?: PsychologicalProfile
   relationshipCount?: number
@@ -855,9 +811,6 @@ export interface ChallengeTemplate {
   maxParticipants: number
 
   // Rewards
-  xpReward: number
-  achievementUnlock?: string // Achievement ID
-
   // Rules and prompts
   systemPrompt: string
   evaluationCriteria: string[]
@@ -902,10 +855,6 @@ export interface Challenge {
     participantScores: Record<string, number>
   }
 
-  // Rewards
-  xpAwarded: Record<string, number> // agentId → XP
-  achievementsUnlocked: string[]
-
   // Timestamps
   startedAt: string
   completedAt?: string
@@ -936,7 +885,7 @@ export interface ParallelReality {
     emotionalState: EmotionalState
     relationships: AgentRelationship[]
     recentMemories: string[] // Memory IDs
-    progress: AgentProgress
+    totalInteractions: number
   }
 
   // What-if scenario

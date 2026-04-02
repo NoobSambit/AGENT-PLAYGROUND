@@ -249,7 +249,7 @@ export default function AgentsPage() {
                 <div className="flex items-center justify-between pt-6 border-t border-border/40 text-[11px] text-muted-foreground uppercase font-medium tracking-widest">
                   <span>{agent.stats?.totalMessages || 0} Msgs</span>
                   <span>{agent.memoryCount || 0} Memories</span>
-                  <span className="text-primary group-hover:brightness-110 transition-all">Level {agent.progress?.level || 1}</span>
+                  <span className="text-primary group-hover:brightness-110 transition-all">{agent.totalInteractions || 0} Turns</span>
                 </div>
               </motion.div>
             ))}

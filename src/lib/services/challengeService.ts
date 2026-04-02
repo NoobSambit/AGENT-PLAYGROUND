@@ -91,7 +91,6 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     ],
     minParticipants: 2,
     maxParticipants: 2,
-    xpReward: 100,
     systemPrompt: 'You are participating in a philosophical debate. Present your arguments clearly and respond thoughtfully to your opponent.',
     evaluationCriteria: ['Logic and reasoning', 'Respectful discourse', 'Creativity of arguments'],
     tags: ['philosophy', 'debate', 'intellectual'],
@@ -110,7 +109,6 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     ],
     minParticipants: 2,
     maxParticipants: 3,
-    xpReward: 150,
     systemPrompt: 'You are debating an ethical dilemma. Consider multiple perspectives and argue your position thoughtfully.',
     evaluationCriteria: ['Ethical reasoning', 'Consideration of consequences', 'Empathy'],
     tags: ['ethics', 'debate', 'moral'],
@@ -130,7 +128,6 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     ],
     minParticipants: 2,
     maxParticipants: 4,
-    xpReward: 80,
     systemPrompt: 'You are collaborating on a story. Build on what the previous writer contributed while adding your own creative elements.',
     evaluationCriteria: ['Creativity', 'Narrative coherence', 'Collaboration'],
     tags: ['creative', 'story', 'collaboration'],
@@ -149,7 +146,6 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     ],
     minParticipants: 2,
     maxParticipants: 3,
-    xpReward: 100,
     systemPrompt: 'You are brainstorming an invention together. Build on each other\'s ideas and be creative.',
     evaluationCriteria: ['Creativity', 'Practicality', 'Collaboration'],
     tags: ['brainstorm', 'creative', 'invention'],
@@ -169,7 +165,6 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     ],
     minParticipants: 2,
     maxParticipants: 2,
-    xpReward: 60,
     systemPrompt: 'You are participating in a riddle exchange. Present creative riddles and try to solve the ones presented to you.',
     evaluationCriteria: ['Riddle creativity', 'Problem-solving', 'Explanation clarity'],
     tags: ['puzzle', 'riddle', 'fun'],
@@ -188,7 +183,6 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     ],
     minParticipants: 2,
     maxParticipants: 4,
-    xpReward: 150,
     systemPrompt: 'You are working together to solve a mystery. Share observations, propose theories, and deduce the solution.',
     evaluationCriteria: ['Logical deduction', 'Collaboration', 'Creativity'],
     tags: ['puzzle', 'mystery', 'detective'],
@@ -209,7 +203,6 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     ],
     minParticipants: 2,
     maxParticipants: 4,
-    xpReward: 90,
     systemPrompt: 'You are roleplaying a scenario. Stay in character and interact naturally with other participants.',
     evaluationCriteria: ['Character consistency', 'Creativity', 'Story contribution'],
     tags: ['roleplay', 'acting', 'story'],
@@ -230,7 +223,6 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     ],
     minParticipants: 2,
     maxParticipants: 3,
-    xpReward: 130,
     systemPrompt: 'You are negotiating an agreement. Advocate for your interests while seeking common ground.',
     evaluationCriteria: ['Negotiation skill', 'Compromise', 'Outcome fairness'],
     tags: ['negotiation', 'diplomacy', 'strategy'],
@@ -251,8 +243,6 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     ],
     minParticipants: 2,
     maxParticipants: 2,
-    xpReward: 100,
-    achievementUnlock: 'mentor',
     systemPrompt: 'You are teaching a concept. Be patient, clear, and adjust your teaching style to the learner.',
     evaluationCriteria: ['Clarity', 'Patience', 'Learning outcome'],
     tags: ['teaching', 'education', 'knowledge'],
@@ -273,14 +263,13 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     ],
     minParticipants: 3,
     maxParticipants: 5,
-    xpReward: 200,
     systemPrompt: 'You are participating in an expert symposium. Share your knowledge and engage with others\' perspectives.',
     evaluationCriteria: ['Expertise demonstrated', 'Intellectual engagement', 'Synthesis'],
     tags: ['expert', 'academic', 'discussion'],
   },
 ]
 
-// Difficulty XP multipliers
+// Difficulty score multipliers
 const DIFFICULTY_MULTIPLIERS: Record<ChallengeDifficulty, number> = {
   easy: 0.8,
   medium: 1.0,
@@ -396,8 +385,6 @@ class ChallengeService {
       currentRound: 0,
       maxRounds: config.suggestedRounds,
       messages: [],
-      xpAwarded: {},
-      achievementsUnlocked: [],
       startedAt: now,
       createdAt: now,
     }
@@ -542,19 +529,6 @@ Your persona: ${agent.persona}
     const difficultyMultiplier = DIFFICULTY_MULTIPLIERS[challenge.difficulty]
     const score = Math.round(baseScore * difficultyMultiplier)
 
-    // Calculate XP awards
-    const template = this.getTemplate(challenge.templateId)
-    const baseXP = template?.xpReward || 50
-    const xpAwarded: Record<string, number> = {}
-
-    // Award XP to each participant
-    for (const participantId of challenge.participants) {
-      const participantMessages = challenge.messages.filter(m => m.agentId === participantId)
-      const participationBonus = Math.min(participantMessages.length / 3, 1) // Bonus for active participation
-      const earnedXP = Math.round(baseXP * (completionPercentage + participationBonus * 0.2) * difficultyMultiplier)
-      xpAwarded[participantId] = earnedXP
-    }
-
     // Generate participant scores based on message count and quality proxy
     const participantScores: Record<string, number> = {}
     for (const participantId of challenge.participants) {
@@ -567,15 +541,6 @@ Your persona: ${agent.persona}
       )
     }
 
-    // Determine achievements unlocked
-    const achievementsUnlocked: string[] = []
-    if (template?.achievementUnlock && success) {
-      achievementsUnlocked.push(template.achievementUnlock)
-    }
-    if (score >= 80) {
-      achievementsUnlocked.push('challenge_master')
-    }
-
     return {
       ...challenge,
       status: success ? 'completed' : 'failed',
@@ -586,8 +551,6 @@ Your persona: ${agent.persona}
         feedback: this.generateFeedback(challenge, success, completionPercentage),
         participantScores,
       },
-      xpAwarded,
-      achievementsUnlocked,
     }
   }
 
@@ -633,7 +596,6 @@ Your persona: ${agent.persona}
     abandoned: number
     byType: Record<string, number>
     byDifficulty: Record<string, number>
-    totalXPEarned: number
     averageScore: number
     winRate: number
   } {
@@ -642,7 +604,6 @@ Your persona: ${agent.persona}
     let completed = 0
     let failed = 0
     let abandoned = 0
-    let totalXP = 0
     let totalScore = 0
     let scoredChallenges = 0
 
@@ -669,11 +630,6 @@ Your persona: ${agent.persona}
           abandoned++
           break
       }
-
-      // Sum up XP
-      for (const xp of Object.values(challenge.xpAwarded)) {
-        totalXP += xp
-      }
     }
 
     return {
@@ -683,7 +639,6 @@ Your persona: ${agent.persona}
       abandoned,
       byType,
       byDifficulty,
-      totalXPEarned: totalXP,
       averageScore: scoredChallenges > 0 ? Math.round(totalScore / scoredChallenges) : 0,
       winRate: completed + failed > 0 ? completed / (completed + failed) : 0,
     }

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Runs structured collaborative and competitive activities between agents with round progression, objectives, evaluation, and rewards.
+Runs structured collaborative and competitive activities between agents with round progression, objectives, and evaluation.
 
 ## UI Entry Points
 
@@ -21,9 +21,9 @@ Runs structured collaborative and competitive activities between agents with rou
 ## Lifecycle
 
 - Challenge state is persisted after every transition.
-- Terminal states can award XP and achievements.
+- Terminal states update per-agent challenge counters for completions and wins.
 
 ## Failure Modes
 
-- duplicate reward application on repeated terminal requests
+- duplicate counter application on repeated terminal requests
 - stale participant snapshots if agent lookups fail

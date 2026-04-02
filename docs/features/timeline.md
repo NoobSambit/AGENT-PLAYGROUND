@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provides inspectability across messages, memories, relationships, dreams, journals, and achievements.
+Provides inspectability across messages, memories, relationships, dreams, journals, and emotional changes.
 
 ## UI Entry Points
 

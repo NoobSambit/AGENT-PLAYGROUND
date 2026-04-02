@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
 import { MemoryRecord, MessageRecord, AgentRecord, AgentRelationship } from '@/types/database'
-import { ArrowLeft, Send, User, MessageCircle, Brain, TrendingUp, Calendar, Star, Award, Heart, Clock, Palette, Moon, BookOpen, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles } from 'lucide-react'
+import { ArrowLeft, Send, User, MessageCircle, Brain, TrendingUp, Calendar, Heart, Clock, Palette, Moon, BookOpen, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles } from 'lucide-react'
 import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { motion } from 'framer-motion'
 import { GradientOrb } from '@/components/ui/animated-background'
@@ -17,8 +17,6 @@ import { MetaLearningState, SkillProgression } from '@/types/metaLearning'
 // Phase 1 Components
 import { EmotionRadar, EmotionBars } from '@/components/emotions/EmotionRadar'
 import { EmotionTimeline } from '@/components/emotions/EmotionTimeline'
-import { AchievementCard, LevelProgress } from '@/components/achievements/AchievementBadge'
-import { AchievementNotification, useAchievementNotifications } from '@/components/achievements/AchievementNotification'
 import { TimelineExplorer } from '@/components/timeline/TimelineExplorer'
 
 // Phase 2 Components
@@ -47,19 +45,17 @@ import { getClientModelForProvider, LLM_PROVIDER_LABELS } from '@/lib/llm/client
 import { useLLMPreferenceStore } from '@/stores/llmPreferenceStore'
 
 // Phase 1 Services
+import { agentStatsService } from '@/lib/services/agentStatsService'
 import { emotionalService } from '@/lib/services/emotionalService'
-import { achievementService } from '@/lib/services/achievementService'
 import { timelineService } from '@/lib/services/timelineService'
 import { futurePlanningService, FuturePlan } from '@/lib/services/futurePlanningService'
 import { parallelRealityService, ParallelRealityExtended } from '@/lib/services/parallelRealityService'
-import { ACHIEVEMENTS } from '@/lib/constants/achievements'
 
 type TabType =
   | 'chat'
   | 'memory'
   | 'emotions'
   | 'neural'
-  | 'achievements'
   | 'timeline'
   | 'relationships'
   | 'learning'
@@ -97,7 +93,6 @@ const TAB_CONFIG = [
   { id: 'chat', icon: MessageCircle, label: 'Chat', description: 'Direct conversations and model responses.' },
   { id: 'emotions', icon: Heart, label: 'Emotions', description: 'Current emotional signals and recent shifts.' },
   { id: 'neural', icon: Brain, label: 'Neural', description: 'Live thought flow, attention, and emotional activity.' },
-  { id: 'achievements', icon: Award, label: 'Achievements', description: 'Progression, levels, and earned milestones.' },
   { id: 'timeline', icon: Clock, label: 'Timeline', description: 'A chronological view of important events.' },
   { id: 'memory', icon: Brain, label: 'Memory', description: 'Stored memories, trait evolution, and retention stats.' },
   { id: 'relationships', icon: Users, label: 'Relationships', description: 'Trust, bonds, and long-term social state.' },
@@ -148,15 +143,11 @@ export default function AgentDetail() {
   const [profileRefreshToken, setProfileRefreshToken] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Phase 1: Achievement notifications
-  const { current: currentAchievement, handleClose: handleAchievementClose } = useAchievementNotifications()
-
   // Phase 1: Timeline events (generated from memories and messages)
   const [timelineEvents, setTimelineEvents] = useState<ReturnType<typeof timelineService.aggregateEvents> extends Promise<infer T> ? T : never>([])
 
-  // Get agent progress and stats with defaults
-  const agentProgress = currentAgent?.progress || achievementService.createDefaultProgress()
-  const agentStats = currentAgent?.stats || achievementService.createDefaultStats()
+  // Get agent stats with defaults
+  const agentStats = currentAgent?.stats || agentStatsService.createDefaultStats()
   const agentEmotionalProfile = currentAgent?.emotionalProfile || emotionalService.createEmotionalProfile(currentAgent?.coreTraits)
   const agentEmotionalState = currentAgent?.emotionalState || emotionalService.createDefaultEmotionalState()
   const agentEmotionalHistory = currentAgent?.emotionalHistory || []
@@ -738,31 +729,6 @@ export default function AgentDetail() {
                 </div>
               </CardContent>
             </div>
-
-            {/* Phase 1: Level Progress */}
-            <div className="p-6 rounded-sm premium-card">
-              <CardHeader className="space-y-4 p-0 pb-4">
-                <CardTitle className="flex items-center gap-3 text-xl">
-                  <div className="icon-container icon-container-amber">
-                    <Award className="h-5 w-5" />
-                  </div>
-                  Level & Progress
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <LevelProgress
-                  level={agentProgress.level}
-                  xp={agentProgress.experiencePoints}
-                  nextLevelXP={agentProgress.nextLevelXP}
-                  progressPercent={achievementService.getLevelInfo(agentProgress).progressPercent}
-                  skillPoints={agentProgress.skillPoints}
-                />
-                <div className="mt-4 text-center text-sm text-muted-foreground">
-                  {Object.keys(agentProgress.achievements).length} / {ACHIEVEMENTS.length} achievements
-                </div>
-              </CardContent>
-            </div>
-
             {/* Phase 1: Emotion Mini Display */}
             <div className="p-6 rounded-sm premium-card">
               <CardHeader className="space-y-4 p-0 pb-4">
@@ -1208,83 +1174,6 @@ export default function AgentDetail() {
                   <NeuralActivityView agentId={currentAgent.id} />
                 </CardContent>
               </Card>
-            ) : activeTab === 'achievements' ? (
-              /* Achievements Tab */
-              <div className="space-y-6">
-                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                  <CardHeader className="space-y-4">
-                    <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-sm bg-amber-500/10">
-                        <Award className="h-6 w-6 text-amber-500" />
-                      </div>
-                      Level Progress
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <LevelProgress
-                      level={agentProgress.level}
-                      xp={agentProgress.experiencePoints}
-                      nextLevelXP={agentProgress.nextLevelXP}
-                      progressPercent={achievementService.getLevelInfo(agentProgress).progressPercent}
-                      skillPoints={agentProgress.skillPoints}
-                    />
-                  </CardContent>
-                </Card>
-
-                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                  <CardHeader className="space-y-4">
-                    <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-sm bg-green-500/10">
-                        <Star className="h-6 w-6 text-green-500" />
-                      </div>
-                      Unlocked Achievements ({Object.keys(agentProgress.achievements).length})
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {Object.keys(agentProgress.achievements).length === 0 ? (
-                      <div className="text-center py-8 text-muted-foreground">
-                        No achievements unlocked yet. Keep interacting to unlock achievements!
-                      </div>
-                    ) : (
-                      <div className="grid gap-4">
-                        {achievementService.getUnlockedAchievements(agentProgress).map(achievement => (
-                          <AchievementCard
-                            key={achievement.id}
-                            achievement={achievement}
-                            unlocked={true}
-                            unlockedAt={achievement.unlockedAt}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                  <CardHeader className="space-y-4">
-                    <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-sm bg-gray-500/10">
-                        <Award className="h-6 w-6 text-gray-500" />
-                      </div>
-                      Available Achievements
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-4 max-h-96 overflow-y-auto">
-                      {achievementService.getLockedAchievements(agentProgress, agentStats)
-                        .slice(0, 10)
-                        .map(achievement => (
-                          <AchievementCard
-                            key={achievement.id}
-                            achievement={achievement}
-                            unlocked={false}
-                            progress={achievement.progress}
-                          />
-                        ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
             ) : activeTab === 'timeline' ? (
               /* Timeline Tab */
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
@@ -1445,7 +1334,7 @@ export default function AgentDetail() {
                     Parallel Realities
                   </CardTitle>
                   <CardDescription>
-                    Explore what-if branches using emotional, social, and progress data from the live agent
+                    Explore what-if branches using emotional, social, memory, and interaction data from the live agent
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -1648,11 +1537,6 @@ export default function AgentDetail() {
         </div>
       </div>
 
-      {/* Achievement Notification */}
-      <AchievementNotification
-        achievement={currentAchievement}
-        onClose={handleAchievementClose}
-      />
     </div>
   )
 }

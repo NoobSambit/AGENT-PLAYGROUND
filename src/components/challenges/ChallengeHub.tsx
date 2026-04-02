@@ -54,7 +54,7 @@ export function ChallengeHub({ currentAgentId, agents }: ChallengeHubProps) {
     totalChallenges: number
     completed: number
     winRate: number
-    totalXPEarned: number
+    averageScore: number
   } | null>(null)
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
@@ -248,9 +248,9 @@ export function ChallengeHub({ currentAgentId, agents }: ChallengeHubProps) {
             icon="🏆"
           />
           <StatCard
-            label="XP Earned"
-            value={stats.totalXPEarned}
-            icon="⭐"
+            label="Avg Score"
+            value={stats.averageScore}
+            icon="📊"
           />
         </div>
       )}
@@ -347,9 +347,6 @@ export function ChallengeHub({ currentAgentId, agents }: ChallengeHubProps) {
                         </span>
                         <span className="text-xs text-gray-500">
                           {template.minParticipants}-{template.maxParticipants} agents
-                        </span>
-                        <span className="text-xs text-yellow-400">
-                          +{template.xpReward} XP
                         </span>
                       </div>
                     </button>

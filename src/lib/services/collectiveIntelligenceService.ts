@@ -182,7 +182,7 @@ export class CollectiveIntelligenceService {
 
         score += Math.min((agent.stats?.uniqueTopics?.length || 0) * 0.02, 0.4)
         score += Math.min((agent.dynamicTraits?.knowledge || 0) * 0.6, 0.6)
-        score += Math.min((agent.progress?.level || 1) * 0.03, 0.45)
+        score += Math.min((agent.totalInteractions || 0) * 0.005, 0.35)
 
         const reasoning = supportingKnowledgeIds.length > 0
           ? `${agent.name} has ${supportingKnowledgeIds.length} matching knowledge contribution(s) related to this query.`

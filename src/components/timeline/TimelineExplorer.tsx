@@ -33,7 +33,6 @@ const EVENT_TYPE_LABELS: Record<TimelineEventType, string> = {
   emotion: 'Emotions',
   relationship: 'Relationships',
   dream: 'Dreams',
-  achievement: 'Achievements',
   creative: 'Creative Works',
   journal: 'Journal Entries'
 }

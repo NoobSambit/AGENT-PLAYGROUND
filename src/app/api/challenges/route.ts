@@ -107,14 +107,8 @@ async function applyCompletedChallengeRewards(previous: Challenge, next: Challen
   }
 
   for (const participantId of next.participants) {
-    const xpAwarded = next.xpAwarded[participantId] || 0
-    const participantScore = next.evaluation?.participantScores?.[participantId] || 0
-    const challengeAchievementIds = participantScore > 0 ? next.achievementsUnlocked : []
-
     await agentProgressService.applyChallengeOutcome(
       participantId,
-      xpAwarded,
-      challengeAchievementIds,
       next.status === 'completed'
     )
   }

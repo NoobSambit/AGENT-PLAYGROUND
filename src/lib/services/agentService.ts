@@ -17,7 +17,7 @@ import { generateId } from '@/lib/db/utils'
 import { runMirroredWrite } from '@/lib/persistence/writeMirror'
 import { AgentRecord, CreateAgentData, UpdateAgentData } from '@/types/database'
 import { PersonalityService } from './personalityService'
-import { achievementService } from './achievementService'
+import { agentStatsService } from './agentStatsService'
 import { emotionalService } from './emotionalService'
 import { psychologicalProfileService } from './psychologicalProfileService'
 
@@ -89,7 +89,6 @@ function firestoreDocToAgent(docSnap: { id: string; data: () => Record<string, u
     emotionalProfile: normalizedEmotion.emotionalProfile,
     emotionalState: normalizedEmotion.emotionalState,
     emotionalHistory: normalizedEmotion.emotionalHistory,
-    progress: data.progress as AgentRecord['progress'],
     stats: data.stats as AgentRecord['stats'],
     psychologicalProfile: data.psychologicalProfile as AgentRecord['psychologicalProfile'],
     relationshipCount: data.relationshipCount as number || 0,
@@ -120,7 +119,6 @@ function agentToFirestoreDoc(agent: AgentRecord): Record<string, unknown> {
     emotionalProfile: agent.emotionalProfile,
     emotionalState: agent.emotionalState,
     emotionalHistory: agent.emotionalHistory,
-    progress: agent.progress,
     stats: agent.stats,
     psychologicalProfile: agent.psychologicalProfile,
     relationshipCount: agent.relationshipCount,
@@ -148,7 +146,6 @@ function agentUpdatesToFirestoreDoc(agent: UpdateAgentData): Partial<Record<stri
     emotionalProfile: agent.emotionalProfile,
     emotionalState: agent.emotionalState,
     emotionalHistory: agent.emotionalHistory,
-    progress: agent.progress,
     stats: agent.stats,
     psychologicalProfile: agent.psychologicalProfile,
     relationshipCount: agent.relationshipCount,
@@ -246,8 +243,7 @@ export class AgentService {
       )
       const emotionalProfile = emotionalService.generateProfileFromTraits(personality.coreTraits)
       const emotionalState = emotionalService.createDormantEmotionalState()
-      const progress = achievementService.createDefaultProgress()
-      const stats = achievementService.createDefaultStats()
+      const stats = agentStatsService.createDefaultStats()
 
       const baseAgent: AgentRecord = {
         id,
@@ -267,7 +263,6 @@ export class AgentService {
         emotionalProfile,
         emotionalState,
         emotionalHistory: [],
-        progress,
         stats,
         relationshipCount: 0,
         creativeWorks: 0,

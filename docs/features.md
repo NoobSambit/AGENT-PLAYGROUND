@@ -6,7 +6,6 @@ Each feature has its own document under [`docs/features/`](./features/).
 - [`chat.md`](./features/chat.md)
 - [`memory.md`](./features/memory.md)
 - [`emotions.md`](./features/emotions.md)
-- [`achievements.md`](./features/achievements.md)
 - [`timeline.md`](./features/timeline.md)
 - [`relationships.md`](./features/relationships.md)
 - [`learning.md`](./features/learning.md)

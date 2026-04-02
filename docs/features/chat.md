@@ -21,7 +21,7 @@ Handles single-agent conversation turns, provider orchestration, message persist
 ## Lifecycle
 
 - User and agent messages are written.
-- Emotional state, progression, and counters are updated after the turn.
+- Emotional state, counters, and interaction totals are updated after the turn.
 
 ## Failure Modes
 

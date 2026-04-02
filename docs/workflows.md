@@ -16,7 +16,6 @@ The goal is to describe what actually happens across UI, route, service, and dat
    - linguistic profile
    - emotional profile
    - dormant emotional state
-   - progress defaults
    - stats defaults
    - psychological profile
 4. The agent record is persisted.
@@ -50,7 +49,7 @@ This is the most important workflow for the refactored system because chat is no
    - generates the assistant response
    - evaluates the emotional effect of the response
    - stores the assistant message
-   - updates stats and progress
+   - updates stats and total interaction counters
    - writes conversation memory
    - extracts and upserts fact memories
    - analyzes trait evidence
@@ -63,7 +62,6 @@ This is the most important workflow for the refactored system because chat is no
 - `agents.emotional_state`
 - `agents.emotional_history`
 - `agents.stats`
-- `agents.progress`
 - `agents.total_interactions`
 
 ### What May Also Update

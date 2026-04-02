@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Creates and maintains the canonical agent record: identity, persona, goals, traits, counters, progression, and profile state.
+Creates and maintains the canonical agent record: identity, persona, goals, traits, counters, and profile state.
 
 ## UI Entry Points
 

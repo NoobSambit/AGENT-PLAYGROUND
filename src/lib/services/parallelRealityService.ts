@@ -84,7 +84,7 @@ export interface BranchNode {
   snapshot: {
     emotionalState: EmotionalState
     relationships: AgentRelationship[]
-    progressLevel: number
+    interactionCount: number
     memoryCount: number
   }
 
@@ -249,7 +249,7 @@ export class ParallelRealityService {
       snapshot: {
         emotionalState: agent.emotionalState || this.createDefaultEmotionalState(),
         relationships: [], // Would be loaded from DB
-        progressLevel: agent.progress?.level || 1,
+        interactionCount: agent.totalInteractions || 0,
         memoryCount: agent.memoryCount || 0
       },
       branchReason: scenario.title,
@@ -296,14 +296,10 @@ export class ParallelRealityService {
           break
 
         case 'goal_result':
-          // Flip goal success/failure impact
-          if (originalState.progress) {
-            const xpModifier = variable.alteredValue === 'opposite' ? -1 : 1
-            divergentState.progress = {
-              ...originalState.progress,
-              experiencePoints: originalState.progress.experiencePoints + (50 * xpModifier)
-            }
-          }
+          divergentState.totalInteractions = Math.max(
+            0,
+            (originalState.totalInteractions || 0) + (variable.alteredValue === 'opposite' ? -1 : 1)
+          )
           break
       }
     }
@@ -558,14 +554,7 @@ export class ParallelRealityService {
         emotionalState: divergentState.emotionalState || agent.emotionalState || this.createDefaultEmotionalState(),
         relationships: [],
         recentMemories: [],
-        progress: divergentState.progress || agent.progress || {
-          level: 1,
-          experiencePoints: 0,
-          nextLevelXP: 100,
-          achievements: {},
-          skillPoints: 0,
-          allocatedSkills: {}
-        }
+        totalInteractions: divergentState.totalInteractions ?? agent.totalInteractions ?? 0,
       },
       scenario: {
         description: scenario.description,

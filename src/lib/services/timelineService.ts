@@ -21,7 +21,6 @@ export const EVENT_TYPE_ICONS: Record<TimelineEventType, string> = {
   emotion: '❤️',
   relationship: '👥',
   dream: '🌙',
-  achievement: '🏆',
   creative: '🎨',
   journal: '📝'
 }
@@ -33,7 +32,6 @@ export const EVENT_TYPE_COLORS: Record<TimelineEventType, string> = {
   emotion: '#EC4899',      // Pink
   relationship: '#10B981', // Green
   dream: '#6366F1',        // Indigo
-  achievement: '#F59E0B',  // Amber
   creative: '#F97316',     // Orange
   journal: '#64748B'       // Slate
 }
@@ -68,12 +66,6 @@ export class TimelineService {
     if (agent.emotionalHistory) {
       const emotionalEvents = this.convertEmotionalEventsToTimeline(agent.id, agent.emotionalHistory)
       events.push(...emotionalEvents)
-    }
-
-    // Add achievement events from progress
-    if (agent.progress?.achievements) {
-      const achievementEvents = this.convertAchievementsToEvents(agent.id, agent.progress.achievements)
-      events.push(...achievementEvents)
     }
 
     // Sort by timestamp
@@ -180,27 +172,6 @@ export class TimelineService {
       importance: Math.ceil(event.intensity * 10),
       metadata: {
         topics: [event.emotion, event.trigger]
-      }
-    }))
-  }
-
-  /**
-   * Convert achievements to timeline events
-   */
-  private convertAchievementsToEvents(
-    agentId: string,
-    achievements: Record<string, { unlockedAt: string; progress?: number }>
-  ): TimelineEvent[] {
-    return Object.entries(achievements).map(([achievementId, data]) => ({
-      id: `ach-${achievementId}`,
-      agentId,
-      type: 'achievement' as TimelineEventType,
-      title: `Achievement: ${this.formatAchievementName(achievementId)}`,
-      description: `Unlocked achievement "${achievementId}"`,
-      timestamp: data.unlockedAt,
-      importance: 8, // Achievements are important events
-      metadata: {
-        topics: ['achievement', achievementId]
       }
     }))
   }
@@ -361,7 +332,6 @@ export class TimelineService {
       emotion: 0,
       relationship: 0,
       dream: 0,
-      achievement: 0,
       creative: 0,
       journal: 0
     }
@@ -476,12 +446,6 @@ export class TimelineService {
 
   private capitalizeFirst(str: string): string {
     return str.charAt(0).toUpperCase() + str.slice(1)
-  }
-
-  private formatAchievementName(id: string): string {
-    return id.split('_').map(word =>
-      word.charAt(0).toUpperCase() + word.slice(1)
-    ).join(' ')
   }
 }
 

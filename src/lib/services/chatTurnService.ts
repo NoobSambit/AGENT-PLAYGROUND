@@ -2,14 +2,13 @@ import type { LLMProviderInfo } from '@/lib/llmConfig'
 import { type LLMConfig } from '@/lib/langchain/baseChain'
 import { AgentChain, type AgentResponse } from '@/lib/langchain/agentChain'
 import {
-  AgentProgress,
   AgentRecord,
   AgentStats,
   MessageRecord,
   type CreateMessageData,
 } from '@/types/database'
-import { achievementService } from './achievementService'
 import { AgentService } from './agentService'
+import { agentStatsService } from './agentStatsService'
 import { emotionalService } from './emotionalService'
 import { MemoryService } from './memoryService'
 import { MessageService } from './messageService'
@@ -57,22 +56,7 @@ function isLikelyQuestion(text: string): boolean {
 }
 
 function normalizeStats(stats?: AgentStats): AgentStats {
-  const base = achievementService.createDefaultStats()
-  return {
-    ...base,
-    ...stats,
-    uniqueTopics: [...(stats?.uniqueTopics || [])],
-  }
-}
-
-function normalizeProgress(progress?: AgentProgress): AgentProgress {
-  const base = achievementService.createDefaultProgress()
-  return {
-    ...base,
-    ...progress,
-    achievements: { ...(progress?.achievements || {}) },
-    allocatedSkills: { ...(progress?.allocatedSkills || {}) },
-  }
+  return agentStatsService.normalizeStats(stats)
 }
 
 export interface ChatTurnParams {
@@ -185,7 +169,6 @@ export class ChatTurnService {
       response.response,
       finalizedEmotion.events.length
     )
-    const updatedProgress = this.updateProgressForTurn(agent, updatedStats)
     const nextInteractionCount = (agent.totalInteractions || 0) + 1
     const personalityUpdate = response.personalityAnalyses?.length
       ? PersonalityService.preparePersonalityUpdate(agent, response.personalityAnalyses)
@@ -196,7 +179,6 @@ export class ChatTurnService {
       emotionalState: finalizedEmotion.emotionalState,
       emotionalHistory: finalizedEmotion.emotionalHistory,
       stats: updatedStats,
-      progress: updatedProgress,
       dynamicTraits: personalityUpdate?.traitUpdates,
       totalInteractions: personalityUpdate?.interactionCount ?? nextInteractionCount,
     })
@@ -291,7 +273,7 @@ export class ChatTurnService {
     const previousLastActive = baseStats.lastActiveDate
     const today = new Date().toISOString().split('T')[0]
 
-    let stats = achievementService.updateStatsFromInteraction(baseStats, {
+    let stats = agentStatsService.updateStatsFromInteraction(baseStats, {
       messageContent: userPrompt,
       isUserMessage: true,
       topics: extractTopicsFromText(userPrompt),
@@ -300,32 +282,17 @@ export class ChatTurnService {
     })
 
     if (!hadMessages || previousLastActive !== today) {
-      stats = achievementService.startConversation(stats)
+      stats = agentStatsService.startConversation(stats)
     }
 
-    stats = achievementService.updateStatsFromInteraction(stats, {
+    stats = agentStatsService.updateStatsFromInteraction(stats, {
       messageContent: agentResponse,
       isUserMessage: false,
       topics: extractTopicsFromText(agentResponse),
       isHelpful: agentResponse.trim().length >= 40,
     })
 
-    return achievementService.updateLongestConversation(stats, stats.totalMessages)
-  }
-
-  private updateProgressForTurn(agent: AgentRecord, stats: AgentStats): AgentProgress {
-    const progress = normalizeProgress(agent.progress)
-    const unlocked = achievementService.checkAchievements({
-      ...agent,
-      stats,
-      progress,
-    })
-
-    if (unlocked.length === 0) {
-      return progress
-    }
-
-    return achievementService.unlockAchievements(progress, unlocked).progress
+    return agentStatsService.updateLongestConversation(stats, stats.totalMessages)
   }
 
   private generateConversationMemorySummary(input: string, output: string): string {

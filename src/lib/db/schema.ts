@@ -11,7 +11,6 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
 import type {
-  AgentProgress,
   AgentRecord,
   AgentRelationship,
   AgentStats,
@@ -58,7 +57,6 @@ export const agents = pgTable('agents', {
   emotionalProfile: jsonb('emotional_profile').$type<EmotionalProfile | null>(),
   emotionalState: jsonb('emotional_state').$type<EmotionalState | null>(),
   emotionalHistory: jsonb('emotional_history').$type<EmotionalEvent[]>().notNull().default(sql`'[]'::jsonb`),
-  progress: jsonb('progress').$type<AgentProgress | null>(),
   stats: jsonb('stats').$type<AgentStats | null>(),
   psychologicalProfile: jsonb('psychological_profile').$type<PsychologicalProfile | null>(),
   relationshipCount: integer('relationship_count').notNull().default(0),
