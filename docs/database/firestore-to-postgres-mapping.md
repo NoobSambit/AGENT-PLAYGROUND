@@ -23,6 +23,7 @@
 - `agents/{id}/learning_goals` -> `learning_goals`
 - `agents/{id}/learning_adaptations` -> `learning_adaptations`
 - `agents/{id}/learning_events` -> `learning_events`
+- `agents/{id}/learning_observations` -> `learning_observations`
 - `agents/{id}/skill_progressions` -> `skill_progressions`
 - `agents/{id}/rate_limits` -> `agent_rate_limits`
 

@@ -37,7 +37,6 @@ These updates should happen through the normal action response and local store u
 These areas are heavier and may trigger extra model work or more expensive aggregation:
 
 - learning synthesis
-- planning
 - scenarios
 - mentorship summaries
 - knowledge graph views
@@ -58,7 +57,7 @@ Example:
 ```json
 {
   "changed": ["chat", "emotion", "stats"],
-  "stale": ["timeline", "learning", "planning"]
+  "stale": ["timeline", "learning"]
 }
 ```
 
@@ -81,7 +80,6 @@ Recommended per-tab refresh policy:
 - `relationships`: on open plus stale refresh
 - `timeline`: stale refresh
 - `learning`: stale or manual refresh
-- `planning`: stale or manual refresh
 - `scenarios`: manual refresh
 - `creative`: on open
 - `dreams`: on open

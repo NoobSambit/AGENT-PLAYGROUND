@@ -61,14 +61,14 @@ function EmotionComparisonBar({
 
   return (
     <div className="flex items-center gap-3">
-      <span className="w-20 text-xs text-gray-400">{emotion}</span>
+      <span className="w-20 text-xs text-muted-foreground">{emotion}</span>
       <div className="flex-1 relative h-4">
         {/* Center line */}
-        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gray-600" />
+        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-border" />
 
         {/* Original value (left side) */}
         <div
-          className="absolute right-1/2 h-full bg-gray-600 rounded-l"
+          className="absolute right-1/2 h-full rounded-l bg-border"
           style={{ width: `${original * 50}%` }}
         />
 
@@ -101,7 +101,7 @@ function ScenarioCard({ scenario }: { scenario: WhatIfScenario }) {
   const Icon = config.icon
 
   return (
-    <div className="bg-gray-800/50 rounded-sm p-4 border border-gray-700/50">
+    <div className="rounded-sm border border-border/60 bg-background/45 p-4">
       <div className="flex items-start gap-3">
         <div
           className="p-2.5 rounded-sm"
@@ -110,26 +110,26 @@ function ScenarioCard({ scenario }: { scenario: WhatIfScenario }) {
           <Icon className="w-5 h-5" style={{ color: config.color }} />
         </div>
         <div className="flex-1">
-          <h4 className="font-medium text-white">{scenario.title}</h4>
-          <p className="text-sm text-gray-400 mt-1">{scenario.description}</p>
+          <h4 className="font-medium text-foreground">{scenario.title}</h4>
+          <p className="mt-1 text-sm text-muted-foreground">{scenario.description}</p>
 
           {/* Variables */}
           <div className="mt-3 space-y-2">
-            <div className="text-xs text-gray-500">Variables Changed:</div>
+            <div className="text-xs text-muted-foreground">Variables Changed:</div>
             {scenario.variables.map((v, i) => (
               <div key={i} className="flex items-center gap-2 text-xs">
-                <span className="text-gray-400">{v.name}:</span>
+                <span className="text-muted-foreground">{v.name}:</span>
                 <span className="text-red-400 line-through">{v.originalValue}</span>
-                <ChevronRight className="w-3 h-3 text-gray-600" />
+                <ChevronRight className="w-3 h-3 text-muted-foreground" />
                 <span className="text-green-400">{v.alteredValue}</span>
               </div>
             ))}
           </div>
 
           {/* Hypothesis */}
-          <div className="mt-3 p-2 bg-gray-900/50 rounded-sm">
+          <div className="mt-3 rounded-sm border border-border/60 bg-card/[0.62] p-2">
             <div className="text-xs text-purple-400 mb-1">Hypothesis</div>
-            <div className="text-xs text-gray-300">{scenario.hypothesis}</div>
+            <div className="text-xs text-foreground/80">{scenario.hypothesis}</div>
           </div>
         </div>
       </div>
@@ -143,7 +143,7 @@ function OutcomeAnalysis({ analysis }: { analysis: RealityComparisonMetrics['out
     <div className="space-y-4">
       {/* Positive outcomes */}
       {analysis.positiveOutcomes.length > 0 && (
-        <div className="bg-green-500/10 rounded-sm p-4 border border-green-500/20">
+        <div className="rounded-sm border border-green-500/20 bg-green-500/8 p-4">
           <div className="flex items-center gap-2 mb-2">
             <CheckCircle className="w-4 h-4 text-green-400" />
             <span className="text-sm font-medium text-green-400">Positive Outcomes</span>
@@ -161,7 +161,7 @@ function OutcomeAnalysis({ analysis }: { analysis: RealityComparisonMetrics['out
 
       {/* Negative outcomes */}
       {analysis.negativeOutcomes.length > 0 && (
-        <div className="bg-red-500/10 rounded-sm p-4 border border-red-500/20">
+        <div className="rounded-sm border border-red-500/20 bg-red-500/8 p-4">
           <div className="flex items-center gap-2 mb-2">
             <AlertCircle className="w-4 h-4 text-red-400" />
             <span className="text-sm font-medium text-red-400">Negative Outcomes</span>
@@ -179,15 +179,15 @@ function OutcomeAnalysis({ analysis }: { analysis: RealityComparisonMetrics['out
 
       {/* Neutral outcomes */}
       {analysis.neutralOutcomes.length > 0 && (
-        <div className="bg-gray-500/10 rounded-sm p-4 border border-gray-500/20">
+        <div className="rounded-sm border border-border/60 bg-background/45 p-4">
           <div className="flex items-center gap-2 mb-2">
-            <Minus className="w-4 h-4 text-gray-400" />
-            <span className="text-sm font-medium text-gray-400">Neutral Outcomes</span>
+            <Minus className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm font-medium text-muted-foreground">Neutral Outcomes</span>
           </div>
           <ul className="space-y-1">
             {analysis.neutralOutcomes.map((outcome, i) => (
-              <li key={i} className="text-xs text-gray-300 flex items-start gap-2">
-                <span className="text-gray-400">•</span>
+              <li key={i} className="flex items-start gap-2 text-xs text-foreground/80">
+                <span className="text-muted-foreground">•</span>
                 {outcome}
               </li>
             ))}
@@ -196,12 +196,12 @@ function OutcomeAnalysis({ analysis }: { analysis: RealityComparisonMetrics['out
       )}
 
       {/* Recommendation */}
-      <div className="bg-purple-500/10 rounded-sm p-4 border border-purple-500/20">
+      <div className="rounded-sm border border-cyan-400/20 bg-cyan-500/8 p-4">
         <div className="flex items-center gap-2 mb-2">
-          <Lightbulb className="w-4 h-4 text-purple-400" />
-          <span className="text-sm font-medium text-purple-400">Recommendation</span>
+          <Lightbulb className="w-4 h-4 text-cyan-300" />
+          <span className="text-sm font-medium text-cyan-300">Recommendation</span>
         </div>
-        <p className="text-xs text-purple-200">{analysis.recommendation}</p>
+        <p className="text-xs text-cyan-100">{analysis.recommendation}</p>
       </div>
     </div>
   )
@@ -216,12 +216,12 @@ function DivergenceMeter({ score }: { score: number }) {
     percentage < 75 ? '#FF7043' : '#F44336'
 
   return (
-    <div className="bg-gray-800/50 rounded-sm p-4">
+    <div className="rounded-sm border border-border/60 bg-background/45 p-4">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm text-gray-400">Reality Divergence</span>
+        <span className="text-sm text-muted-foreground">Reality Divergence</span>
         <span className="text-lg font-bold" style={{ color }}>{percentage}%</span>
       </div>
-      <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+      <div className="h-2 rounded-full bg-border/70 overflow-hidden">
         <motion.div
           className="h-full rounded-full"
           style={{ backgroundColor: color }}
@@ -230,7 +230,7 @@ function DivergenceMeter({ score }: { score: number }) {
           transition={{ duration: 0.8, ease: 'easeOut' }}
         />
       </div>
-      <div className="flex justify-between mt-1 text-xs text-gray-500">
+      <div className="mt-1 flex justify-between text-xs text-muted-foreground">
         <span>Similar</span>
         <span>Radically Different</span>
       </div>
@@ -314,24 +314,24 @@ export function ParallelRealityExplorer({
   }, [reality])
 
   const statusColors = {
-    pending: 'bg-gray-500/20 text-gray-400',
+    pending: 'bg-muted text-muted-foreground',
     in_progress: 'bg-cyan-500/20 text-cyan-400',
     complete: 'bg-green-500/20 text-green-400',
     abandoned: 'bg-red-500/20 text-red-400'
   }
 
   return (
-    <div className={`bg-primary rounded-sm border border-gray-800 overflow-hidden ${className}`}>
+    <div className={`overflow-hidden rounded-sm border border-border/70 bg-card/[0.68] backdrop-blur-xl shadow-[0_24px_60px_-36px_rgba(35,47,62,0.22)] ${className}`}>
       {/* Header */}
-      <div className="p-5 border-b border-gray-800">
+      <div className="border-b border-border/70 bg-background/45 p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-primary rounded-sm">
-              <GitBranch className="w-6 h-6 text-purple-400" />
+            <div className="rounded-sm bg-cyan-500/10 p-2.5">
+              <GitBranch className="w-6 h-6 text-cyan-300" />
             </div>
             <div>
-              <h2 className="font-semibold text-white text-lg">Parallel Reality Explorer</h2>
-              <p className="text-xs text-gray-400">
+              <h2 className="text-lg font-semibold text-foreground">Parallel Reality Explorer</h2>
+              <p className="text-xs text-muted-foreground">
                 What-if scenario analysis
               </p>
             </div>
@@ -346,17 +346,17 @@ export function ParallelRealityExplorer({
               {onExplore && reality.explorationStatus === 'pending' && (
                 <button
                   onClick={onExplore}
-                  className="p-2 bg-purple-500/20 hover:bg-purple-500/30 rounded-sm transition-colors"
+                  className="rounded-sm border border-cyan-400/20 bg-cyan-500/10 p-2 transition-colors hover:bg-cyan-500/15"
                 >
-                  <Play className="w-4 h-4 text-purple-400" />
+                  <Play className="w-4 h-4 text-cyan-300" />
                 </button>
               )}
               {onReset && (
                 <button
                   onClick={onReset}
-                  className="p-2 bg-gray-700/50 hover:bg-gray-700 rounded-sm transition-colors"
+                  className="rounded-sm border border-border/60 bg-background/45 p-2 transition-colors hover:bg-background/70"
                 >
-                  <RotateCcw className="w-4 h-4 text-gray-400" />
+                  <RotateCcw className="w-4 h-4 text-muted-foreground" />
                 </button>
               )}
             </div>
@@ -367,15 +367,15 @@ export function ParallelRealityExplorer({
         <BranchVisualization />
 
         {/* Tab navigation */}
-        <div className="flex gap-1 mt-2 bg-gray-800/50 rounded-sm p-1">
+        <div className="mt-2 flex gap-1 rounded-sm border border-border/60 bg-background/45 p-1">
           {(['scenario', 'emotions', 'outcomes', 'insights'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
                 activeTab === tab
-                  ? 'bg-gray-700 text-white'
-                  : 'text-gray-400 hover:text-white'
+                  ? 'bg-card/[0.92] text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -385,7 +385,7 @@ export function ParallelRealityExplorer({
       </div>
 
       {/* Content */}
-      <div className="p-5">
+      <div className="bg-transparent p-5">
         <AnimatePresence mode="wait">
           {activeTab === 'scenario' && (
             <motion.div
@@ -408,17 +408,17 @@ export function ParallelRealityExplorer({
               exit={{ opacity: 0, y: -10 }}
               className="space-y-4"
             >
-              <div className="bg-gray-800/50 rounded-sm p-4">
+              <div className="rounded-sm border border-border/60 bg-background/45 p-4">
                 <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm font-medium text-white">Emotional State Comparison</span>
+                  <span className="text-sm font-medium text-foreground">Emotional State Comparison</span>
                   <div className="flex items-center gap-4 text-xs">
                     <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-gray-600 rounded" />
-                      <span className="text-gray-400">Original</span>
+                      <div className="h-3 w-3 rounded bg-border" />
+                      <span className="text-muted-foreground">Original</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-purple-500 rounded" />
-                      <span className="text-gray-400">Alternate</span>
+                      <div className="h-3 w-3 rounded bg-cyan-400" />
+                      <span className="text-muted-foreground">Alternate</span>
                     </div>
                   </div>
                 </div>
@@ -437,8 +437,8 @@ export function ParallelRealityExplorer({
               </div>
 
               {/* Dominant emotion shift */}
-              <div className="bg-gray-800/50 rounded-sm p-4">
-                <div className="text-sm font-medium text-white mb-3">Dominant Emotion Shift</div>
+              <div className="rounded-sm border border-border/60 bg-background/45 p-4">
+                <div className="mb-3 text-sm font-medium text-foreground">Dominant Emotion Shift</div>
                 <div className="flex items-center justify-center gap-4">
                   <div className="text-center">
                     <div
@@ -452,12 +452,12 @@ export function ParallelRealityExplorer({
                          reality.comparison.emotionalDivergence.dominantShift.original === 'anger' ? '😠' : '😐'}
                       </span>
                     </div>
-                    <div className="text-xs text-gray-400">Original</div>
-                    <div className="text-sm text-white capitalize">
+                    <div className="text-xs text-muted-foreground">Original</div>
+                    <div className="text-sm capitalize text-foreground">
                       {reality.comparison.emotionalDivergence.dominantShift.original}
                     </div>
                   </div>
-                  <ChevronRight className="w-6 h-6 text-purple-400" />
+                  <ChevronRight className="w-6 h-6 text-cyan-300" />
                   <div className="text-center">
                     <div
                       className="w-12 h-12 rounded-full mx-auto mb-2 flex items-center justify-center"
@@ -470,8 +470,8 @@ export function ParallelRealityExplorer({
                          reality.comparison.emotionalDivergence.dominantShift.alternate === 'anger' ? '😠' : '😐'}
                       </span>
                     </div>
-                    <div className="text-xs text-gray-400">Alternate</div>
-                    <div className="text-sm text-white capitalize">
+                    <div className="text-xs text-muted-foreground">Alternate</div>
+                    <div className="text-sm capitalize text-foreground">
                       {reality.comparison.emotionalDivergence.dominantShift.alternate}
                     </div>
                   </div>
@@ -499,15 +499,15 @@ export function ParallelRealityExplorer({
               exit={{ opacity: 0, y: -10 }}
               className="space-y-4"
             >
-              <div className="bg-primary rounded-sm p-4 border border-purple-500/20">
+              <div className="rounded-sm border border-cyan-400/20 bg-cyan-500/8 p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Lightbulb className="w-5 h-5 text-amber-400" />
-                  <span className="font-medium text-white">Key Insights</span>
+                  <span className="font-medium text-foreground">Key Insights</span>
                 </div>
                 <ul className="space-y-2">
                   {reality.insights.map((insight, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                      <span className="text-purple-400 mt-1">•</span>
+                    <li key={i} className="flex items-start gap-2 text-sm text-foreground/85">
+                      <span className="mt-1 text-cyan-300">•</span>
                       {insight}
                     </li>
                   ))}
@@ -516,8 +516,8 @@ export function ParallelRealityExplorer({
 
               {/* Personality shifts */}
               {reality.comparison.personalityShifts.length > 0 && (
-                <div className="bg-gray-800/50 rounded-sm p-4">
-                  <div className="text-sm font-medium text-white mb-3">Personality Shifts</div>
+                <div className="rounded-sm border border-border/60 bg-background/45 p-4">
+                  <div className="mb-3 text-sm font-medium text-foreground">Personality Shifts</div>
                   <div className="space-y-2">
                     {reality.comparison.personalityShifts.map((shift, i) => (
                       <div
@@ -525,13 +525,13 @@ export function ParallelRealityExplorer({
                         className={`flex items-center justify-between p-2 rounded-sm ${
                           shift.significance === 'major' ? 'bg-red-500/10 border border-red-500/20' :
                           shift.significance === 'moderate' ? 'bg-amber-500/10 border border-amber-500/20' :
-                          'bg-gray-700/50 border border-gray-600/50'
+                          'border-border/60 bg-card/[0.62]'
                         }`}
                       >
-                        <span className="text-sm text-gray-300 capitalize">{shift.trait}</span>
+                        <span className="text-sm capitalize text-foreground/85">{shift.trait}</span>
                         <div className="flex items-center gap-2 text-xs">
-                          <span className="text-gray-500">{shift.originalValue.toFixed(2)}</span>
-                          <ChevronRight className="w-3 h-3 text-gray-600" />
+                          <span className="text-muted-foreground">{shift.originalValue.toFixed(2)}</span>
+                          <ChevronRight className="w-3 h-3 text-muted-foreground" />
                           <span className={
                             shift.alternateValue > shift.originalValue ? 'text-green-400' : 'text-red-400'
                           }>
@@ -540,7 +540,7 @@ export function ParallelRealityExplorer({
                           <span className={`px-1.5 py-0.5 rounded text-xs ${
                             shift.significance === 'major' ? 'bg-red-500/20 text-red-400' :
                             shift.significance === 'moderate' ? 'bg-amber-500/20 text-amber-400' :
-                            'bg-gray-500/20 text-gray-400'
+                            'bg-muted text-muted-foreground'
                           }`}>
                             {shift.significance}
                           </span>
@@ -552,12 +552,12 @@ export function ParallelRealityExplorer({
               )}
 
               {/* Final recommendation */}
-              <div className="bg-cyan-500/10 rounded-sm p-4 border border-cyan-500/20">
+              <div className="rounded-sm border border-cyan-500/20 bg-cyan-500/8 p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Eye className="w-5 h-5 text-cyan-400" />
                   <span className="font-medium text-cyan-400">Final Recommendation</span>
                 </div>
-                <p className="text-sm text-cyan-200">{reality.recommendation}</p>
+                <p className="text-sm text-cyan-100">{reality.recommendation}</p>
               </div>
             </motion.div>
           )}
@@ -565,8 +565,8 @@ export function ParallelRealityExplorer({
       </div>
 
       {/* Footer */}
-      <div className="px-5 py-3 bg-gray-800/30 border-t border-gray-800">
-        <div className="flex items-center justify-between text-xs text-gray-500">
+      <div className="border-t border-border/70 bg-background/45 px-5 py-3">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-1">
             <Clock className="w-3.5 h-3.5" />
             Created {new Date(reality.createdAt).toLocaleString()}

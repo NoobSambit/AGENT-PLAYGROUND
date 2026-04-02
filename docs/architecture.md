@@ -28,6 +28,7 @@ Services own the branch between Firestore and PostgreSQL for core entities. Rout
 - Firestore remains available only for migration and short-lived dual-write cutover paths.
 - Agent chat is the canonical write point for chat-turn side effects such as trait updates, memory persistence, and stale-domain invalidation.
 - Chat-turn side effects now include structured fact extraction, canonical fact-memory upserts, emotion appraisal, and evidence-based trait analysis.
+- Chat-turn side effects now also include evidence-based learning observation capture, confirmed pattern rebuilds, adaptation refresh, and prompt-time learning policy injection.
 
 ## Migration-Specific Components
 

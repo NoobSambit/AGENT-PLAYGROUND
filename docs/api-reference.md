@@ -48,3 +48,6 @@
 - `POST /api/agents/[id]/chat` now returns `changedDomains` and `staleDomains` so tabs can refresh selectively.
 - `GET /api/agents/[id]/memories` can now return canonical `fact` memories created from chat turns.
 - `POST /api/agents/[id]/memories/recall` returns mixed conversational and fact matches, with reasons that include canonical fact hits.
+- `POST /api/agents/[id]/chat` now also drives learning side effects: observation capture, follow-up resolution, pattern confirmation, and adaptation refresh.
+- `GET /api/agents/[id]/learning` returns learning state built from patterns, goals, adaptations, skills, and recent observations.
+- `POST /api/agents/[id]/learning` remains available for explicit feature actions such as manual conversation analysis, goal generation, skill updates, and manual adaptation creation.

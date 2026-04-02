@@ -9,7 +9,6 @@ Each feature has its own document under [`docs/features/`](./features/).
 - [`timeline.md`](./features/timeline.md)
 - [`relationships.md`](./features/relationships.md)
 - [`learning.md`](./features/learning.md)
-- [`planning.md`](./features/planning.md)
 - [`scenarios.md`](./features/scenarios.md)
 - [`creative.md`](./features/creative.md)
 - [`dreams.md`](./features/dreams.md)

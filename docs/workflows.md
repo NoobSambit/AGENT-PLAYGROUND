@@ -46,13 +46,18 @@ This is the most important workflow for the refactored system because chat is no
    - stores the user message
    - appraises the emotional impact of the user message
    - loads memory context for the prompt
+   - loads active learning adaptations for the prompt
    - generates the assistant response
    - evaluates the emotional effect of the response
    - stores the assistant message
    - updates stats and total interaction counters
    - writes conversation memory
    - extracts and upserts fact memories
-   - analyzes trait evidence
+    - analyzes trait evidence
+   - resolves the previous pending learning observation if the new user message acts as follow-up feedback
+   - writes a new learning observation for the current turn
+   - rebuilds confirmed learning patterns, active goals, and adaptations
+   - advances learning skills from the latest evidence
    - stores personality evolution event if applicable
    - returns the refreshed agent snapshot plus `changedDomains` and `staleDomains`
 
@@ -126,6 +131,20 @@ Then it:
 - stores an evolution event
 - marks deep psychological profile as stale when needed
 
+### Learning Side
+
+The chat turn now also drives the learning system.
+
+The server:
+
+- records a `learning_observation` for the turn
+- resolves the previous pending observation using the new user message as follow-up evidence
+- groups repeated observations into confirmed `learning_patterns`
+- turns strong patterns into active `learning_adaptations`
+- feeds active adaptations back into later prompts
+
+This matters because the learning tab no longer creates its own learning data on page load.
+
 ## Scenario: Stress + Identity + Project
 
 User says:
@@ -145,7 +164,8 @@ What happens:
 6. fact memory `identity:name` is written or refreshed
 7. fact memory for the tea subscription project is written or refreshed
 8. empathy and knowledge evidence can be recorded in profile evolution
-9. chat response returns updated agent, emotion summary, and changed domains
+9. the learning system can record an emotional-support observation and later recommend a brevity or empathy adjustment
+10. chat response returns updated agent, emotion summary, and changed domains
 
 Expected outcome:
 
@@ -172,6 +192,7 @@ What happens:
 Expected outcome:
 
 - much lower hallucination risk than transcript-only memory
+- the learning system should eventually confirm that memory-backed recall works well on recall-style turns
 
 ## Memory Console Workflow
 

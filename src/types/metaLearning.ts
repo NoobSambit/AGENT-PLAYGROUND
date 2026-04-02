@@ -13,6 +13,23 @@ export type LearningPatternType =
   | 'memory_retention'    // What types of information stick
   | 'relationship_building' // Social learning patterns
 
+export type LearningTaskType =
+  | 'general_chat'
+  | 'factual_help'
+  | 'creative'
+  | 'emotional_support'
+  | 'memory_recall'
+  | 'feedback_ack'
+
+export type LearningStrategySignal =
+  | 'clarify_first'
+  | 'structured_response'
+  | 'empathetic_opening'
+  | 'memory_recall'
+  | 'tool_augmented'
+  | 'concise_delivery'
+  | 'direct_answer'
+
 // Learning strategy preferences
 export type LearningStrategy =
   | 'exploration'   // Tries new approaches
@@ -26,6 +43,8 @@ export interface LearningPattern {
   id: string
   agentId: string
   type: LearningPatternType
+  taskType?: LearningTaskType
+  strategy?: LearningStrategySignal
 
   // Pattern details
   pattern: string // Description of the pattern
@@ -36,6 +55,7 @@ export interface LearningPattern {
   frequency: number // How often this pattern occurs (0-1)
   effectiveness: number // How effective it is (0-1)
   confidence: number // How confident we are in this pattern (0-1)
+  evidenceCount?: number
 
   // Context
   contexts: string[] // Situations where this pattern applies
@@ -63,6 +83,7 @@ export interface LearningAdaptation {
   // What changed
   adaptationType: 'behavior' | 'knowledge' | 'style' | 'preference'
   description: string
+  instruction?: string
 
   // Before and after
   previousState: string
@@ -75,12 +96,47 @@ export interface LearningAdaptation {
   // Impact
   impactScore: number // -1 to 1, how much this improved agent
   affectedAreas: string[]
+  confidence?: number
+  evidenceCount?: number
+  evaluation?: {
+    observations: number
+    positive: number
+    negative: number
+    lastEvaluatedAt?: string
+  }
 
   // Status
   isActive: boolean
   canRevert: boolean
 
   timestamp: string
+}
+
+export interface LearningObservationEvidence {
+  code: string
+  label: string
+  impact: number
+  detail?: string
+}
+
+export interface LearningObservation {
+  id: string
+  agentId: string
+  taskType: LearningTaskType
+  category: LearningPatternType
+  strategies: LearningStrategySignal[]
+  summary: string
+  promptExcerpt: string
+  responseExcerpt: string
+  provisionalScore: number
+  finalScore: number
+  outcome: 'positive' | 'negative' | 'neutral'
+  followUpStatus: 'pending' | 'resolved'
+  feedbackSignal: 'positive' | 'negative' | 'neutral' | 'unseen'
+  evidence: LearningObservationEvidence[]
+  linkedMessageIds: string[]
+  createdAt: string
+  evaluatedAt?: string
 }
 
 // Learning goal - what the agent is trying to learn
@@ -201,6 +257,7 @@ export interface MetaLearningState {
   activePatterns: LearningPattern[]
   activeGoals: LearningGoal[]
   recentAdaptations: LearningAdaptation[]
+  recentObservations: LearningObservation[]
 
   // Current session
   currentSession?: LearningSession
@@ -212,6 +269,8 @@ export interface MetaLearningState {
     negativePatterns: number
     adaptationsThisWeek: number
     learningStreak: number // consecutive days with learning activity
+    resolvedObservations: number
+    pendingObservations: number
     mostImprovedArea: LearningPatternType | null
     needsAttentionArea: LearningPatternType | null
   }

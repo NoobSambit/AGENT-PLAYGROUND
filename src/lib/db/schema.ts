@@ -35,6 +35,7 @@ import type {
   LearningAdaptation,
   LearningEvent,
   LearningGoal,
+  LearningObservation,
   LearningPattern,
   SkillProgression,
 } from '@/types/metaLearning'
@@ -233,6 +234,20 @@ export const learningEvents = pgTable('learning_events', {
   index('learning_events_agent_timestamp_idx').on(table.agentId, table.eventTimestamp),
 ])
 
+export const learningObservations = pgTable('learning_observations', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  taskType: text('task_type').notNull(),
+  category: text('category').notNull(),
+  followUpStatus: text('follow_up_status').notNull(),
+  createdAt,
+  evaluatedAt: timestamp('evaluated_at', { withTimezone: true, mode: 'string' }),
+  payload: jsonb('payload').$type<LearningObservation>().notNull(),
+}, (table) => [
+  index('learning_observations_agent_created_idx').on(table.agentId, table.createdAt),
+  index('learning_observations_agent_status_created_idx').on(table.agentId, table.followUpStatus, table.createdAt),
+])
+
 export const skillProgressions = pgTable('skill_progressions', {
   id: text('id').primaryKey(),
   agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
@@ -360,6 +375,7 @@ export const schema = {
   learningGoals,
   learningAdaptations,
   learningEvents,
+  learningObservations,
   skillProgressions,
   agentRateLimits,
   sharedKnowledge,

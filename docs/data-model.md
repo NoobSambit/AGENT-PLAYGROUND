@@ -20,6 +20,7 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - `learning_goals`
 - `learning_adaptations`
 - `learning_events`
+- `learning_observations`
 - `skill_progressions`
 - `agent_rate_limits`
 

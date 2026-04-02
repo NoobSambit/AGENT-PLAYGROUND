@@ -5,6 +5,7 @@ import { AgentService } from '@/lib/services/agentService'
 import { PersonalityService, type TraitAnalysis } from '@/lib/services/personalityService'
 import { KnowledgeService } from '@/lib/services/knowledgeService'
 import { collectiveIntelligenceService } from '@/lib/services/collectiveIntelligenceService'
+import { LearningService } from '@/lib/services/learningService'
 import { AgentRecord, EmotionalProfile, EmotionalState } from '@/types/database'
 import { BaseMessage } from '@langchain/core/messages'
 
@@ -235,7 +236,8 @@ export class AgentChain {
       emotionalProfile: runtimeOverrides?.emotionalProfile || _agent.emotionalProfile,
       emotionalState: runtimeOverrides?.emotionalState || _agent.emotionalState,
       psychologicalContext: enhancementContext.psychologicalContext,
-      knowledgeContext: enhancementContext.knowledgeContext
+      knowledgeContext: enhancementContext.knowledgeContext,
+      learningContext: enhancementContext.learningContext
     })
   }
 
@@ -466,7 +468,12 @@ export class AgentChain {
   private async buildEnhancementContext(agent: any, userInput?: string): Promise<{
     psychologicalContext?: string
     knowledgeContext?: string
+    learningContext?: string
   }> {
+    const learningContext = await LearningService.getPromptContext(this.config.agentId).catch((error) => {
+      console.error('Error building learning context:', error)
+      return undefined
+    })
     const psychologicalContext = agent.psychologicalProfile
       ? [
           agent.psychologicalProfile.summary,
@@ -477,7 +484,7 @@ export class AgentChain {
       : undefined
 
     if (!userInput || userInput.trim().length < 6) {
-      return { psychologicalContext }
+      return { psychologicalContext, learningContext }
     }
 
     try {
@@ -497,10 +504,11 @@ export class AgentChain {
       return {
         psychologicalContext,
         knowledgeContext: collectiveIntelligenceService.buildPromptContext(snapshot),
+        learningContext,
       }
     } catch (error) {
       console.error('Error building enhancement context:', error)
-      return { psychologicalContext }
+      return { psychologicalContext, learningContext }
     }
   }
 

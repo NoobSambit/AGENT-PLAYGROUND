@@ -18,6 +18,7 @@
 - `learning_goals`
 - `learning_adaptations`
 - `learning_events`
+- `learning_observations`
 - `skill_progressions`
 - `agent_rate_limits`
 

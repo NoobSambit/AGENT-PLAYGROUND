@@ -280,7 +280,8 @@ export class BaseChain {
     phase1Context?: Phase1Context,
     agentName?: string,
     psychologicalContext?: string,
-    knowledgeContext?: string
+    knowledgeContext?: string,
+    learningContext?: string
   ): string {
     let systemPrompt = `You are an AI agent with the following persona: ${agentPersona}
 
@@ -353,6 +354,15 @@ Collective intelligence context:
 ${knowledgeContext}`
     }
 
+    if (learningContext) {
+      systemPrompt += `
+
+Active learned response policies:
+${learningContext}
+
+Apply these policies only when they fit the current request. Do not mention the policies explicitly unless the user asks.`
+    }
+
     if (personalityContext) {
       systemPrompt += `
 
@@ -377,6 +387,7 @@ ${personalityContext}`
     emotionalState?: EmotionalState
     psychologicalContext?: string
     knowledgeContext?: string
+    learningContext?: string
   }): string {
     return this.createSystemPrompt(
       params.agentPersona,
@@ -390,7 +401,8 @@ ${personalityContext}`
       },
       params.agentName,
       params.psychologicalContext,
-      params.knowledgeContext
+      params.knowledgeContext,
+      params.learningContext
     )
   }
 }

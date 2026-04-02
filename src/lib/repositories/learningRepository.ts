@@ -4,6 +4,7 @@ import {
   learningAdaptations,
   learningEvents,
   learningGoals,
+  learningObservations,
   learningPatterns,
   skillProgressions,
 } from '@/lib/db/schema'
@@ -12,6 +13,7 @@ import type {
   LearningAdaptation,
   LearningEvent,
   LearningGoal,
+  LearningObservation,
   LearningPattern,
   SkillProgression,
 } from '@/types/metaLearning'
@@ -46,6 +48,15 @@ function mapEvent(row: typeof learningEvents.$inferSelect): LearningEvent {
     ...row.payload,
     id: row.id,
     timestamp: asIsoString(row.eventTimestamp),
+  }
+}
+
+function mapObservation(row: typeof learningObservations.$inferSelect): LearningObservation {
+  return {
+    ...row.payload,
+    id: row.id,
+    createdAt: asIsoString(row.createdAt),
+    evaluatedAt: row.evaluatedAt ? asIsoString(row.evaluatedAt) : undefined,
   }
 }
 
@@ -118,15 +129,27 @@ export class LearningRepository {
   }
 
   static async saveGoal(record: LearningGoal): Promise<LearningGoal> {
-    const [row] = await getDb().insert(learningGoals).values({
-      id: record.id,
-      agentId: record.agentId,
-      category: record.category,
-      status: record.status,
-      createdAt: asIsoString(record.createdAt),
-      targetDate: record.targetDate ? asIsoString(record.targetDate) : null,
-      payload: record,
-    }).returning()
+    const [row] = await getDb()
+      .insert(learningGoals)
+      .values({
+        id: record.id,
+        agentId: record.agentId,
+        category: record.category,
+        status: record.status,
+        createdAt: asIsoString(record.createdAt),
+        targetDate: record.targetDate ? asIsoString(record.targetDate) : null,
+        payload: record,
+      })
+      .onConflictDoUpdate({
+        target: learningGoals.id,
+        set: {
+          category: record.category,
+          status: record.status,
+          targetDate: record.targetDate ? asIsoString(record.targetDate) : null,
+          payload: record,
+        },
+      })
+      .returning()
 
     return mapGoal(row)
   }
@@ -147,13 +170,24 @@ export class LearningRepository {
   }
 
   static async saveAdaptation(record: LearningAdaptation): Promise<LearningAdaptation> {
-    const [row] = await getDb().insert(learningAdaptations).values({
-      id: record.id,
-      agentId: record.agentId,
-      isActive: record.isActive,
-      eventTimestamp: asIsoString(record.timestamp),
-      payload: record,
-    }).returning()
+    const [row] = await getDb()
+      .insert(learningAdaptations)
+      .values({
+        id: record.id,
+        agentId: record.agentId,
+        isActive: record.isActive,
+        eventTimestamp: asIsoString(record.timestamp),
+        payload: record,
+      })
+      .onConflictDoUpdate({
+        target: learningAdaptations.id,
+        set: {
+          isActive: record.isActive,
+          eventTimestamp: asIsoString(record.timestamp),
+          payload: record,
+        },
+      })
+      .returning()
 
     return mapAdaptation(row)
   }
@@ -168,6 +202,54 @@ export class LearningRepository {
     }).returning()
 
     return mapEvent(row)
+  }
+
+  static async listObservations(agentId: string, limitCount: number = 20): Promise<LearningObservation[]> {
+    const rows = await getDb().query.learningObservations.findMany({
+      where: eq(learningObservations.agentId, agentId),
+      orderBy: desc(learningObservations.createdAt),
+      limit: limitCount,
+    })
+    return rows.map(mapObservation)
+  }
+
+  static async getLatestPendingObservation(agentId: string): Promise<LearningObservation | null> {
+    const row = await getDb().query.learningObservations.findFirst({
+      where: and(
+        eq(learningObservations.agentId, agentId),
+        eq(learningObservations.followUpStatus, 'pending')
+      ),
+      orderBy: desc(learningObservations.createdAt),
+    })
+    return row ? mapObservation(row) : null
+  }
+
+  static async upsertObservation(record: LearningObservation): Promise<LearningObservation> {
+    const [row] = await getDb()
+      .insert(learningObservations)
+      .values({
+        id: record.id,
+        agentId: record.agentId,
+        taskType: record.taskType,
+        category: record.category,
+        followUpStatus: record.followUpStatus,
+        createdAt: asIsoString(record.createdAt),
+        evaluatedAt: record.evaluatedAt ? asIsoString(record.evaluatedAt) : null,
+        payload: record,
+      })
+      .onConflictDoUpdate({
+        target: learningObservations.id,
+        set: {
+          taskType: record.taskType,
+          category: record.category,
+          followUpStatus: record.followUpStatus,
+          evaluatedAt: record.evaluatedAt ? asIsoString(record.evaluatedAt) : null,
+          payload: record,
+        },
+      })
+      .returning()
+
+    return mapObservation(row)
   }
 
   static async listSkills(agentId: string): Promise<SkillProgression[]> {
@@ -223,5 +305,9 @@ export class LearningRepository {
 
   static createEventId(): string {
     return generateId('learning_event')
+  }
+
+  static createObservationId(): string {
+    return generateId('learning_observation')
   }
 }

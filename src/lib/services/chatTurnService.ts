@@ -14,6 +14,7 @@ import { MemoryService } from './memoryService'
 import { MessageService } from './messageService'
 import { PersonalityEventService } from './personalityEventService'
 import { PersonalityService } from './personalityService'
+import { LearningService } from './learningService'
 
 const STOP_WORDS = new Set([
   'the', 'and', 'for', 'are', 'but', 'not', 'you', 'that', 'with', 'this', 'from',
@@ -222,11 +223,28 @@ export class ChatTurnService {
       })
     }
 
+    let learningResult = null
+    try {
+      learningResult = await LearningService.processChatTurn({
+        agentId,
+        prompt,
+        response: response.response,
+        userMessage,
+        agentMessage,
+        toolsUsed: response.toolsUsed,
+        memoryUsed: response.memoryUsed,
+        emotionalContext: finalizedEmotion.emotionalState.dominantEmotion || 'trust',
+      })
+    } catch (error) {
+      console.error('Learning side effects failed:', error)
+    }
+
     const updatedAgent = await AgentService.getAgentById(agentId)
     const changedDomains = [
       'chat',
       'emotion',
       'stats',
+      ...(learningResult ? ['learning'] : []),
       ...(createdMemory || createdFactMemories > 0 ? ['memory'] : []),
       ...(personalityUpdate ? ['profile_traits'] : []),
     ]

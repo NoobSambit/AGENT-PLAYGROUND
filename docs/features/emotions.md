@@ -357,7 +357,7 @@ This makes the emotional output more believable.
 
 - legacy emotional payloads needing normalization
 - ambiguous wording causing mixed signals
-- overcounting fear when supportive replies also contain planning questions
+- overcounting fear when supportive replies also contain problem-solving questions
 - event history becoming noisy if many small shifts happen in a short time
 
 ## Practical Reading Of The Current System
