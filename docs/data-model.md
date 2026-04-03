@@ -32,6 +32,7 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - `challenges`
 - `mentorships`
 - `simulations`
+- `scenario_runs`
 - `migration_outbox`
 
 ## Modeling Approach
@@ -42,6 +43,8 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - Keep query-critical fields typed and indexed beside the payload column.
 - Keep relationship pairs normalized to one row per sorted agent pair.
 - Store structured memory facts in `memories` as `type='fact'` rows, with canonical identifiers such as `factKey` and `factType` inside `metadata`.
+- Store scenario branch experiments in `scenario_runs` rather than overloading `simulations`, because branch experiments and primary simulation runs have different product meaning and lifecycle.
+- Store scenario quality scores, flags, and diff-ready summaries inside the scenario payload so evaluation remains inspectable after the run completes.
 
 ## Detailed References
 

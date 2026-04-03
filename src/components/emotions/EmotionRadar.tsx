@@ -62,15 +62,17 @@ export function EmotionRadar({
   const values = resolveValues(emotionalState, emotionalProfile, mode)
   const dominantEmotion = resolveDominantEmotion(emotionalState, emotionalProfile, mode)
   const center = size / 2
-  const radius = (size / 2) - 40
+  const radius = (size / 2) - 45 // Increased padding for labels
 
   const currentPoints = useMemo(() => {
     return EMOTIONS.map((emotion, index) => {
       const angle = (index * 2 * Math.PI) / EMOTIONS.length - Math.PI / 2
       const value = values[emotion] || 0
-      const x = center + Math.cos(angle) * radius * value
-      const y = center + Math.sin(angle) * radius * value
-      return { x, y, emotion, value }
+      // Ensure a minimum value for the radar shape to be visible even if 0
+      const displayValue = Math.max(value, 0.05)
+      const x = center + Math.cos(angle) * radius * displayValue
+      const y = center + Math.sin(angle) * radius * displayValue
+      return { x, y, emotion, value: displayValue }
     })
   }, [center, radius, values])
 
@@ -80,7 +82,7 @@ export function EmotionRadar({
 
   const gridCircles = [0.25, 0.5, 0.75, 1].map(level => ({
     r: radius * level,
-    opacity: level * 0.3
+    opacity: level * 0.2
   }))
 
   const axisLines = EMOTIONS.map((_, index) => {
@@ -93,7 +95,7 @@ export function EmotionRadar({
 
   const labelPositions = EMOTIONS.map((emotion, index) => {
     const angle = (index * 2 * Math.PI) / EMOTIONS.length - Math.PI / 2
-    const labelRadius = radius + 25
+    const labelRadius = radius + 32 // More breathing room
     return {
       x: center + Math.cos(angle) * labelRadius,
       y: center + Math.sin(angle) * labelRadius,
@@ -101,9 +103,26 @@ export function EmotionRadar({
     }
   })
 
+  const color = EMOTION_COLORS[dominantEmotion]
+
   return (
-    <div className={`relative ${className}`}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+    <div className={`relative flex flex-col items-center select-none ${className}`}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="drop-shadow-2xl">
+        <defs>
+          <radialGradient id={`radarGradient-${mode}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+            <stop offset="0%" stopColor={color} stopOpacity="0.4" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.1" />
+          </radialGradient>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
+            <feMerge>
+              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Grid Circles */}
         {gridCircles.map((circle, index) => (
           <circle
             key={index}
@@ -112,11 +131,13 @@ export function EmotionRadar({
             r={circle.r}
             fill="none"
             stroke="currentColor"
-            strokeOpacity={0.1}
+            strokeOpacity={0.08}
             strokeWidth={1}
+            strokeDasharray={index === 3 ? "0" : "4 4"}
           />
         ))}
 
+        {/* Axis Lines */}
         {axisLines.map((line, index) => (
           <line
             key={index}
@@ -125,56 +146,67 @@ export function EmotionRadar({
             x2={line.x2}
             y2={line.y2}
             stroke="currentColor"
-            strokeOpacity={0.2}
+            strokeOpacity={0.12}
             strokeWidth={1}
           />
         ))}
 
+        {/* Data Path */}
         <path
           d={currentPath}
-          fill={EMOTION_COLORS[dominantEmotion]}
-          fillOpacity={mode === 'temperament' ? 0.18 : 0.3}
-          stroke={EMOTION_COLORS[dominantEmotion]}
-          strokeWidth={2}
+          fill={`url(#radarGradient-${mode})`}
+          stroke={color}
+          strokeWidth={2.5}
+          className="transition-all duration-700 ease-in-out"
+          filter="url(#glow)"
         />
 
+        {/* Data Points */}
         {currentPoints.map((point, index) => (
           <circle
             key={index}
             cx={point.x}
             cy={point.y}
-            r={5}
+            r={3.5}
             fill={EMOTION_COLORS[point.emotion]}
             stroke="white"
-            strokeWidth={2}
+            strokeWidth={1.5}
+            className="transition-all duration-700 ease-in-out drop-shadow-md"
           />
         ))}
 
-        {showLabels && labelPositions.map((position, index) => (
-          <text
-            key={index}
-            x={position.x}
-            y={position.y}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            className="text-xs fill-current"
-            style={{ fontSize: '11px' }}
-          >
-            {EMOTION_LABELS[position.emotion]}
-          </text>
-        ))}
+        {/* Labels */}
+        {showLabels && labelPositions.map((position, index) => {
+          // Adjust labels at the extremes for better centering
+          const isTop = index === 0
+          const isBottom = index === 4
+          const isRight = index > 0 && index < 4
+          const isLeft = index > 4
+
+          return (
+            <text
+              key={index}
+              x={position.x}
+              y={position.y}
+              textAnchor={isTop || isBottom ? "middle" : isRight ? "start" : "end"}
+              dominantBaseline="middle"
+              className="fill-muted-foreground/80 font-medium tracking-tight"
+              style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+            >
+              {EMOTION_LABELS[position.emotion]}
+            </text>
+          )
+        })}
       </svg>
 
-      <div className="mt-4 flex flex-wrap justify-center gap-2">
-        <div className="flex items-center gap-1 text-xs">
-          <div
-            className="w-3 h-3 rounded-full"
-            style={{ backgroundColor: EMOTION_COLORS[dominantEmotion] }}
-          />
-          <span>
-            {mode === 'temperament' ? 'Temperament lead:' : 'Current lead:'} {EMOTION_LABELS[dominantEmotion]}
-          </span>
-        </div>
+      <div className="mt-4 inline-flex items-center gap-2.5 rounded-full border border-border/40 bg-background/50 px-3.5 py-1.5 backdrop-blur-sm">
+        <div
+          className="w-2.5 h-2.5 rounded-full shadow-sm animate-pulse"
+          style={{ backgroundColor: color, boxShadow: `0 0 10px ${color}` }}
+        />
+        <span className="text-[11px] font-semibold text-foreground/90 uppercase tracking-wider">
+          {mode === 'temperament' ? 'Temperament lead:' : 'Current lead:'} {EMOTION_LABELS[dominantEmotion]}
+        </span>
       </div>
     </div>
   )
@@ -216,29 +248,38 @@ export function EmotionBars({
     .sort((a, b) => (values[b] || 0) - (values[a] || 0))
 
   return (
-    <div className={`space-y-2 ${className}`}>
+    <div className={`grid gap-x-6 gap-y-4 sm:grid-cols-2 ${className}`}>
       {sortedEmotions.map((emotion) => {
         const value = values[emotion] || 0
         const isDominant = emotion === dominantEmotion
 
         return (
-          <div key={emotion} className="flex items-center gap-2">
-            <span className="w-24 text-sm truncate">
-              {EMOTION_LABELS[emotion]}
-              {isDominant ? ' *' : ''}
-            </span>
-            <div className="flex-1 h-4 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+          <div key={emotion} className="group relative flex flex-col gap-1.5">
+            <div className="flex items-center justify-between px-0.5">
+              <span className={`text-[11px] font-bold uppercase tracking-wider ${isDominant ? 'text-foreground' : 'text-muted-foreground/70'}`}>
+                {EMOTION_LABELS[emotion]}
+                {isDominant && <span className="ml-1 text-primary">●</span>}
+              </span>
+              <span className="text-[10px] font-mono text-muted-foreground tabular-nums">
+                {(value * 100).toFixed(0)}%
+              </span>
+            </div>
+            <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted/40 ring-1 ring-inset ring-white/5">
               <div
-                className="h-full rounded-full transition-all duration-300"
+                className="absolute inset-y-0 left-0 rounded-full transition-all duration-1000 ease-out"
                 style={{
                   width: `${value * 100}%`,
-                  backgroundColor: EMOTION_COLORS[emotion]
+                  backgroundColor: EMOTION_COLORS[emotion],
+                  boxShadow: isDominant ? `0 0 12px ${EMOTION_COLORS[emotion]}66` : 'none'
                 }}
               />
+              {isDominant && (
+                <div 
+                  className="absolute inset-y-0 h-full w-2 bg-white/20 blur-sm"
+                  style={{ left: `${value * 100 - 2}%` }}
+                />
+              )}
             </div>
-            <span className="w-12 text-xs text-right">
-              {(value * 100).toFixed(0)}%
-            </span>
           </div>
         )
       })}

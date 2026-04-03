@@ -40,6 +40,12 @@
 - `GET|POST /api/simulation`
 - `POST /api/multiagent`
 
+## Scenarios
+
+- `GET /api/scenarios?agentId=...`
+- `POST /api/scenarios`
+- `GET /api/scenarios/[id]`
+
 ## Contract Notes
 
 - API shapes remain stable across persistence modes.
@@ -51,3 +57,7 @@
 - `POST /api/agents/[id]/chat` now also drives learning side effects: observation capture, follow-up resolution, pattern confirmation, and adaptation refresh.
 - `GET /api/agents/[id]/learning` returns learning state built from patterns, goals, adaptations, skills, and recent observations.
 - `POST /api/agents/[id]/learning` remains available for explicit feature actions such as manual conversation analysis, goal generation, skill updates, and manual adaptation creation.
+- `GET /api/scenarios` returns branch point options, intervention templates, and recent saved runs for one agent.
+- `GET /api/scenarios` also returns `analytics` with best interventions, common quality flags, and playbook notes.
+- `POST /api/scenarios` requires `agentId`, `branchPointId`, `branchPointKind`, and `intervention`, then returns a saved `scenarioRun`.
+- `GET /api/scenarios/[id]` returns one persisted scenario run with branch context, turn diffs, and comparison output.

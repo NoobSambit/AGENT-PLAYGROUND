@@ -354,6 +354,153 @@ export interface SimulationRecord {
 
 export type SimulationDocument = Omit<SimulationRecord, 'id'>
 
+export type ScenarioBranchPointKind = 'message' | 'memory' | 'relationship_event' | 'simulation_turn'
+
+export interface ScenarioBranchPoint {
+  kind: ScenarioBranchPointKind
+  id: string
+  timestamp: string
+  title: string
+  summary: string
+  sourceMessageId?: string
+  relatedAgentId?: string
+  relatedAgentName?: string
+  sourceRunId?: string
+}
+
+export type ScenarioInterventionType =
+  | 'rewrite_reply'
+  | 'emotion_shift'
+  | 'relationship_shift'
+  | 'memory_injection'
+  | 'goal_outcome'
+
+export interface ScenarioIntervention {
+  type: ScenarioInterventionType
+  label: string
+  description: string
+  responseStyle?: 'warmer' | 'more direct' | 'more skeptical' | 'more collaborative'
+  targetEmotion?: EmotionType
+  emotionIntensity?: 'low' | 'medium' | 'high'
+  counterpartId?: string
+  counterpartName?: string
+  trustDelta?: number
+  respectDelta?: number
+  memoryText?: string
+  goal?: string
+  forcedOutcome?: 'succeeds' | 'fails'
+  rationale?: string
+}
+
+export interface ScenarioTurnResult {
+  id: string
+  probeLabel: string
+  probePrompt: string
+  baselineResponse: string
+  alternateResponse: string
+  baselineEmotion: EmotionalState
+  alternateEmotion: EmotionalState
+  divergenceNotes: string[]
+}
+
+export interface ScenarioComparison {
+  firstDivergence: string
+  baselineSummary: string
+  alternateSummary: string
+  keyDifferences: string[]
+  recommendation: string
+  riskNotes: string[]
+  qualityNotes: string[]
+  qualityScore: {
+    baseline: number
+    alternate: number
+  }
+  outcomeScore: {
+    baseline: number
+    alternate: number
+  }
+  qualityBreakdown: {
+    baseline: {
+      clarity: number
+      warmth: number
+      specificity: number
+      consistency: number
+    }
+    alternate: {
+      clarity: number
+      warmth: number
+      specificity: number
+      consistency: number
+    }
+  }
+  qualityFlags: {
+    baseline: string[]
+    alternate: string[]
+  }
+  diffHighlights: Array<{
+    label: string
+    baseline: string
+    alternate: string
+  }>
+}
+
+export interface ScenarioAnalyticsSummary {
+  totalRuns: number
+  averageAlternateScore: number
+  bestInterventions: Array<{
+    label: string
+    winRate: number
+    averageGain: number
+  }>
+  commonQualityFlags: string[]
+  recommendedPlaybook: string[]
+}
+
+export interface ScenarioRunRecord {
+  id: string
+  agentId: string
+  agentName: string
+  status: 'draft' | 'running' | 'complete' | 'failed'
+  branchPoint: ScenarioBranchPoint
+  intervention: ScenarioIntervention
+  branchContext: {
+    recentMessages: Array<{
+      id: string
+      role: 'user' | 'assistant'
+      content: string
+      timestamp: string
+    }>
+    relevantMemories: Array<{
+      id: string
+      summary: string
+      importance: number
+      timestamp: string
+    }>
+    relationshipSummary?: string
+  }
+  baselineState: {
+    emotionalState: EmotionalState
+    dominantEmotion: EmotionType | null
+  }
+  alternateState: {
+    emotionalState: EmotionalState
+    dominantEmotion: EmotionType | null
+    injectedContext: string[]
+  }
+  turns: ScenarioTurnResult[]
+  comparison: ScenarioComparison
+  metadata?: {
+    provider?: string
+    model?: string
+    maxTurns?: number
+    generatedAt?: string
+  }
+  createdAt: string
+  updatedAt: string
+}
+
+export type ScenarioRunDocument = Omit<ScenarioRunRecord, 'id'>
+
 export interface UserRecord {
   id: string
   email: string

@@ -28,6 +28,7 @@ import type {
   PersonalityEventRecord,
   PsychologicalProfile,
   SharedKnowledge,
+  ScenarioRunRecord,
   SimulationRecord,
   Challenge,
 } from '@/types/database'
@@ -346,6 +347,21 @@ export const simulations = pgTable('simulations', {
   index('simulations_created_idx').on(table.createdAt),
 ])
 
+export const scenarioRuns = pgTable('scenario_runs', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  status: text('status').notNull(),
+  branchKind: text('branch_kind').notNull(),
+  branchRefId: text('branch_ref_id').notNull(),
+  createdAt,
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull(),
+  payload: jsonb('payload').$type<ScenarioRunRecord>().notNull(),
+}, (table) => [
+  index('scenario_runs_agent_created_idx').on(table.agentId, table.createdAt),
+  index('scenario_runs_status_created_idx').on(table.status, table.createdAt),
+  index('scenario_runs_branch_ref_idx').on(table.branchKind, table.branchRefId),
+])
+
 export const migrationOutbox = pgTable('migration_outbox', {
   id: text('id').primaryKey(),
   entityType: text('entity_type').notNull(),
@@ -384,5 +400,6 @@ export const schema = {
   challenges,
   mentorships,
   simulations,
+  scenarioRuns,
   migrationOutbox,
 }

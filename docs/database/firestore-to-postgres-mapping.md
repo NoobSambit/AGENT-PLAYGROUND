@@ -10,6 +10,7 @@
 - `collective_broadcasts` -> `collective_broadcasts`
 - `conflicts` -> `conflicts`
 - `simulations` -> `simulations`
+- `scenario_runs` -> `scenario_runs`
 - `challenges` -> `challenges`
 - `mentorships` -> `mentorships`
 

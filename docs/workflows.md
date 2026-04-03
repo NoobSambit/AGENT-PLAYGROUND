@@ -194,6 +194,87 @@ Expected outcome:
 - much lower hallucination risk than transcript-only memory
 - the learning system should eventually confirm that memory-backed recall works well on recall-style turns
 
+## Run A Scenario Branch
+
+This workflow powers the new `What-If Lab`.
+
+### High-Level Flow
+
+1. Open `/agents/[id]`.
+2. Switch to `Scenarios`.
+3. UI loads scenario bootstrap data from `GET /api/scenarios?agentId=...`.
+4. User chooses:
+   - one branch point
+   - one intervention
+5. User runs the branch with `POST /api/scenarios`.
+6. The server:
+   - loads the agent
+   - loads recent messages
+   - loads relevant memories
+   - loads relationships
+   - loads relevant simulation turns
+   - creates a `running` scenario record
+   - runs baseline probes
+   - runs alternate probes with the scenario assumption applied
+   - updates sandbox emotional state during the run
+   - evaluates quality, flags, and score deltas
+   - summarizes differences
+   - saves the final scenario run
+7. UI renders:
+   - overview
+   - turn diff
+   - context
+
+### What Updates
+
+- `scenario_runs`
+
+### What Does Not Update
+
+The scenario workflow does not mutate:
+
+- `agents`
+- `messages`
+- `memories`
+- `agent_relationships`
+
+That isolation is important because scenario runs are experiments, not live history.
+
+## Scenario Example: Warmer Recovery Reply
+
+Setup:
+
+- branch point: user message describing a failed launch
+- intervention: rewrite next reply in a warmer style
+
+Expected behavior:
+
+1. baseline branch stays close to the current path
+2. alternate branch should:
+   - acknowledge tension earlier
+   - offer clearer recovery framing
+   - stay concrete
+3. saved comparison should show:
+   - first divergence
+   - stronger or weaker outcome score
+   - quality score changes
+   - quality flags if the output became vague or overly meta
+   - practical recommendation
+
+## Scenario Example: Trust-Shifted Planning
+
+Setup:
+
+- branch point: planning turn with uncertainty
+- intervention: shift emotional baseline toward `trust`
+
+Expected behavior:
+
+1. alternate branch becomes less guarded
+2. response should explain priorities more openly
+3. emotion state should often end more trust-forward than baseline
+4. run should be saved for later comparison
+
 ## Memory Console Workflow
 
 ### List View

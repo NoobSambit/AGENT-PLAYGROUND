@@ -30,6 +30,7 @@
 - `challenges`
 - `mentorships`
 - `simulations`
+- `scenario_runs`
 - `migration_outbox`
 
 ## Modeling Notes

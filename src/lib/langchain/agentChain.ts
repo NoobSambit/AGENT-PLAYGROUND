@@ -420,8 +420,8 @@ export class AgentChain {
 
     return await this.baseChain.generateResponse(messages, {
       ...(llmConfig || {}),
-      temperature: this.config.temperature,
-      maxTokens: this.config.maxTokens
+      temperature: llmConfig?.temperature ?? this.config.temperature,
+      maxTokens: llmConfig?.maxTokens ?? this.config.maxTokens
     })
   }
 
@@ -440,8 +440,8 @@ export class AgentChain {
 
     return await this.baseChain.streamResponse(messages, {
       ...(llmConfig || {}),
-      temperature: this.config.temperature,
-      maxTokens: this.config.maxTokens
+      temperature: llmConfig?.temperature ?? this.config.temperature,
+      maxTokens: llmConfig?.maxTokens ?? this.config.maxTokens
     }, onToken)
   }
 
