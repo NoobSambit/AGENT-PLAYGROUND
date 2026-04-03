@@ -362,6 +362,7 @@ export interface ScenarioBranchPoint {
   timestamp: string
   title: string
   summary: string
+  fullContent?: string
   sourceMessageId?: string
   relatedAgentId?: string
   relatedAgentName?: string

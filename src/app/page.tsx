@@ -27,12 +27,6 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { cn } from '@/lib/utils'
 import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 
-const headerLinks = [
-  { href: '#workflow', label: 'Workflow' },
-  { href: '#feature-showcase', label: 'Showcase' },
-  { href: '/agents', label: 'Agents' },
-]
-
 const railTabs = [
   'Hero Story',
   'Agent Memory',
@@ -109,7 +103,7 @@ const audience = [
 
 function BentoGridSection() {
   return (
-    <div className="mx-auto max-w-[88rem]">
+    <div className="mx-auto max-w-[120rem]">
       <h3 className="mb-8 max-w-sm pl-2 text-[clamp(2rem,3vw,2.4rem)] font-bold leading-[1.05] tracking-tight text-foreground sm:pl-0">
         Idea to agent <br /> in hours, <span className="text-primary">not days.</span>
         <p className="mt-5 text-sm font-medium leading-[1.6] text-muted-foreground sm:text-[15px]">
@@ -1307,44 +1301,9 @@ export default function Home() {
 
 
 
-      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[85rem] items-center gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <Link href="/" className="flex items-center gap-3.5">
-            <PlaygroundLogo className="h-8 w-8 text-primary drop-shadow-[0_0_12px_rgba(203,166,247,0.3)]" />
-            <span className="text-lg font-semibold tracking-tight text-foreground">Agent Playground</span>
-          </Link>
-
-          <nav className="hidden items-center gap-8 text-sm font-medium text-muted-foreground lg:flex">
-            {headerLinks.map((item) => (
-              <Link key={item.href} href={item.href} className="transition-colors hover:text-foreground">
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-
-          <div className="ml-auto flex items-center gap-3">
-            <div className="hidden h-10 items-center gap-2 rounded-sm border border-border/40 bg-muted/40 px-3 text-sm text-muted-foreground lg:inline-flex">
-              <Search className="h-4 w-4" />
-              <span>Search</span>
-              <span className="rounded-md border border-border/30 px-1.5 py-0.5 text-[11px] text-muted-foreground/60">⌘K</span>
-            </div>
-            <ThemeToggle />
-            <Link href="/dashboard" className="hidden text-xs font-bold text-muted-foreground transition-colors hover:text-foreground md:inline-flex">
-              Login
-            </Link>
-            <Link
-              href="/agents/new"
-              className="inline-flex h-9 items-center justify-center rounded-sm bg-foreground px-4 text-xs font-bold text-background transition-colors hover:bg-foreground/90"
-            >
-              Get Started
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      <main className="relative z-10">
-        <section className="px-4 pb-12 pt-16 sm:px-6 lg:px-8">
-          <div className="mx-auto max-w-[85rem]">
+      <div className="relative z-10 pt-20">
+        <section className="px-4 pb-12 pt-16 sm:px-10 lg:px-14">
+          <div className="mx-auto max-w-[120rem]">
             <div className="flex flex-col items-start text-left">
               <div className="max-w-4xl">
                 <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] font-medium tracking-wide text-primary">
@@ -1412,7 +1371,7 @@ export default function Home() {
           <BentoGridSection />
         </section>
 
-      </main>
+      </div>
     </div>
   )
 }

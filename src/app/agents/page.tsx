@@ -48,7 +48,7 @@ export default function AgentsPage() {
 
   return (
     <div className="relative min-h-screen pb-20 pt-28">
-      <main className="mx-auto max-w-7xl px-6 sm:px-8">
+      <main className="mx-auto max-w-full px-6 sm:px-12 lg:px-16">
         {/* Hero Section */}
         <motion.section
           initial={{ opacity: 0, y: 15 }}

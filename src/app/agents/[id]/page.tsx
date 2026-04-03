@@ -1,5 +1,6 @@
 'use client'
 
+import { cn } from '@/lib/utils'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
 import { MemoryRecord, MessageRecord, AgentRecord, AgentRelationship, ScenarioAnalyticsSummary, ScenarioBranchPoint, ScenarioIntervention, ScenarioRunRecord, EMOTION_COLORS, EmotionType } from '@/types/database'
-import { ArrowLeft, Send, User, MessageCircle, Brain, TrendingUp, Heart, Clock, Palette, Moon, BookOpen, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles } from 'lucide-react'
+import { ArrowLeft, Send, User, MessageCircle, Brain, TrendingUp, Heart, Clock, Palette, Moon, BookOpen, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles, LayoutDashboard } from 'lucide-react'
 import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { motion } from 'framer-motion'
 import { GradientOrb } from '@/components/ui/animated-background'
@@ -50,6 +51,7 @@ import { emotionalService } from '@/lib/services/emotionalService'
 import { timelineService } from '@/lib/services/timelineService'
 
 type TabType =
+  | 'overview'
   | 'chat'
   | 'memory'
   | 'emotions'
@@ -87,6 +89,7 @@ function formatEmotionLabel(emotion: string | null | undefined): string {
 }
 
 const TAB_CONFIG = [
+  { id: 'overview', icon: LayoutDashboard, label: 'Overview', description: 'Agent health, goals, and stats.' },
   { id: 'chat', icon: MessageCircle, label: 'Chat', description: 'Direct conversations and model responses.' },
   { id: 'emotions', icon: Heart, label: 'Emotions', description: 'Current emotional signals and recent shifts.' },
   { id: 'neural', icon: Brain, label: 'Neural', description: 'Live thought flow, attention, and emotional activity.' },
@@ -122,7 +125,7 @@ export default function AgentDetail() {
   const selectedProvider = useLLMPreferenceStore((state) => state.provider)
 
   const [newMessage, setNewMessage] = useState('')
-  const [activeTab, setActiveTab] = useState<TabType>('chat')
+  const [activeTab, setActiveTab] = useState<TabType>('overview')
   const [agentResolved, setAgentResolved] = useState(false)
   const [memories, setMemories] = useState<MemoryRecord[]>([])
   const [relationships, setRelationships] = useState<AgentRelationship[]>([])
@@ -538,127 +541,132 @@ export default function AgentDetail() {
   }
 
   return (
-    <div className="relative min-h-screen pt-28 pb-20">
+    <div className="relative min-h-screen pt-4 pb-20 mt-4 md:mt-8">
       {/* Decorative orbs */}
       <GradientOrb className="w-[600px] h-[600px] -top-[200px] -right-[200px] opacity-20" color="violet" />
       <GradientOrb className="w-[400px] h-[400px] top-1/2 -left-[200px] opacity-15" color="cyan" />
 
-      <div className="relative z-10 mx-auto max-w-[1520px] px-6 space-y-8">
-        <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="page-section overflow-hidden px-6 py-7 sm:px-8"
-        >
-          <div className="flex flex-col gap-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                <motion.button
-                  whileHover={{ x: -4 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => router.back()}
-                  className="inline-flex h-11 items-center gap-2 rounded-full border border-border/70 bg-card/[0.62] px-4 text-sm font-medium text-muted-foreground backdrop-blur-xl transition-all hover:border-primary/20 hover:text-foreground"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </motion.button>
-
-                <div className="flex items-start gap-4">
-                  <motion.div
-                    animate={{ rotate: [0, 4, -4, 0] }}
-                    transition={{ duration: 6, repeat: Infinity }}
-                    className="flex h-16 w-16 shrink-0 items-center justify-center rounded-sm bg-primary text-primary-foreground shadow-[0_20px_48px_-24px_rgba(109,77,158,0.72)]"
-                  >
-                    <PlaygroundLogo className="h-8 w-8" />
-                  </motion.div>
-                  <div className="space-y-3">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Agent workspace</div>
-                      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
-                        {currentAgent.name}
-                      </h1>
-                      <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground">
-                        {currentAgent.persona}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <span className="soft-pill capitalize">status: {currentAgent.status}</span>
-                      <span className="soft-pill capitalize">provider: {LLM_PROVIDER_LABELS[selectedProvider]}</span>
-                      <span className="soft-pill">model: {activeProviderModel}</span>
-                      <span className="soft-pill">{currentAgent.memoryCount || 0} memories</span>
-                      <span className="soft-pill">{currentAgent.relationshipCount || 0} relationships</span>
+      <div className="relative z-10 mx-auto max-w-[1800px] px-4 md:px-8">
+        <div className="flex flex-col lg:flex-row gap-8 items-start">
+          {/* Professional Sidebar Navigation */}
+          <aside className="w-full lg:w-72 lg:sticky lg:top-24 space-y-6">
+            <div className="flex flex-col gap-1 p-1 bg-surface/50 border border-border/40 rounded-sm backdrop-blur-xl">
+              <div className="px-4 py-3 border-b border-border/20 mb-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-primary/10 text-primary border border-primary/20">
+                    <PlaygroundLogo className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold tracking-tight text-foreground truncate max-w-[120px]">{currentAgent.name}</h2>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                      <span className="text-[9px] uppercase font-bold text-muted-foreground/80 tracking-widest">{currentAgent.status}</span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <button
-                  onClick={() => router.push('/agents')}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-border/70 bg-card/[0.62] px-4 text-sm font-medium text-foreground backdrop-blur-xl transition-all hover:border-primary/20 hover:bg-card/[0.82]"
-                >
-                  All agents
-                </button>
-                <button
-                  onClick={() => router.push('/simulation')}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_-26px_rgba(109,77,158,0.72)]"
-                >
-                  Open simulation lab
-                </button>
-              </div>
+              {[
+                { label: 'Core Operations', items: ['overview', 'chat', 'emotions', 'neural', 'timeline', 'memory', 'relationships', 'learning'] },
+                { label: 'Generative Suite', items: ['scenarios', 'creative', 'dreams', 'journal'] },
+                { label: 'Intel Ecosystem', items: ['profile', 'challenges', 'knowledge-graph', 'knowledge-library', 'collective', 'mentorship'] }
+              ].map((group, groupIdx) => (
+                <div key={group.label} className={cn("space-y-1", groupIdx > 0 && "mt-4")}>
+                  <h3 className="px-4 text-[10px] uppercase font-bold tracking-[0.2em] text-muted-foreground/40 mb-2">{group.label}</h3>
+                  {TAB_CONFIG.filter(t => group.items.includes(t.id)).map((tab) => {
+                    const Icon = tab.icon
+                    const isActive = activeTab === tab.id
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => handleTabChange(tab.id)}
+                        className={cn(
+                          "w-full flex items-center gap-3 px-4 py-2.5 rounded-sm transition-all duration-200 group relative",
+                          isActive 
+                            ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" 
+                            : "text-muted-foreground hover:bg-surface-strong hover:text-foreground"
+                        )}
+                      >
+                        <Icon className={cn("h-4 w-4", isActive ? "text-white" : "text-primary/70 group-hover:text-primary")} />
+                        <span className="text-sm font-medium">{tab.label}</span>
+                        {isActive && (
+                          <motion.div layoutId="sidebar-active" className="absolute left-0 w-1 h-4 bg-white rounded-r-full" />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              ))}
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-                <div className="rounded-sm border border-border/70 bg-background/45 p-5">
-                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">What this page is for</div>
-                  <p className="mt-3 text-sm leading-7 text-muted-foreground">
-                  This workspace combines the agent&apos;s live conversation surface with memory, emotions, neural activity, relationships, learning, planning, creativity, journaling, collective knowledge, and mentorship systems.
-                </p>
-              </div>
-              <div className="rounded-sm border border-border/70 bg-background/45 p-5">
-                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Current focus</div>
-                <p className="mt-3 text-sm leading-7 text-muted-foreground">
-                  {activeTabConfig.description}
-                </p>
-              </div>
+            <div className="p-5 bg-primary/5 border border-primary/10 rounded-sm">
+              <h4 className="text-[10px] uppercase font-bold tracking-widest text-primary mb-2">Workspace context</h4>
+              <p className="text-[11px] leading-relaxed text-muted-foreground/80 lowercase">
+                monitoring {currentAgent.name}&apos;s neural density across {currentAgent.memoryCount || 0} memory nodes and {currentAgent.relationshipCount || 0} social vectors.
+              </p>
             </div>
-          </div>
-        </motion.section>
+            
+            <button
+              onClick={() => router.back()}
+              className="w-full flex items-center justify-center gap-2 h-10 rounded-sm border border-border/60 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:bg-surface-strong transition-all"
+            >
+              <ArrowLeft className="h-3 w-3" /> Exit Workspace
+            </button>
+          </aside>
 
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="page-section px-3 py-3 sm:px-4"
-        >
-          <div className="tab-nav overflow-x-auto">
-            {TAB_CONFIG.map((tab) => {
-              const Icon = tab.icon
-              const isActive = activeTab === tab.id
-              return (
-                <motion.button
-                  key={tab.id}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => handleTabChange(tab.id)}
-                  className={isActive ? 'tab-item tab-item-active' : 'tab-item'}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span>{tab.label}</span>
-                </motion.button>
-              )
-            })}
-          </div>
-        </motion.div>
+          {/* Main Dashboard Surface */}
+          <main className="flex-1 min-w-0 space-y-6">
+            <motion.header
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-surface/40 border border-border/40 p-8 rounded-sm backdrop-blur-xl flex flex-col md:flex-row md:items-center justify-between gap-6"
+            >
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-widest border border-primary/20">
+                    Active Session
+                  </span>
+                  <span className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">
+                    ID: {currentAgent.id.slice(0, 8)}
+                  </span>
+                </div>
+                <h1 className="text-4xl font-extrabold tracking-tighter text-foreground mb-4">
+                  {currentAgent.name}
+                </h1>
+                <p className="text-muted-foreground text-sm leading-relaxed max-w-4xl border-l-2 border-primary/20 pl-4 py-1 italic">
+                  &quot;{currentAgent.persona}&quot;
+                </p>
+              </div>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]">
-          {/* Agent Info */}
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
-            className="space-y-6"
-          >
+              <div className="flex flex-wrap gap-2 md:flex-col md:items-end">
+                <div className="flex items-center gap-2 bg-background/50 border border-border/40 px-4 py-2 rounded-sm">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Model</span>
+                  <span className="text-xs font-bold text-foreground"> {activeProviderModel}</span>
+                </div>
+                <div className="flex items-center gap-2 bg-background/50 border border-border/40 px-4 py-2 rounded-sm">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Provider</span>
+                  <span className="text-xs font-bold text-foreground"> {LLM_PROVIDER_LABELS[selectedProvider]}</span>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => router.push('/simulation')} className="p-2 rounded-sm border border-border/40 hover:bg-primary/10 hover:text-primary transition-all">
+                    <Sparkles className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => router.push('/agents')} className="p-2 rounded-sm border border-border/40 hover:bg-primary/10 hover:text-primary transition-all">
+                    <Users className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </motion.header>
+
+        <div className="flex flex-col gap-6">
+          {/* Agent Info - Overview Tab Only */}
+          {activeTab === 'overview' && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+            >
             <div className="p-6 rounded-sm premium-card">
               <CardHeader className="space-y-4 p-0 pb-4">
                 <CardTitle className="flex items-center gap-3 text-xl">
@@ -779,7 +787,8 @@ export default function AgentDetail() {
                 </div>
               </CardContent>
             </div>
-          </motion.div>
+            </motion.div>
+          )}
 
           {/* Main Content Area */}
           <div className="min-w-0">
@@ -997,7 +1006,7 @@ export default function AgentDetail() {
                               <div className="rounded-sm border-l-2 border-primary/40 bg-primary/5 p-5">
                                 <div className="text-[10px] font-bold uppercase tracking-widest text-primary/80">Active Analysis</div>
                                 <p className="mt-2 text-sm leading-relaxed text-foreground/90 italic">
-                                  "{emotionalService.getEmotionalSummary(agentEmotionalState, agentEmotionalProfile)}"
+                                  &quot;{emotionalService.getEmotionalSummary(agentEmotionalState, agentEmotionalProfile)}&quot;
                                 </p>
                               </div>
 
@@ -1098,7 +1107,7 @@ export default function AgentDetail() {
                                 <Brain className="h-6 w-6 text-primary" />
                               </div>
                               <p className="text-xs font-medium text-muted-foreground leading-relaxed max-w-[240px]">
-                                Temperament is shaped by the agent's persona and core traits.
+                                Temperament is shaped by the agent&apos;s persona and core traits.
                               </p>
                             </div>
                           </div>
@@ -1460,8 +1469,9 @@ export default function AgentDetail() {
             ) : null}
           </div>
         </div>
-      </div>
-
+      </main>
     </div>
-  )
+  </div>
+</div>
+)
 }

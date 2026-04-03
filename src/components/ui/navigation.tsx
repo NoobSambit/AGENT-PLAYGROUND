@@ -1,159 +1,168 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowUpRight, Menu, Sparkles, X } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { cn } from '@/lib/utils'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { LLMProviderToggle } from '@/components/llm/LLMProviderToggle'
 
 const navItems = [
-  { href: '/', label: 'Home', description: 'Product overview and entry point' },
-  { href: '/agents', label: 'Agents', description: 'Directory of all active personalities' },
-  { href: '/dashboard', label: 'Dashboard', description: 'System health, roster, and quick actions' },
-  { href: '/simulation', label: 'Simulation', description: 'Run and review multi-agent conversations' },
+  { href: '/', label: 'Home' },
+  { href: '/agents', label: 'Agents' },
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/simulation', label: 'Simulation' },
 ]
 
 export function Navigation() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const isHome = pathname === '/'
+  const [scrolled, setScrolled] = useState(false)
 
-  const currentItem = navItems.find((item) =>
-    item.href === '/' ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`)
-  )
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 20)
+    }
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
-  if (isHome) return null
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = 'unset'
+    }
+  }, [mobileMenuOpen])
 
   return (
-    <header className="sticky top-0 z-[100] px-4 pt-4 sm:px-6">
-      <div className="page-shell px-0">
-        <div className="page-section flex min-h-16 items-center gap-4 px-4 py-3 sm:px-5">
-          <Link href="/" className="group flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-sm bg-primary text-primary-foreground shadow-[0_18px_40px_-24px_rgba(109,77,158,0.6)] transition-transform duration-300 group-hover:scale-[1.03]">
-              <PlaygroundLogo className="h-5 w-5" />
+    <motion.header
+      initial={{ y: -100 }}
+      animate={{ y: 0 }}
+      className={cn(
+        'sticky top-0 z-[100] w-full transition-all duration-300',
+        scrolled 
+          ? 'border-b border-border/40 bg-background/80 backdrop-blur-md py-3' 
+          : 'border-b border-transparent bg-transparent py-5'
+      )}
+    >
+      <div className="flex w-full items-center px-4 sm:px-8 lg:px-12">
+        {/* Logo Section - Left half flex */}
+        <div className="flex flex-1 items-center">
+          <Link href="/" className="group flex items-center gap-3">
+            <div className={cn(
+              "flex h-10 w-10 items-center justify-center rounded-sm border transition-all duration-300 shadow-sm",
+              scrolled 
+                ? "bg-primary text-primary-foreground border-primary/20" 
+                : "bg-muted/60 border-white/10 group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary/20"
+            )}>
+              <PlaygroundLogo className="h-6 w-6" />
             </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold uppercase tracking-[0.24em] text-primary/80">
+            <div className="hidden flex-col sm:flex">
+              <span className="text-[15px] font-bold tracking-tight text-foreground -mb-1">
                 Agent Playground
-              </p>
-              <p className="truncate text-sm text-muted-foreground">
-                Personality-driven AI workspace
-              </p>
+              </span>
+              <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-muted-foreground/50">
+                Nexus Platform
+              </span>
             </div>
           </Link>
+        </div>
 
-          <nav className="hidden flex-1 items-center justify-center lg:flex">
-            <div className="tab-nav">
-              {navItems.map((item) => {
-                const isActive = item.href === '/'
-                  ? pathname === item.href
-                  : pathname === item.href || pathname.startsWith(`${item.href}/`)
+        {/* Desktop Navigation - Centered */}
+        <nav className="hidden items-center gap-1 lg:flex">
+          {navItems.map((item) => {
+            const isActive = item.href === '/' 
+              ? pathname === item.href 
+              : pathname === item.href || pathname.startsWith(`${item.href}/`)
+            
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'relative rounded-sm px-4 py-2 text-sm font-medium transition-all duration-200',
+                  isActive 
+                    ? 'text-foreground font-semibold' 
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {item.label}
+                {isActive && (
+                  <motion.div
+                    layoutId="nav-active"
+                    className="absolute inset-x-4 -bottom-[1.1rem] h-0.5 bg-primary rounded-full shadow-[0_4px_12px_rgba(203,166,247,0.5)]"
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  />
+                )}
+              </Link>
+            )
+          })}
+        </nav>
 
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn('tab-item relative', isActive && 'tab-item-active')}
-                  >
-                    {item.label}
-                  </Link>
-                )
-              })}
-            </div>
-          </nav>
-
-          <div className="ml-auto hidden items-center gap-3 lg:flex">
-            {currentItem && pathname !== '/' && (
-              <div className="soft-pill max-w-xs">
-                <Sparkles className="h-3.5 w-3.5 text-primary" />
-                <span className="truncate">{currentItem.description}</span>
-              </div>
-            )}
-
-            <LLMProviderToggle compact className="min-w-[18rem]" />
-
+        {/* Right Side Actions - Right half flex */}
+        <div className="flex flex-1 items-center justify-end gap-4">
+          <div className="flex items-center gap-2">
             <ThemeToggle />
-
-            <Link
-              href="/agents/new"
-              className="inline-flex h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_20px_50px_-26px_rgba(109,77,158,0.7)] transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_60px_-28px_rgba(109,77,158,0.78)]"
-            >
-              Create Agent
-              <ArrowUpRight className="h-4 w-4" />
-            </Link>
           </div>
-
-          <div className="ml-auto flex items-center gap-2 lg:hidden">
-            <ThemeToggle />
-            <button
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-border/60 bg-card/[0.65] text-muted-foreground backdrop-blur-xl transition-all hover:border-primary/25 hover:text-foreground"
-              onClick={() => setMobileMenuOpen((open) => !open)}
-            >
-              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </button>
-          </div>
+          
+          {/* Mobile Menu Toggle */}
+          <button
+            className="flex h-10 w-10 items-center justify-center rounded-sm border border-border/40 bg-muted/20 text-muted-foreground transition-all hover:bg-muted/40 hover:text-foreground lg:hidden"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          >
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
       </div>
 
+      {/* Mobile Menu */}
       <AnimatePresence>
         {mobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            className="page-shell mt-3 px-0 lg:hidden"
-          >
-            <div className="page-section overflow-hidden px-4 py-4">
-              <div className="space-y-2">
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 top-[4.5rem] z-[-1] bg-background/80 backdrop-blur-md"
+              onClick={() => setMobileMenuOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="absolute inset-x-0 top-full border-b border-border/40 bg-card p-6 shadow-2xl lg:hidden"
+            >
+              <div className="flex flex-col gap-2">
                 {navItems.map((item) => {
-                  const isActive = item.href === '/'
-                    ? pathname === item.href
+                  const isActive = item.href === '/' 
+                    ? pathname === item.href 
                     : pathname === item.href || pathname.startsWith(`${item.href}/`)
-
+                  
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
                       onClick={() => setMobileMenuOpen(false)}
                       className={cn(
-                        'flex items-start justify-between rounded-sm px-4 py-3 transition-all',
-                        isActive
-                          ? 'bg-primary/10 text-foreground'
-                          : 'bg-transparent text-muted-foreground hover:bg-card/70 hover:text-foreground'
+                        'flex items-center justify-between rounded-sm px-4 py-3 font-medium transition-colors',
+                        isActive 
+                          ? 'bg-primary/10 text-primary' 
+                          : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                       )}
                     >
-                      <div>
-                        <div className="font-medium">{item.label}</div>
-                        <div className="mt-1 text-xs leading-5 text-muted-foreground">{item.description}</div>
-                      </div>
-                      <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0" />
+                      {item.label}
+                      {isActive && <div className="h-1.5 w-1.5 rounded-full bg-primary" />}
                     </Link>
                   )
                 })}
               </div>
-
-              <div className="page-divider my-4" />
-
-              <LLMProviderToggle />
-
-              <div className="page-divider my-4" />
-
-              <Link
-                href="/agents/new"
-                onClick={() => setMobileMenuOpen(false)}
-                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-primary text-sm font-semibold text-primary-foreground shadow-[0_18px_48px_-28px_rgba(109,77,158,0.72)]"
-              >
-                Create Agent
-                <ArrowUpRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </motion.div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
-    </header>
+    </motion.header>
   )
 }

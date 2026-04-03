@@ -25,6 +25,8 @@ It is meant to help with:
 
 - `/agents/[id]` -> `Scenarios`
 
+The page now includes a dedicated **Guide button** that opens an interactive, step-by-step product walkthrough explaining the What-If Lab to new users. It uses progressive disclosure ("New Experiment" vs "Past Results" tabs) to ensure users aren't overwhelmed by forms or old data.
+
 ## Plain-Language Mental Model
 
 Think of the feature like this:

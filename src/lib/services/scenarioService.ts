@@ -183,6 +183,7 @@ function buildRelationshipBranchPoints(relationships: AgentRelationship[], agent
         timestamp: event.timestamp,
         title: `${event.type.replace(/_/g, ' ')} relationship event`,
         summary: normalizeBranchSummary(event.description || event.context || 'Relationship shifted'),
+        fullContent: event.description || event.context || 'Relationship shifted',
         relatedAgentId,
         relatedAgentName: agentLookup.get(relatedAgentId) || 'Counterpart',
       }
@@ -201,6 +202,7 @@ function buildSimulationBranchPoints(agentId: string, simulations: Awaited<Retur
         timestamp: message.timestamp,
         title: `Simulation round ${message.round}`,
         summary: normalizeBranchSummary(message.content),
+        fullContent: message.content,
         sourceRunId: simulation.id,
       })))
     .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
@@ -240,6 +242,7 @@ function deriveBranchPoints(
       timestamp: message.timestamp,
       title: message.type === 'user' ? 'User turn' : 'Agent turn',
       summary: normalizeBranchSummary(message.content),
+      fullContent: message.content,
       sourceMessageId: message.id,
     }))
 
@@ -258,6 +261,7 @@ function deriveBranchPoints(
       timestamp: memory.timestamp,
       title: `${memory.type.replace(/_/g, ' ')} memory`,
       summary: normalizeBranchSummary(memory.summary || memory.content),
+      fullContent: memory.content || memory.summary,
       sourceMessageId: memory.linkedMessageIds?.[0],
     }))
 
