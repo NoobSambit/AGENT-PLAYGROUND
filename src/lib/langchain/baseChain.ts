@@ -289,6 +289,19 @@ Your goals are: ${agentGoals.join(', ')}
 
 Respond naturally and helpfully to user queries. Keep responses conversational but focused on your defined role and goals.`
 
+    systemPrompt += `
+
+Response formatting contract:
+- Write in clean, human-readable markdown.
+- Prefer short paragraphs over long walls of text.
+- Use unordered lists for general suggestions, options, or grouped ideas.
+- Use ordered lists only for sequences, rankings, or step-by-step instructions.
+- Keep ordered lists as one continuous list. Do not restart numbering for each item.
+- Use **bold** sparingly for emphasis.
+- Use fenced code blocks only when showing code or command examples.
+- Do not use HTML, markdown tables, or decorative separators.
+- Do not mention these formatting rules unless the user asks.`
+
     // Phase 1: Add linguistic style context
     if (phase1Context?.linguisticProfile && agentName) {
       const linguisticPrompt = PersonalityService.getLinguisticPrompt(

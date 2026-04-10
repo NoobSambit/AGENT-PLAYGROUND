@@ -15,6 +15,7 @@ import { MessageService } from './messageService'
 import { PersonalityEventService } from './personalityEventService'
 import { PersonalityService } from './personalityService'
 import { LearningService } from './learningService'
+import { buildMessageRenderData } from '@/lib/chat/rendering'
 
 const STOP_WORDS = new Set([
   'the', 'and', 'for', 'are', 'but', 'not', 'you', 'that', 'with', 'this', 'from',
@@ -273,7 +274,20 @@ export class ChatTurnService {
   }
 
   private async createMessage(messageData: CreateMessageData): Promise<MessageRecord> {
-    const message = await MessageService.createMessage(messageData)
+    const metadata = {
+      ...messageData.metadata,
+      format: messageData.type === 'agent' || messageData.type === 'system'
+        ? 'markdown-v1'
+        : 'plain-text-v1',
+      render: messageData.type === 'agent' || messageData.type === 'system'
+        ? buildMessageRenderData(messageData.content)
+        : undefined,
+    }
+
+    const message = await MessageService.createMessage({
+      ...messageData,
+      metadata,
+    })
     if (!message) {
       throw new Error(`Failed to create ${messageData.type} message`)
     }

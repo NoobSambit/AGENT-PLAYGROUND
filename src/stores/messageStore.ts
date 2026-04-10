@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
-import { CreateMessageData } from '@/types/database'
+import { CreateMessageData, MessageMetadata } from '@/types/database'
 import { useAgentStore } from '@/stores/agentStore'
 
 export interface Message {
@@ -10,7 +10,7 @@ export interface Message {
   timestamp: string
   type: 'user' | 'agent' | 'system'
   roomId?: string
-  metadata?: Record<string, unknown>
+  metadata?: MessageMetadata
 }
 
 interface MessageState {
@@ -27,7 +27,7 @@ interface MessageState {
   // Firestore-backed functions
   fetchMessages: (roomId?: string) => Promise<void>
   fetchMessagesByAgentId: (agentId: string) => Promise<void>
-  sendMessage: (content: string, agentId: string, metadata?: Record<string, unknown>, type?: Message['type']) => Promise<void>
+  sendMessage: (content: string, agentId: string, metadata?: MessageMetadata, type?: Message['type']) => Promise<void>
   clearMessages: (roomId?: string) => Promise<void>
 }
 

@@ -296,6 +296,35 @@ export interface MemoryRecallResult {
   reasons: string[]
 }
 
+export type MessageRenderBlock =
+  | { type: 'heading'; level: 1 | 2 | 3; text: string }
+  | { type: 'paragraph'; text: string }
+  | { type: 'blockquote'; text: string }
+  | { type: 'unordered_list'; items: string[] }
+  | { type: 'ordered_list'; items: string[] }
+  | { type: 'code'; language?: string; code: string }
+
+export interface MessageRenderData {
+  version: 1
+  format: 'blocks-v1'
+  sourceFormat: 'markdown-v1'
+  blocks: MessageRenderBlock[]
+}
+
+export interface MessageMetadata {
+  format?: 'plain-text-v1' | 'markdown-v1' | 'blocks-v1'
+  render?: MessageRenderData
+  langchain?: boolean
+  reasoning?: string
+  toolsUsed?: string[]
+  memoryUsed?: number
+  model?: string
+  provider?: string
+  emotionSummary?: unknown
+  emotionEvents?: unknown[]
+  [key: string]: unknown
+}
+
 export interface MessageRecord {
   id: string
   agentId: string
@@ -303,7 +332,7 @@ export interface MessageRecord {
   type: 'user' | 'agent' | 'system'
   timestamp: string // ISO timestamp
   roomId?: string // For multi-agent conversations
-  metadata?: Record<string, unknown> // JSON object for additional message data
+  metadata?: MessageMetadata // JSON object for additional message data
   userId?: string // For multi-user support
 }
 
@@ -525,7 +554,7 @@ export interface CreateMessageData {
   content: string
   type: MessageRecord['type']
   roomId?: string
-  metadata?: Record<string, unknown>
+  metadata?: MessageMetadata
   userId?: string
 }
 

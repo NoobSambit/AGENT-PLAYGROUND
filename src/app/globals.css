@@ -209,6 +209,23 @@ body {
   border-bottom-left-radius: 2px;
 }
 
+.chat-message-content {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.chat-message-content code {
+  font-family: var(--font-mono), monospace;
+}
+
+.chat-message-content :not(pre) > code {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.3rem;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  font-size: 0.9em;
+}
+
 .icon-container {
   width: 48px;
   height: 48px;

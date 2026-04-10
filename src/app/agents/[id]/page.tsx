@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
-import { MemoryRecord, MessageRecord, AgentRecord, AgentRelationship, ScenarioAnalyticsSummary, ScenarioBranchPoint, ScenarioIntervention, ScenarioRunRecord, EMOTION_COLORS, EmotionType } from '@/types/database'
+import { MemoryRecord, MessageRecord, AgentRecord, AgentRelationship, ScenarioAnalyticsSummary, ScenarioBranchPoint, ScenarioIntervention, ScenarioRunRecord, EMOTION_COLORS, EmotionType, MessageRenderBlock } from '@/types/database'
 import { ArrowLeft, Send, User, MessageCircle, Brain, TrendingUp, Heart, Clock, Palette, Moon, BookOpen, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles, LayoutDashboard } from 'lucide-react'
 import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { motion } from 'framer-motion'
@@ -33,6 +33,7 @@ import { MetaLearningDashboard } from '@/components/learning/MetaLearningDashboa
 
 import { ParallelRealityExplorer } from '@/components/parallel/ParallelRealityExplorer'
 import { VoiceConsole } from '@/components/chat/VoiceConsole'
+import { ChatMessageContent } from '@/components/chat/ChatMessageContent'
 
 // Phase 3 Components
 import { KnowledgeGraph } from '@/components/knowledge/KnowledgeGraph'
@@ -844,13 +845,19 @@ export default function AgentDetail() {
                             )}
 
                             <div
-                              className={`max-w-[75%] rounded-sm px-5 py-3 shadow-sm ${
+                              className={`max-w-[75%] rounded-sm px-5 py-4 shadow-sm ${
                                 message.type === 'user'
                                   ? 'bg-primary text-primary-foreground rounded-br-md'
                                   : 'bg-muted text-card-foreground rounded-bl-md'
                               }`}
                             >
-                              <p className="text-sm leading-relaxed">{message.content}</p>
+                              <ChatMessageContent
+                                content={message.content}
+                                blocks={Array.isArray(message.metadata?.render?.blocks)
+                                  ? message.metadata.render.blocks as MessageRenderBlock[]
+                                  : undefined}
+                                variant={message.type === 'user' ? 'user' : 'assistant'}
+                              />
                               <div className={`text-xs mt-2 flex items-center gap-2 ${
                                 message.type === 'user'
                                   ? 'text-primary-foreground/70'
