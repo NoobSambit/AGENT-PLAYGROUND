@@ -1361,7 +1361,11 @@ export default function AgentDetail() {
                 </CardContent>
               </Card>
             ) : activeTab === 'profile' ? (
-              <ProfileViewer agent={currentAgent as AgentRecord} refreshToken={profileRefreshToken} />
+              <ProfileViewer
+                agent={currentAgent as AgentRecord}
+                refreshToken={profileRefreshToken}
+                preferredModel={activeProviderModel}
+              />
             ) : activeTab === 'challenges' ? (
               /* Phase 2: Challenges Tab */
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">

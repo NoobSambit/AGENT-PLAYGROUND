@@ -1025,6 +1025,102 @@ export interface MotivationalProfile {
   growthAreas: string[]
 }
 
+export type ProfileAnalysisStage =
+  | 'evidence'
+  | 'social_style'
+  | 'decision_style'
+  | 'stress_conflict'
+  | 'motivation_identity'
+  | 'communication_self_awareness'
+  | 'synthesis'
+  | 'evaluation'
+  | 'repair'
+  | 'completed'
+
+export type ProfileAnalysisRunStatus =
+  | 'draft'
+  | 'running'
+  | 'ready'
+  | 'failed'
+
+export type ProfileEvidenceSourceType =
+  | 'persona'
+  | 'goal'
+  | 'core_trait'
+  | 'dynamic_trait'
+  | 'linguistic_baseline'
+  | 'emotion'
+  | 'emotion_event'
+  | 'personality_event'
+  | 'message'
+  | 'memory'
+  | 'journal'
+
+export interface ProfileEvidenceSignal {
+  id: string
+  sourceType: ProfileEvidenceSourceType
+  label: string
+  snippet: string
+  reason: string
+  weight: number
+  linkedEntityId?: string
+}
+
+export interface ProfileStageFinding {
+  stage: ProfileAnalysisStage
+  summary: string
+  bigFiveSignals: Partial<Record<keyof BigFiveProfile, string[]>>
+  mbtiHints: string[]
+  enneagramHints: string[]
+  communicationHints: string[]
+  contradictions: string[]
+  confidenceNotes: string[]
+}
+
+export interface ProfileQualityDimensionScore {
+  score: number
+  rationale: string
+}
+
+export interface ProfileQualityEvaluation {
+  overallScore: number
+  pass: boolean
+  dimensions: {
+    evidenceGrounding: ProfileQualityDimensionScore
+    consistency: ProfileQualityDimensionScore
+    distinctiveness: ProfileQualityDimensionScore
+    communicationUsefulness: ProfileQualityDimensionScore
+    rationaleCompleteness: ProfileQualityDimensionScore
+  }
+  strengths: string[]
+  weaknesses: string[]
+  repairInstructions: string[]
+  evaluatorSummary: string
+}
+
+export interface ProfileInterviewTurn {
+  id: string
+  runId: string
+  stage: ProfileAnalysisStage
+  order: number
+  question: string
+  answer: string
+  createdAt: string
+  provider?: string
+  model?: string
+  evidenceRefs?: string[]
+}
+
+export interface ProfilePipelineEvent {
+  id: string
+  runId: string
+  stage: ProfileAnalysisStage
+  status: 'completed' | 'failed' | 'skipped'
+  summary: string
+  payload: Record<string, unknown>
+  createdAt: string
+}
+
 export interface PsychologicalProfile {
   id: string
   agentId: string
@@ -1055,9 +1151,101 @@ export interface PsychologicalProfile {
   summary: string
   strengths: string[]
   challenges: string[]
+  source?: 'deterministic_scaffold' | 'analysis_run'
+  runId?: string
+  provider?: string
+  model?: string
+  confidence?: number
+  rationales?: {
+    bigFive?: string
+    mbti?: string
+    enneagram?: string
+    communicationStyle?: string
+    stressPattern?: string
+    motivationAndGrowth?: string
+  }
 
   createdAt: string
   updatedAt: string
+}
+
+export interface ProfileAnalysisRun {
+  id: string
+  agentId: string
+  status: ProfileAnalysisRunStatus
+  latestStage: ProfileAnalysisStage
+  sourceCount: number
+  transcriptCount: number
+  evidenceSignals: ProfileEvidenceSignal[]
+  stageFindings: ProfileStageFinding[]
+  latestProfile?: PsychologicalProfile
+  latestEvaluation?: ProfileQualityEvaluation
+  failureReason?: string
+  provider?: string
+  model?: string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
+export interface CommunicationFingerprintSnapshot {
+  generatedAt: string
+  baselineAvailable: boolean
+  enoughData: boolean
+  sampleWindowSize: number
+  observedMessageCount: number
+  dimensions: {
+    formality: number
+    verbosity: number
+    humor: number
+    technicalLevel: number
+    expressiveness: number
+    directness: number
+    questionRate: number
+    structuralClarity: number
+  }
+  drift: Partial<Record<'formality' | 'verbosity' | 'humor' | 'technicalLevel' | 'expressiveness', number>>
+  recurringVocabulary: string[]
+  signaturePhrases: string[]
+  punctuation: {
+    exclamationRate: number
+    questionRate: number
+    ellipsisRate: number
+    emojiRate: number
+  }
+  excerpts: Array<{
+    id: string
+    content: string
+    timestamp: string
+  }>
+  summary?: string
+}
+
+export interface ProfileBootstrapPayload {
+  profile: PsychologicalProfile | null
+  stale: boolean
+  lastTraitUpdateAt: string | null
+  recentRuns: ProfileAnalysisRun[]
+  latestRunSummary: {
+    id: string
+    status: ProfileAnalysisRunStatus
+    latestStage: ProfileAnalysisStage
+    updatedAt: string
+    provider?: string
+    model?: string
+  } | null
+  communicationFingerprint: CommunicationFingerprintSnapshot | null
+  metrics: {
+    totalInteractions: number
+    latestCompletedRunAt: string | null
+    runCount: number
+    communicationSampleWindow: number
+  }
+  readiness: {
+    hasCompletedRun: boolean
+    canRunAnalysis: boolean
+    hasEnoughMessagesForCommunication: boolean
+  }
 }
 
 // ============================================

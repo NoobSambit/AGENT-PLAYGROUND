@@ -14,6 +14,9 @@
 - `creative_sessions`
 - `creative_artifacts`
 - `creative_pipeline_events`
+- `profile_analysis_runs`
+- `profile_interview_turns`
+- `profile_pipeline_events`
 - `dreams`
 - `journal_entries`
 - `learning_patterns`
@@ -42,4 +45,5 @@
 - Complex feature payloads remain in `jsonb`.
 - Agent-owned tables cascade on agent delete.
 - Creative Studio keeps session state, artifact versions, and pipeline trace rows separate so published output is queryable without losing inspectability.
+- Profile Intelligence keeps analysis runs, interview transcript turns, and pipeline trace rows separate so the latest psychological profile can be updated without losing run history.
 - Shared history tables keep direct references and payload snapshots.

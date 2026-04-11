@@ -28,6 +28,9 @@ import type {
   Mentorship,
   MessageRecord,
   PersonalityEventRecord,
+  ProfileAnalysisRun,
+  ProfileInterviewTurn,
+  ProfilePipelineEvent,
   PsychologicalProfile,
   SharedKnowledge,
   ScenarioRunRecord,
@@ -216,6 +219,51 @@ export const creativePipelineEvents = pgTable('creative_pipeline_events', {
 }, (table) => [
   index('creative_pipeline_events_session_created_idx').on(table.sessionId, table.createdAt),
   index('creative_pipeline_events_stage_created_idx').on(table.stage, table.createdAt),
+])
+
+export const profileAnalysisRuns = pgTable('profile_analysis_runs', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  status: text('status').notNull(),
+  latestStage: text('latest_stage').notNull(),
+  sourceCount: integer('source_count').notNull().default(0),
+  transcriptCount: integer('transcript_count').notNull().default(0),
+  provider: text('provider'),
+  model: text('model'),
+  completedAt: timestamp('completed_at', { withTimezone: true, mode: 'string' }),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull(),
+  payload: jsonb('payload').$type<ProfileAnalysisRun>().notNull(),
+  createdAt,
+}, (table) => [
+  index('profile_analysis_runs_agent_created_idx').on(table.agentId, table.createdAt),
+  index('profile_analysis_runs_agent_status_created_idx').on(table.agentId, table.status, table.createdAt),
+])
+
+export const profileInterviewTurns = pgTable('profile_interview_turns', {
+  id: text('id').primaryKey(),
+  runId: text('run_id').notNull().references(() => profileAnalysisRuns.id, { onDelete: 'cascade' }),
+  stage: text('stage').notNull(),
+  order: integer('turn_order').notNull(),
+  question: text('question').notNull(),
+  answer: text('answer').notNull(),
+  createdAt,
+  payload: jsonb('payload').$type<ProfileInterviewTurn>().notNull(),
+}, (table) => [
+  index('profile_interview_turns_run_order_idx').on(table.runId, table.order),
+  index('profile_interview_turns_stage_created_idx').on(table.stage, table.createdAt),
+])
+
+export const profilePipelineEvents = pgTable('profile_pipeline_events', {
+  id: text('id').primaryKey(),
+  runId: text('run_id').notNull().references(() => profileAnalysisRuns.id, { onDelete: 'cascade' }),
+  stage: text('stage').notNull(),
+  status: text('status').notNull(),
+  summary: text('summary').notNull(),
+  createdAt,
+  payload: jsonb('payload').$type<ProfilePipelineEvent>().notNull(),
+}, (table) => [
+  index('profile_pipeline_events_run_created_idx').on(table.runId, table.createdAt),
+  index('profile_pipeline_events_stage_created_idx').on(table.stage, table.createdAt),
 ])
 
 export const dreams = pgTable('dreams', {
@@ -438,6 +486,9 @@ export const schema = {
   creativeSessions,
   creativeArtifacts,
   creativePipelineEvents,
+  profileAnalysisRuns,
+  profileInterviewTurns,
+  profilePipelineEvents,
   dreams,
   journalEntries,
   learningPatterns,

@@ -44,12 +44,15 @@ Profile does not own:
 - `GET /api/agents/[id]/profile`
 - `POST /api/agents/[id]/profile`
 - `GET /api/agents/[id]/profile/evolution`
+- `POST /api/agents/[id]/profile/runs`
+- `GET /api/agents/[id]/profile/runs/[runId]`
+- `POST /api/agents/[id]/profile/runs/[runId]/execute`
 
 ## Ownership
 
 - UI: `src/components/profile/ProfileViewer.tsx`
-- Services: `PersonalityService`, `PersonalityEventService`, `psychologicalProfileService`, `AgentService`
-- Tables: `agents`, `agent_personality_events`
+- Services: `PersonalityService`, `PersonalityEventService`, `psychologicalProfileService`, `ProfileAnalysisService`, `CommunicationFingerprintService`, `AgentService`
+- Tables: `agents`, `agent_personality_events`, `profile_analysis_runs`, `profile_interview_turns`, `profile_pipeline_events`
 
 ## Main Concepts
 
@@ -111,17 +114,15 @@ not just:
 
 ### Psychological Profile
 
-The psychological profile is a derived analysis document embedded on the agent record.
+The psychological profile is still embedded on the agent record for cross-feature reads.
 
-It includes:
+The difference now is that it can be produced by a stored `profile_analysis_run` that includes:
 
-- Big Five
-- MBTI
-- Enneagram
-- communication style
-- motivational profile
-- emotional intelligence
-- strengths and challenges
+- a bounded evidence packet
+- a staged interview transcript
+- pipeline trace events
+- a quality evaluation
+- one optional repair pass
 
 This is not regenerated on every turn.
 
@@ -213,14 +214,18 @@ If traits changed after the last profile generation, then:
 
 The Profile UI then shows that the deep profile is older than the latest trait update.
 
-### 6. Profile Regeneration Is Manual Or Intentional
+### 6. Deep Profile Regeneration Is Manual And Inspectable
 
-When the user regenerates the profile:
+When the user starts a deep profile run:
 
 1. the latest agent state is loaded
-2. `psychologicalProfileService` recomputes the analysis
-3. the updated profile is saved to the agent
-4. the stale badge clears
+2. the server compiles bounded evidence from traits, emotions, messages, memories, and journals
+3. the server interviews the agent in fixed stages
+4. each transcript turn and pipeline event is persisted while the run is active
+5. the server synthesizes and evaluates the resulting profile
+6. one bounded repair pass may run if the quality gate fails
+7. the latest successful profile is saved to the agent
+8. the stale badge clears
 
 This is deliberate.
 
@@ -242,7 +247,7 @@ Shows:
 
 This section is about live change over time.
 
-### 2. Psychological Profile
+### 2. Derived Analysis
 
 Shows:
 
@@ -253,20 +258,27 @@ Shows:
 - communication style
 - strengths
 - challenges
+- rationale blocks
+- run history
+- interview transcript
+- pipeline trace
 
 This section is about slower interpretation.
 
-### 3. Linguistic Personality
+### 3. Communication Fingerprint
 
-Shows how the agent tends to speak:
+Shows how the agent currently tends to speak from observed replies:
 
 - formality
 - verbosity
 - humor
 - technical level
 - expressiveness
-- preferred words
-- signature expressions
+- directness
+- question rate
+- structural clarity
+- drift from the linguistic baseline
+- recurring vocabulary and excerpts
 
 ## Update Model
 
@@ -284,6 +296,7 @@ Updated during normal chat turns:
 
 Updated only when needed:
 
+- profile analysis runs
 - psychological profile document
 
 This split is important because it keeps the page dynamic without forcing expensive deep-profile recompute every turn.
@@ -389,9 +402,36 @@ This makes the Profile feature more inspectable and less magical.
 ## Known Limits
 
 - some older event rows may still have summaries produced by older logic
-- current evidence heuristics are still rule-based, not model-graded
-- psychological profile regeneration is still deterministic but relatively coarse
+- communication telemetry is only as good as the recent message sample window
+- interview synthesis quality still depends on provider/model behavior and prompt tuning
 - event summaries can still feel repetitive if many similar turns happen in a row
+
+## Current Output Quality Status
+
+The current revamp is functionally complete, but the derived profile output is not yet at the intended production quality bar.
+
+What is working:
+
+- the run-based profile workflow completes end to end
+- transcript turns and pipeline trace are persisted correctly
+- the latest successful run updates `agents.psychologicalProfile`
+- the communication fingerprint is based on observed replies instead of only seeded defaults
+
+What still needs upgrade:
+
+- deep-profile summaries can still read too generic for some agents
+- evidence grounding in the final profile needs to be more explicit and more selective
+- communication rationales need to be sharper and more useful in real product review
+- distinctiveness between similar high-agency creative agents is not strong enough yet
+
+Latest Nova Forge validation result during implementation:
+
+- run completed successfully
+- profile output updated correctly
+- quality rubric still missed the target bar
+- observed weak areas were evidence grounding, distinctiveness, communication usefulness, and rationale completeness
+
+This means the infrastructure and UX are in place, but the output-generation layer still needs another tuning pass before the Profile feature should be considered fully production-grade.
 
 ## Failure Modes
 

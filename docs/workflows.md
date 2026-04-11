@@ -131,6 +131,18 @@ Then it:
 - stores an evolution event
 - marks deep psychological profile as stale when needed
 
+The chat turn does not automatically rerun the deep profile interview workflow.
+
+That slower workflow is now manual and inspectable:
+
+1. UI creates a `profile_analysis_run`
+2. the server compiles bounded evidence from traits, emotions, messages, memories, and journals
+3. the server runs a staged live interview with the agent
+4. each interview turn and pipeline event is persisted while the run is still in progress
+5. the server synthesizes and evaluates the resulting profile
+6. one bounded repair pass may run if quality misses the gate
+7. the latest successful output is written back to `agents.psychological_profile`
+
 ### Learning Side
 
 The chat turn now also drives the learning system.

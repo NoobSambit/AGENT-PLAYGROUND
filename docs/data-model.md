@@ -16,6 +16,9 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - `creative_sessions`
 - `creative_artifacts`
 - `creative_pipeline_events`
+- `profile_analysis_runs`
+- `profile_interview_turns`
+- `profile_pipeline_events`
 - `dreams`
 - `journal_entries`
 - `learning_patterns`
@@ -46,6 +49,7 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - Keep relationship pairs normalized to one row per sorted agent pair.
 - Store structured memory facts in `memories` as `type='fact'` rows, with canonical identifiers such as `factKey` and `factType` inside `metadata`.
 - Store creative work as separate sessions, artifacts, and pipeline events so briefs, revisions, rubric output, and publication state remain inspectable.
+- Store deep profile refreshes as separate runs, interview turns, and pipeline events so evidence, transcript, quality evaluation, and final profile output remain inspectable instead of being overwritten invisibly.
 - Store scenario branch experiments in `scenario_runs` rather than overloading `simulations`, because branch experiments and primary simulation runs have different product meaning and lifecycle.
 - Store scenario quality scores, flags, and diff-ready summaries inside the scenario payload so evaluation remains inspectable after the run completes.
 

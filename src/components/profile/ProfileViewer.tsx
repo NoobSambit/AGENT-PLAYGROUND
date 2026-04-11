@@ -1,22 +1,61 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { Brain, Clock3, Languages, RefreshCw, Sparkles, TrendingUp } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { LinguisticProfileCard } from '@/components/linguistic/LinguisticProfileCard'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  AlertTriangle,
+  Brain,
+  CheckCircle2,
+  Clock3,
+  Languages,
+  Loader2,
+  MessageSquareQuote,
+  RefreshCw,
+  Sparkles,
+  TrendingUp,
+  Waves,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { buildLLMPreferenceHeaders, getClientModelForProvider, LLM_PROVIDER_LABELS } from '@/lib/llm/clientPreference'
+import { useLLMPreferenceStore } from '@/stores/llmPreferenceStore'
+import type {
   AgentRecord,
   BigFiveProfile,
+  CommunicationFingerprintSnapshot,
   EnneagramProfile,
   MBTIProfile,
   PersonalityEventRecord,
+  ProfileAnalysisRun,
+  ProfileBootstrapPayload,
+  ProfileInterviewTurn,
+  ProfilePipelineEvent,
   PsychologicalProfile,
 } from '@/types/database'
 
 interface ProfileViewerProps {
   agent: AgentRecord
   refreshToken?: number
+  preferredModel?: string
 }
+
+interface EvolutionResponse {
+  coreTraits: AgentRecord['coreTraits']
+  dynamicTraits: AgentRecord['dynamicTraits']
+  totalInteractions: number
+  lastTraitUpdateAt: string | null
+  events: PersonalityEventRecord[]
+}
+
+interface ProfileRunDetail {
+  run: ProfileAnalysisRun | null
+  interviewTurns: ProfileInterviewTurn[]
+  pipelineEvents: ProfilePipelineEvent[]
+}
+
+const premiumPanel = 'rounded-md border border-border/40 bg-card/40 backdrop-blur-md shadow-sm'
+const subPanel = 'rounded-sm border border-border/30 bg-muted/20'
+const panelClass = 'rounded-sm border border-border/50 bg-card/[0.45] p-4 backdrop-blur-lg'
+const compactPanelClass = 'rounded-sm border border-border/40 bg-background/35 p-3'
+const labelStyle = 'text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80'
 
 const BIG_FIVE_LABELS: Record<keyof BigFiveProfile, { label: string; low: string; high: string; color: string }> = {
   openness: { label: 'Openness', low: 'Practical', high: 'Inventive', color: '#9333EA' },
@@ -46,301 +85,691 @@ const MBTI_DESCRIPTIONS: Record<string, string> = {
 }
 
 const ENNEAGRAM_TYPES: Record<number, { name: string; description: string; icon: string }> = {
-  1: { name: 'The Perfectionist', description: 'Principled, purposeful, self-controlled', icon: '⚖️' },
-  2: { name: 'The Helper', description: 'Generous, demonstrative, people-pleasing', icon: '💝' },
-  3: { name: 'The Achiever', description: 'Adaptive, excelling, driven', icon: '🏆' },
-  4: { name: 'The Individualist', description: 'Expressive, dramatic, self-absorbed', icon: '🎭' },
-  5: { name: 'The Investigator', description: 'Perceptive, innovative, secretive', icon: '🔍' },
-  6: { name: 'The Loyalist', description: 'Engaging, responsible, anxious', icon: '🛡️' },
-  7: { name: 'The Enthusiast', description: 'Spontaneous, versatile, scattered', icon: '✨' },
-  8: { name: 'The Challenger', description: 'Self-confident, decisive, confrontational', icon: '💪' },
-  9: { name: 'The Peacemaker', description: 'Receptive, reassuring, complacent', icon: '☮️' },
+  1: { name: 'The Perfectionist', description: 'Principled, purposeful, self-controlled', icon: '1' },
+  2: { name: 'The Helper', description: 'Generous, demonstrative, people-pleasing', icon: '2' },
+  3: { name: 'The Achiever', description: 'Adaptive, excelling, driven', icon: '3' },
+  4: { name: 'The Individualist', description: 'Expressive, dramatic, self-absorbed', icon: '4' },
+  5: { name: 'The Investigator', description: 'Perceptive, innovative, secretive', icon: '5' },
+  6: { name: 'The Loyalist', description: 'Engaging, responsible, anxious', icon: '6' },
+  7: { name: 'The Enthusiast', description: 'Spontaneous, versatile, scattered', icon: '7' },
+  8: { name: 'The Challenger', description: 'Self-confident, decisive, confrontational', icon: '8' },
+  9: { name: 'The Peacemaker', description: 'Receptive, reassuring, complacent', icon: '9' },
 }
 
-const panelClass = 'rounded-sm border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
+async function parseResponse<T>(response: Response): Promise<T> {
+  const raw = await response.text()
+  let payload: Record<string, unknown> = {}
 
-interface ProfileApiResponse {
-  profile: PsychologicalProfile | null
-  stale?: boolean
-  lastTraitUpdateAt?: string | null
-}
-
-interface EvolutionResponse {
-  coreTraits: AgentRecord['coreTraits']
-  dynamicTraits: AgentRecord['dynamicTraits']
-  totalInteractions: number
-  lastTraitUpdateAt: string | null
-  events: PersonalityEventRecord[]
-}
-
-export function ProfileViewer({ agent, refreshToken = 0 }: ProfileViewerProps) {
-  const [profile, setProfile] = useState<PsychologicalProfile | null>(null)
-  const [profileLoading, setProfileLoading] = useState(true)
-  const [profileGenerating, setProfileGenerating] = useState(false)
-  const [profileStale, setProfileStale] = useState(false)
-  const [lastTraitUpdateAt, setLastTraitUpdateAt] = useState<string | null>(null)
-  const [evolution, setEvolution] = useState<EvolutionResponse | null>(null)
-  const [evolutionLoading, setEvolutionLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'bigfive' | 'mbti' | 'enneagram' | 'insights'>('bigfive')
-
-  const fetchProfile = useCallback(async () => {
+  if (raw) {
     try {
-      setProfileLoading(true)
-      const response = await fetch(`/api/agents/${agent.id}/profile`)
+      payload = JSON.parse(raw) as Record<string, unknown>
+    } catch {
       if (!response.ok) {
-        setProfile(null)
-        setProfileStale(false)
-        return
+        throw new Error('Server returned a non-JSON error response.')
       }
+      throw new Error('Server returned malformed JSON.')
+    }
+  }
 
-      const data = await response.json() as ProfileApiResponse
-      setProfile(data.profile)
-      setProfileStale(Boolean(data.stale))
-      setLastTraitUpdateAt(data.lastTraitUpdateAt || null)
-    } catch (error) {
-      console.error('Failed to fetch profile:', error)
-      setProfile(null)
-      setProfileStale(false)
+  if (!response.ok) {
+    throw new Error(typeof payload.error === 'string' ? payload.error : `Request failed with status ${response.status}`)
+  }
+
+  return payload as T
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return 'Unknown'
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
+}
+
+function formatTraitLabel(value: string) {
+  return value.replaceAll('_', ' ')
+}
+
+function formatDeltaPercent(delta?: number | null) {
+  if (typeof delta !== 'number') return null
+  const percent = Math.round(delta * 100)
+  if (percent === 0) return null
+  return `${percent > 0 ? '+' : ''}${percent}%`
+}
+
+function humanizeIndicator(indicator: string, trait?: string) {
+  const parts = indicator.split(':').filter(Boolean)
+  const normalized = parts.join(':').toLowerCase()
+
+  const exactMap: Record<string, string> = {
+    'user_vulnerable': 'User showed vulnerability',
+    'supportive_response': 'Supportive response',
+    'structured_guidance': 'Clear structure',
+    'topic_alignment': 'Stayed on topic',
+    'clear_structure': 'Clear structure',
+    'hedging_language': 'Hedging in response',
+    'retained_context': 'Retained prior context',
+  }
+
+  if (exactMap[normalized]) return exactMap[normalized]
+
+  if (parts[0] === 'retained' && parts[1]) {
+    return `Remembered ${parts[1].replaceAll('_', ' ')}`
+  }
+
+  if (parts.length >= 2 && parts[1] === 'retained' && parts[2]) {
+    return `Remembered ${parts[2].replaceAll('_', ' ')}`
+  }
+
+  if (parts.length >= 2) {
+    return `${(trait || parts[0]).replaceAll('_', ' ')}: ${parts.slice(1).join(' ').replaceAll('_', ' ')}`
+  }
+
+  return indicator.replaceAll('_', ' ')
+}
+
+function getEventEvidenceSummary(event: PersonalityEventRecord) {
+  const readableEvidence = event.traitDeltas
+    .flatMap((delta) => (delta.indicators || []).map((indicator) => humanizeIndicator(indicator, delta.trait)))
+    .filter((value, index, array) => array.indexOf(value) === index)
+    .slice(0, 4)
+
+  return readableEvidence
+}
+
+function getVisibleTraitDeltas(event: PersonalityEventRecord) {
+  const meaningful = event.traitDeltas.filter((delta) => typeof delta.delta === 'number' && Math.abs(delta.delta) >= 0.005)
+  return meaningful.length > 0 ? meaningful : event.traitDeltas.filter((delta) => (delta.indicators || []).length > 0).slice(0, 2)
+}
+
+function MetricTile({ label, value, hint }: { label: string; value: string | number; hint: string }) {
+  return (
+    <div className={`${subPanel} p-3`}>
+      <div className={labelStyle}>{label}</div>
+      <div className="mt-1 text-lg font-bold text-foreground leading-none">{value}</div>
+      <div className="mt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{hint}</div>
+    </div>
+  )
+}
+
+function EmptyState({ title, copy }: { title: string; copy: string }) {
+  return (
+    <div className="rounded-md border border-dashed border-border/30 bg-muted/5 px-6 py-10 text-center">
+      <div className="text-sm font-semibold text-foreground/80">{title}</div>
+      <p className="mx-auto mt-1 max-w-[360px] text-xs leading-relaxed text-muted-foreground">{copy}</p>
+    </div>
+  )
+}
+
+export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: ProfileViewerProps) {
+  const selectedProvider = useLLMPreferenceStore((state) => state.provider)
+  const activeModel = useMemo(() => preferredModel || getClientModelForProvider(selectedProvider), [preferredModel, selectedProvider])
+
+  const [mode, setMode] = useState<'evolution' | 'analysis' | 'communication'>('analysis')
+  const [profileTab, setProfileTab] = useState<'bigfive' | 'mbti' | 'enneagram' | 'insights'>('bigfive')
+  const [bootstrap, setBootstrap] = useState<ProfileBootstrapPayload | null>(null)
+  const [evolution, setEvolution] = useState<EvolutionResponse | null>(null)
+  const [detail, setDetail] = useState<ProfileRunDetail | null>(null)
+  const [activeRunId, setActiveRunId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const loadBootstrap = useCallback(async (showRefreshState = false) => {
+    try {
+      setError(null)
+      if (showRefreshState) setRefreshing(true)
+      else setLoading(true)
+
+      const [profilePayload, evolutionPayload] = await Promise.all([
+        parseResponse<ProfileBootstrapPayload>(await fetch(`/api/agents/${agent.id}/profile`, { cache: 'no-store' })),
+        parseResponse<EvolutionResponse>(await fetch(`/api/agents/${agent.id}/profile/evolution`, { cache: 'no-store' })),
+      ])
+
+      setBootstrap(profilePayload)
+      setEvolution(evolutionPayload)
+      setActiveRunId((current) => current || profilePayload.recentRuns[0]?.id || null)
+    } catch (nextError) {
+      console.error('Failed to load profile workspace:', nextError)
+      setError(nextError instanceof Error ? nextError.message : 'Failed to load profile workspace')
     } finally {
-      setProfileLoading(false)
+      setLoading(false)
+      setRefreshing(false)
     }
   }, [agent.id])
 
-  const fetchEvolution = useCallback(async () => {
+  const loadRunDetail = useCallback(async (runId: string) => {
     try {
-      setEvolutionLoading(true)
-      const response = await fetch(`/api/agents/${agent.id}/profile/evolution`)
-      if (!response.ok) {
-        setEvolution(null)
-        return
-      }
-
-      const data = await response.json() as EvolutionResponse
-      setEvolution(data)
-      setLastTraitUpdateAt(data.lastTraitUpdateAt || null)
-    } catch (error) {
-      console.error('Failed to fetch profile evolution:', error)
-      setEvolution(null)
-    } finally {
-      setEvolutionLoading(false)
+      const payload = await parseResponse<ProfileRunDetail>(await fetch(`/api/agents/${agent.id}/profile/runs/${runId}`, { cache: 'no-store' }))
+      setDetail(payload)
+      return payload
+    } catch (nextError) {
+      console.error('Failed to load profile run detail:', nextError)
+      setError(nextError instanceof Error ? nextError.message : 'Failed to load analysis run detail')
+      return null
     }
   }, [agent.id])
 
   useEffect(() => {
-    void Promise.all([fetchProfile(), fetchEvolution()])
-  }, [fetchProfile, fetchEvolution, refreshToken])
+    void loadBootstrap()
+  }, [loadBootstrap, refreshToken])
 
-  const generateProfile = async () => {
-    try {
-      setProfileGenerating(true)
-      const response = await fetch(`/api/agents/${agent.id}/profile`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+  useEffect(() => {
+    if (!activeRunId) {
+      setDetail(null)
+      return
+    }
+    void loadRunDetail(activeRunId)
+  }, [activeRunId, loadRunDetail])
+
+  useEffect(() => {
+    if (!activeRunId || !detail?.run || (detail.run.status !== 'draft' && detail.run.status !== 'running')) {
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadRunDetail(activeRunId).then((nextDetail) => {
+        if (nextDetail?.run?.status === 'ready' || nextDetail?.run?.status === 'failed') {
+          setRunning(false)
+          void loadBootstrap(true)
+        }
       })
+    }, 1500)
 
-      if (!response.ok) {
-        return
-      }
+    return () => window.clearInterval(intervalId)
+  }, [activeRunId, detail?.run, loadBootstrap, loadRunDetail])
 
-      const data = await response.json() as ProfileApiResponse
-      setProfile(data.profile)
-      setProfileStale(Boolean(data.stale))
-      setLastTraitUpdateAt(data.lastTraitUpdateAt || null)
-    } catch (error) {
-      console.error('Failed to generate profile:', error)
-    } finally {
-      setProfileGenerating(false)
+  const selectedProfile = detail?.run?.latestProfile || bootstrap?.profile || null
+  const selectedCommunication = bootstrap?.communicationFingerprint || null
+  const handleStartAnalysis = async () => {
+    try {
+      setError(null)
+      setRunning(true)
+      setMode('analysis')
+
+      const runPayload = await parseResponse<{ run: ProfileAnalysisRun }>(await fetch(`/api/agents/${agent.id}/profile/runs`, {
+        method: 'POST',
+      }))
+      setActiveRunId(runPayload.run.id)
+      setDetail({ run: runPayload.run, interviewTurns: [], pipelineEvents: [] })
+      await loadBootstrap(true)
+
+      void fetch(`/api/agents/${agent.id}/profile/runs/${runPayload.run.id}/execute`, {
+        method: 'POST',
+        headers: buildLLMPreferenceHeaders(selectedProvider, activeModel),
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}))
+            throw new Error(typeof payload.error === 'string' ? payload.error : 'Failed to execute profile analysis run')
+          }
+          await loadRunDetail(runPayload.run.id)
+          await loadBootstrap(true)
+        })
+        .catch((nextError) => {
+          console.error('Failed to execute profile analysis run:', nextError)
+          setError(nextError instanceof Error ? nextError.message : 'Failed to execute profile analysis run')
+        })
+        .finally(() => {
+          setRunning(false)
+        })
+    } catch (nextError) {
+      setRunning(false)
+      setError(nextError instanceof Error ? nextError.message : 'Failed to start profile analysis run')
     }
   }
 
+  if (loading && !bootstrap) {
+    return (
+      <div className="flex min-h-[420px] items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-6 w-6 animate-spin text-pastel-purple" />
+          <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Loading Profile Workspace</div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-6">
-      <section className="space-y-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 px-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-4">
+          <div className="rounded-md bg-pastel-purple/10 p-2.5">
+            <Brain className="h-5 w-5" />
+          </div>
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Personality evolution</div>
-            <h3 className="mt-2 text-2xl font-semibold text-foreground">Traits and recent changes</h3>
-            <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">
-              Core traits stay fixed, dynamic traits shift with meaningful interactions, and recent evolution events explain why {agent.name} changed.
+            <h3 className="text-lg font-bold leading-tight tracking-tight text-foreground">
+              {agent.name}&apos;s Profile Intelligence
+            </h3>
+            <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+              Live evolution, manual deep analysis, and observed communication telemetry
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className="soft-pill">{agent.totalInteractions || 0} interactions</span>
-            <span className="soft-pill">
-              last trait update: {lastTraitUpdateAt ? formatDateTime(lastTraitUpdateAt) : 'not yet'}
-            </span>
           </div>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className={`${panelClass} space-y-6`}>
-            <div>
-              <div className="text-sm font-medium text-muted-foreground">Core Traits (Immutable)</div>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                {Object.entries(agent.coreTraits || {}).map(([trait, score]) => (
-                  <TraitBar
-                    key={trait}
-                    label={trait}
-                    score={score}
-                    colorClass="bg-primary"
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-sm font-medium text-muted-foreground">Dynamic Traits (Evolving)</div>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                {Object.entries(agent.dynamicTraits || {}).map(([trait, score]) => (
-                  <TraitBar
-                    key={trait}
-                    label={trait}
-                    score={score}
-                    colorClass="bg-accent"
-                  />
-                ))}
-              </div>
-            </div>
+        <div className="flex items-center gap-2">
+          <div className="rounded-md border border-border/40 bg-muted/20 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+            {LLM_PROVIDER_LABELS[selectedProvider]} · {activeModel}
           </div>
-
-          <div className={`${panelClass} space-y-4`}>
-            <div className="flex items-center gap-3">
-              <div className="rounded-sm bg-accent/10 p-2">
-                <TrendingUp className="h-5 w-5 text-accent" />
-              </div>
-              <div>
-                <div className="font-semibold text-foreground">Recent evolution events</div>
-                <div className="text-sm text-muted-foreground">Why the latest trait updates happened</div>
-              </div>
-            </div>
-
-            {evolutionLoading ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">Loading evolution history...</div>
-            ) : !evolution || evolution.events.length === 0 ? (
-              <div className="rounded-sm border border-dashed border-border/70 px-4 py-6 text-sm leading-7 text-muted-foreground">
-                No evolution events yet. Trait history will appear here after conversation turns generate meaningful personality signals.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {evolution.events.map((event) => (
-                  <EvolutionEventCard key={event.id} event={event} />
-                ))}
-              </div>
-            )}
-          </div>
+          <Button variant="outline" size="sm" className="h-9 gap-2 border-border/40" onClick={() => void loadBootstrap(true)} disabled={refreshing}>
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button onClick={() => void handleStartAnalysis()} disabled={running} className="h-9 gap-2 font-bold">
+            {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {detail?.run?.status === 'running' ? 'Running analysis' : 'New analysis run'}
+          </Button>
         </div>
-      </section>
+      </div>
 
-      <section className="space-y-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Psychological profile</div>
-            <h3 className="mt-2 text-2xl font-semibold text-foreground">Derived analysis</h3>
-            <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">
-              A structured view of {agent.name}&apos;s temperament, communication style, motivation, and psychological tendencies.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            {profileStale && (
-              <span className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-300">
-                <Clock3 className="h-3.5 w-3.5" />
-                Profile is older than the latest trait update
-              </span>
-            )}
-            <Button
-              onClick={() => void generateProfile()}
-              disabled={profileGenerating}
-              variant={profileStale ? 'default' : 'outline'}
-              className="gap-2"
-            >
-              <RefreshCw className={`h-4 w-4 ${profileGenerating ? 'animate-spin' : ''}`} />
-              {profileGenerating ? 'Regenerating...' : profile ? 'Regenerate profile' : 'Generate profile'}
-            </Button>
-          </div>
+      {error && (
+        <div className="flex items-start gap-3 rounded-md border border-pastel-red/30 bg-pastel-red/5 px-4 py-3 text-[13px] text-pastel-red">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{error}</span>
         </div>
+      )}
 
-        {profileLoading ? (
-          <div className={`${panelClass} py-10 text-center text-sm text-muted-foreground`}>
-            Loading psychological profile...
-          </div>
-        ) : !profile ? (
-          <div className={`${panelClass} text-center`}>
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-sm bg-primary text-primary-foreground shadow-[0_18px_40px_-24px_rgba(109,77,158,0.68)]">
-              <Brain className="h-8 w-8" />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <MetricTile label="Interactions" value={bootstrap?.metrics.totalInteractions || 0} hint="Live trait input" />
+        <MetricTile label="Trait Update" value={formatDateTime(bootstrap?.lastTraitUpdateAt)} hint="Latest evolution event" />
+        <MetricTile label="Freshness" value={bootstrap?.stale ? 'Stale' : 'Current'} hint="Deep profile state" />
+        <MetricTile label="Last Run" value={formatDateTime(bootstrap?.metrics.latestCompletedRunAt)} hint="Completed analysis" />
+        <MetricTile label="Run History" value={bootstrap?.metrics.runCount || 0} hint="Stored sessions" />
+        <MetricTile label="Voice Window" value={bootstrap?.metrics.communicationSampleWindow || 0} hint={`${selectedCommunication?.observedMessageCount || 0} replies observed`} />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[320px_1fr_360px] xl:h-[calc(100vh-220px)] xl:min-h-[720px]">
+        <aside className="flex min-h-0 flex-col gap-4 overflow-hidden">
+          <section className={`${premiumPanel} flex flex-col overflow-hidden`}>
+            <div className="flex items-center justify-between border-b border-border/40 bg-muted/10 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4" />
+                <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Analysis Control</span>
+              </div>
+              {bootstrap?.stale && (
+                <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.15em] text-amber-300">
+                  Stale
+                </span>
+              )}
             </div>
-            <h4 className="mt-5 text-xl font-semibold text-foreground">No profile generated yet</h4>
-            <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-muted-foreground">
-              Generate a psychological profile to understand how {agent.name} tends to think, communicate, react, and relate through Big Five, MBTI, and Enneagram views.
-            </p>
-            <Button
-              onClick={() => void generateProfile()}
-              disabled={profileGenerating}
-              className="mt-6 gap-2"
-            >
-              <Sparkles className="h-4 w-4" />
-              {profileGenerating ? 'Generating profile...' : 'Generate profile'}
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <div className={`${panelClass} grid gap-5 lg:grid-cols-[0.9fr_1.1fr]`}>
-              <div className="flex items-center gap-4">
-                <div className="text-5xl">{ENNEAGRAM_TYPES[profile.enneagram.primaryType]?.icon}</div>
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Profile summary</div>
-                  <div className="mt-2 text-2xl font-semibold text-foreground">{profile.mbti.type}</div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    {MBTI_DESCRIPTIONS[profile.mbti.type] || 'Unique personality type'}
+            <div className="space-y-4 p-4">
+              <div className="rounded-md border border-border/30 bg-muted/10 p-3">
+                <div className={labelStyle}>What this page is for</div>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  The left side controls slower, inspectable profile analysis. The center shows live evolution, the latest deep profile, or observed voice behavior. The right side exposes the evidence and trace.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className={labelStyle}>Run status</div>
+                <div className={`${subPanel} p-3`}>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    {detail?.run?.status === 'ready' ? <CheckCircle2 className="h-4 w-4 text-pastel-green" /> : <Clock3 className="h-4 w-4 text-muted-foreground" />}
+                    {detail?.run ? detail.run.status : 'No run selected'}
+                  </div>
+                  <div className="mt-2 text-xs leading-6 text-muted-foreground">
+                    {detail?.run
+                      ? `Latest stage: ${detail.run.latestStage.replaceAll('_', ' ')}. Transcript turns: ${detail.run.transcriptCount}.`
+                      : 'Start a run to interview the agent, synthesize the profile, and record the trace.'}
                   </div>
                 </div>
               </div>
 
-              <p className="text-sm leading-7 text-muted-foreground">{profile.summary}</p>
+              <div className="space-y-2">
+                <div className={labelStyle}>Interview stages</div>
+                <div className="space-y-1.5">
+                  {[
+                    ['evidence', 'Evidence packet'],
+                    ['social_style', 'Social style'],
+                    ['decision_style', 'Decision style'],
+                    ['stress_conflict', 'Stress and conflict'],
+                    ['motivation_identity', 'Motivation and identity'],
+                    ['communication_self_awareness', 'Communication self-awareness'],
+                    ['synthesis', 'Synthesis'],
+                    ['evaluation', 'Evaluation'],
+                    ['repair', 'Repair'],
+                    ['completed', 'Completed'],
+                  ].map(([stage, label]) => {
+                    const active = detail?.run?.latestStage === stage
+                    const completed = (detail?.pipelineEvents || []).some((event) => event.stage === stage && event.status === 'completed')
+                    return (
+                      <div
+                        key={stage}
+                        className={`flex items-center justify-between rounded-sm border px-3 py-2 text-[12px] ${
+                          active
+                            ? 'border-pastel-purple/40 bg-pastel-purple/10 text-foreground'
+                            : 'border-border/30 bg-muted/5 text-muted-foreground'
+                        }`}
+                      >
+                        <span>{label}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider">{completed ? 'done' : active ? 'live' : 'queued'}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
+          </section>
 
-            <div className="tab-nav w-fit">
-              {(['bigfive', 'mbti', 'enneagram', 'insights'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={activeTab === tab ? 'tab-item tab-item-active' : 'tab-item'}
-                >
-                  {tab === 'bigfive' ? 'Big Five' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+          <section className={`${premiumPanel} flex min-h-0 flex-1 flex-col overflow-hidden`}>
+            <div className="border-b border-border/40 bg-muted/10 px-4 py-3">
+              <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Recent Runs</span>
+            </div>
+            <div className="flex-1 space-y-1.5 overflow-y-auto p-2 scrollbar-thin">
+              {(bootstrap?.recentRuns || []).length === 0 ? (
+                <div className="p-3 text-xs leading-6 text-muted-foreground">No deep analysis runs yet. The trait panel can still update live without one.</div>
+              ) : (
+                (bootstrap?.recentRuns || []).map((run) => {
+                  const active = run.id === activeRunId
+                  return (
+                    <button
+                      key={run.id}
+                      onClick={() => setActiveRunId(run.id)}
+                      className={`w-full rounded-sm border p-3 text-left transition-all ${
+                        active ? 'border-pastel-blue/40 bg-pastel-blue/5' : 'border-border/30 bg-muted/5 hover:border-pastel-blue/20'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-foreground">{formatDateTime(run.updatedAt)}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{run.status}</span>
+                      </div>
+                      <div className="mt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                        {run.provider || 'provider pending'} · {run.model || 'model pending'}
+                      </div>
+                      <div className="mt-2 text-xs leading-5 text-muted-foreground">
+                        Stage {run.latestStage.replaceAll('_', ' ')} · {run.transcriptCount} interview turns · {run.sourceCount} signals
+                      </div>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </section>
+        </aside>
+
+        <main className="flex min-h-0 flex-col gap-4 overflow-hidden">
+          <section className={`${premiumPanel} flex min-h-0 flex-1 flex-col overflow-hidden`}>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/40 bg-muted/10 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <button onClick={() => setMode('evolution')} className={mode === 'evolution' ? 'rounded-sm bg-card px-3 py-1.5 text-[12px] font-bold text-foreground shadow-sm' : 'rounded-sm px-3 py-1.5 text-[12px] font-bold text-muted-foreground'}>
+                  Evolution
                 </button>
-              ))}
-            </div>
-
-            {activeTab === 'bigfive' && <BigFiveView profile={profile.bigFive} />}
-            {activeTab === 'mbti' && <MBTIView profile={profile.mbti} />}
-            {activeTab === 'enneagram' && <EnneagramView profile={profile.enneagram} />}
-            {activeTab === 'insights' && <InsightsView profile={profile} />}
-          </div>
-        )}
-      </section>
-
-      {agent.linguisticProfile && (
-        <section className="space-y-4">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Linguistic personality</div>
-            <h3 className="mt-2 text-2xl font-semibold text-foreground">Communication fingerprint</h3>
-            <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">
-              Tone, vocabulary bias, and expressive tendencies inferred from the base persona and current communication style.
-            </p>
-          </div>
-          <div className={panelClass}>
-            <div className="mb-5 flex items-center gap-3">
-              <div className="rounded-sm bg-violet-500/10 p-2">
-                <Languages className="h-5 w-5 text-violet-500" />
+                <button onClick={() => setMode('analysis')} className={mode === 'analysis' ? 'rounded-sm bg-card px-3 py-1.5 text-[12px] font-bold text-foreground shadow-sm' : 'rounded-sm px-3 py-1.5 text-[12px] font-bold text-muted-foreground'}>
+                  Derived Analysis
+                </button>
+                <button onClick={() => setMode('communication')} className={mode === 'communication' ? 'rounded-sm bg-card px-3 py-1.5 text-[12px] font-bold text-foreground shadow-sm' : 'rounded-sm px-3 py-1.5 text-[12px] font-bold text-muted-foreground'}>
+                  Communication
+                </button>
               </div>
-              <div>
-                <div className="font-semibold text-foreground">Linguistic profile</div>
-                <div className="text-sm text-muted-foreground">How {agent.name} tends to sound in conversation</div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                {mode === 'evolution' ? 'Auto-updating layer' : mode === 'analysis' ? 'Manual deep profile layer' : 'Observed voice telemetry'}
               </div>
             </div>
-            <LinguisticProfileCard profile={agent.linguisticProfile} agentName={agent.name} />
-          </div>
-        </section>
-      )}
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 scrollbar-thin">
+              {mode === 'evolution' && (
+                <div className="space-y-6">
+                  <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+                    <div className={`${panelClass} space-y-6`}>
+                      <div>
+                        <div className="text-sm font-medium text-muted-foreground">Core Traits (Immutable)</div>
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          {Object.entries(agent.coreTraits || {}).map(([trait, score]) => (
+                            <TraitBar key={trait} label={trait} score={score} colorClass="bg-primary" />
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-muted-foreground">Dynamic Traits (Evolving)</div>
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          {Object.entries(agent.dynamicTraits || {}).map(([trait, score]) => (
+                            <TraitBar key={trait} label={trait} score={score} colorClass="bg-accent" />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className={`${panelClass} space-y-4`}>
+                      <div className="flex items-center gap-3">
+                        <div className="rounded-sm bg-accent/10 p-2">
+                          <TrendingUp className="h-5 w-5 text-accent" />
+                        </div>
+                        <div>
+                          <div className="font-semibold text-foreground">Recent evolution events</div>
+                          <div className="text-sm text-muted-foreground">Trait movement stays explainable and tied to observed behavior.</div>
+                        </div>
+                      </div>
+                      {!evolution || evolution.events.length === 0 ? (
+                        <EmptyState title="No evolution events yet" copy="Use the agent in live conversations. Meaningful behavior signals will show up here before the deeper profile is refreshed." />
+                      ) : (
+                        <div className="space-y-3">
+                          {evolution.events.map((event) => (
+                            <EvolutionEventCard key={event.id} event={event} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {mode === 'analysis' && (
+                <div className="space-y-6">
+                  {!selectedProfile ? (
+                    <EmptyState title="No profile generated yet" copy="Start a new analysis run. The system will compile evidence, interview the agent in stages, and synthesize a stored profile with trace and quality checks." />
+                  ) : (
+                    <>
+                      <div className="grid gap-3 xl:grid-cols-[0.78fr_1.22fr]">
+                        <div className={`${compactPanelClass} flex items-center gap-3`}>
+                          <div className="flex h-12 w-12 items-center justify-center rounded-sm bg-pastel-purple/10 text-xl font-black text-pastel-purple">
+                            {selectedProfile.mbti.type}
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Latest profile summary</div>
+                            <div className="mt-1 text-lg font-semibold text-foreground">{selectedProfile.mbti.type}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {MBTI_DESCRIPTIONS[selectedProfile.mbti.type] || 'Distinct psychological profile'}
+                            </div>
+                            <div className="mt-2 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                              {selectedProfile.source === 'analysis_run' ? 'Interview-backed analysis run' : 'Deterministic scaffold'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className={compactPanelClass}>
+                          <p className="text-sm leading-6 text-muted-foreground">{selectedProfile.summary}</p>
+                          <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                            <span className="rounded-full border border-border/40 px-3 py-1 text-muted-foreground">
+                              confidence {(selectedProfile.confidence ? selectedProfile.confidence * 100 : 0).toFixed(0)}%
+                            </span>
+                            <span className="rounded-full border border-border/40 px-3 py-1 text-muted-foreground">
+                              updated {formatDateTime(selectedProfile.updatedAt)}
+                            </span>
+                            <span className="rounded-full border border-border/40 px-3 py-1 text-muted-foreground">
+                              {selectedProfile.provider || 'provider unknown'} · {selectedProfile.model || 'model unknown'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1">
+                        {(['bigfive', 'mbti', 'enneagram', 'insights'] as const).map((tab) => {
+                          const active = profileTab === tab
+                          return (
+                            <button
+                              key={tab}
+                              onClick={() => setProfileTab(tab)}
+                              className={active ? 'rounded-sm border border-pastel-purple/40 bg-pastel-purple/10 px-3 py-1.5 text-[12px] font-bold text-foreground' : 'rounded-sm border border-border/30 bg-muted/5 px-3 py-1.5 text-[12px] font-bold text-muted-foreground'}
+                            >
+                              {tab === 'bigfive' ? 'Big Five' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      {profileTab === 'bigfive' && <BigFiveView profile={selectedProfile.bigFive} />}
+                      {profileTab === 'mbti' && <MBTIView profile={selectedProfile.mbti} />}
+                      {profileTab === 'enneagram' && <EnneagramView profile={selectedProfile.enneagram} />}
+                      {profileTab === 'insights' && <InsightsView profile={selectedProfile} />}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {mode === 'communication' && (
+                <div className="space-y-6">
+                  {!selectedCommunication ? (
+                    <EmptyState title="Communication telemetry unavailable" copy="The communication fingerprint appears after the workspace can inspect recent agent replies." />
+                  ) : (
+                    <>
+                      <div className={`${panelClass} grid gap-5 lg:grid-cols-[0.95fr_1.05fr]`}>
+                        <div className="flex items-center gap-4">
+                          <div className="rounded-md bg-pastel-blue/10 p-3">
+                            <Languages className="h-6 w-6 text-pastel-blue" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Observed communication fingerprint</div>
+                            <div className="mt-2 text-2xl font-semibold text-foreground">
+                              {selectedCommunication.enoughData ? 'Live voice telemetry' : 'Early communication sample'}
+                            </div>
+                            <div className="mt-1 text-sm text-muted-foreground">
+                              {selectedCommunication.observedMessageCount} replies sampled from the latest {selectedCommunication.sampleWindowSize} message window.
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-sm leading-7 text-muted-foreground">{selectedCommunication.summary}</p>
+                      </div>
+
+                      {!selectedCommunication.enoughData && (
+                        <div className="rounded-md border border-dashed border-border/30 bg-muted/5 px-4 py-3 text-sm text-muted-foreground">
+                          Fewer than 12 recent agent replies are available, so the communication readout is still provisional.
+                        </div>
+                      )}
+
+                      <CommunicationView snapshot={selectedCommunication} />
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+        </main>
+
+        <aside className="flex min-h-0 flex-col gap-4 overflow-hidden">
+          {mode === 'analysis' && (
+            <>
+              <section className={`${premiumPanel} flex min-h-0 flex-1 flex-col overflow-hidden`}>
+                <div className="flex items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-3">
+                  <MessageSquareQuote className="h-4 w-4" />
+                  <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Interview Transcript</span>
+                </div>
+                <div className="flex-1 space-y-3 overflow-y-auto p-4 scrollbar-thin">
+                  {(detail?.interviewTurns || []).length === 0 ? (
+                    <EmptyState title="No transcript yet" copy="When an analysis run starts, each interview turn will appear here as it is written to storage." />
+                  ) : (
+                    (detail?.interviewTurns || []).map((turn) => (
+                      <div key={turn.id} className="rounded-sm border border-border/30 bg-muted/5 p-3">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{turn.stage.replaceAll('_', ' ')}</div>
+                        <div className="mt-2 text-sm font-medium text-foreground">{turn.question}</div>
+                        <div className="mt-2 text-sm leading-6 text-muted-foreground">{turn.answer}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+
+              <section className={`${premiumPanel} max-h-[240px] overflow-hidden`}>
+                <div className="flex items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-3">
+                  <Waves className="h-4 w-4" />
+                  <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Pipeline Trace</span>
+                </div>
+                <div className="space-y-2 overflow-y-auto p-4 scrollbar-thin">
+                  {(detail?.pipelineEvents || []).length === 0 ? (
+                    <div className="text-xs leading-6 text-muted-foreground">Evidence, synthesis, evaluation, and repair events will appear here.</div>
+                  ) : (
+                    (detail?.pipelineEvents || []).map((event) => (
+                      <div key={event.id} className="rounded-sm border border-border/30 bg-muted/5 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{event.stage.replaceAll('_', ' ')}</div>
+                          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{event.status}</div>
+                        </div>
+                        <div className="mt-2 text-sm leading-6 text-muted-foreground">{event.summary}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            </>
+          )}
+
+          {mode === 'evolution' && (
+            <section className={`${premiumPanel} flex min-h-0 flex-1 flex-col overflow-hidden`}>
+              <div className="flex items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-3">
+                <TrendingUp className="h-4 w-4" />
+                <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Why this matters</span>
+              </div>
+              <div className="space-y-4 p-4 text-sm leading-7 text-muted-foreground">
+                <p>This layer is meant to move slowly. Real evidence can be recorded even when rounded trait percentages do not visibly jump.</p>
+                <p>Use this panel to understand whether the agent is becoming more confident, empathetic, adaptive, or knowledgeable through actual usage.</p>
+                <div className={`${subPanel} p-3`}>
+                  <div className={labelStyle}>Current status</div>
+                  <div className="mt-2 text-xs leading-6">
+                    {bootstrap?.stale
+                      ? 'Live trait state is newer than the latest deep profile. A new analysis run is justified.'
+                      : 'The latest deep profile is in sync with the most recent trait evolution.'}
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {mode === 'communication' && (
+            <section className={`${premiumPanel} flex min-h-0 flex-1 flex-col overflow-hidden`}>
+              <div className="flex items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-3">
+                <Languages className="h-4 w-4" />
+                <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Observed Evidence</span>
+              </div>
+              <div className="flex-1 space-y-4 overflow-y-auto p-4 scrollbar-thin">
+                {!selectedCommunication ? (
+                  <div className="text-xs leading-6 text-muted-foreground">No communication evidence available yet.</div>
+                ) : (
+                  <>
+                    <div>
+                      <div className={labelStyle}>Recurring vocabulary</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {selectedCommunication.recurringVocabulary.slice(0, 12).map((word) => (
+                          <span key={word} className="rounded-full border border-border/30 px-3 py-1 text-xs text-muted-foreground">{word}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className={labelStyle}>Signature phrases</div>
+                      <div className="mt-2 space-y-2">
+                        {selectedCommunication.signaturePhrases.slice(0, 6).map((phrase) => (
+                          <div key={phrase} className="rounded-sm border border-border/30 bg-muted/5 p-3 text-xs leading-6 text-muted-foreground">
+                            {phrase}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className={labelStyle}>Recent excerpts</div>
+                      <div className="mt-2 space-y-2">
+                        {selectedCommunication.excerpts.map((excerpt) => (
+                          <div key={excerpt.id} className="rounded-sm border border-border/30 bg-muted/5 p-3">
+                            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{formatDateTime(excerpt.timestamp)}</div>
+                            <div className="mt-2 text-xs leading-6 text-muted-foreground">{excerpt.content}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+        </aside>
+      </div>
     </div>
   )
 }
@@ -361,16 +790,16 @@ function TraitBar({
         <span className="text-xs text-muted-foreground">{Math.round(score * 100)}%</span>
       </div>
       <div className="h-2 rounded-full bg-muted/30">
-        <div
-          className={`h-2 rounded-full transition-all duration-500 ${colorClass}`}
-          style={{ width: `${score * 100}%` }}
-        />
+        <div className={`h-2 rounded-full transition-all duration-500 ${colorClass}`} style={{ width: `${score * 100}%` }} />
       </div>
     </div>
   )
 }
 
 function EvolutionEventCard({ event }: { event: PersonalityEventRecord }) {
+  const visibleDeltas = getVisibleTraitDeltas(event)
+  const evidenceSummary = getEventEvidenceSummary(event)
+
   return (
     <div className="rounded-sm border border-border/70 bg-background/45 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -385,24 +814,28 @@ function EvolutionEventCard({ event }: { event: PersonalityEventRecord }) {
         </span>
       </div>
 
-      {event.traitDeltas.length > 0 && (
-        <div className="mt-3 space-y-2">
-          <div className="flex flex-wrap gap-2">
-            {event.traitDeltas.map((delta) => (
-              <span key={`${event.id}_${delta.trait}`} className="rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
-                {delta.trait}
-                {typeof delta.delta === 'number'
-                  ? ` ${delta.delta > 0 ? '+' : ''}${delta.delta.toFixed(2)}`
-                  : ''}
-              </span>
-            ))}
-          </div>
-          {event.traitDeltas.some((delta) => delta.indicators?.length) && (
-            <div className="text-xs leading-6 text-muted-foreground">
-              Evidence:{' '}
-              {event.traitDeltas
-                .flatMap((delta) => (delta.indicators || []).map((indicator) => `${delta.trait}:${indicator}`))
-                .join(' • ')}
+      {(visibleDeltas.length > 0 || evidenceSummary.length > 0) && (
+        <div className="mt-3 space-y-3">
+          {visibleDeltas.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {visibleDeltas.map((delta) => (
+                <span key={`${event.id}_${delta.trait}`} className="rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
+                  {formatTraitLabel(delta.trait)}
+                  {formatDeltaPercent(delta.delta) ? ` ${formatDeltaPercent(delta.delta)}` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          {evidenceSummary.length > 0 && (
+            <div className="rounded-sm border border-border/30 bg-muted/5 px-3 py-2.5">
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Observed evidence</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {evidenceSummary.map((item) => (
+                  <span key={`${event.id}_${item}`} className="rounded-full border border-border/30 px-2.5 py-1 text-[11px] text-muted-foreground">
+                    {item}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -411,41 +844,24 @@ function EvolutionEventCard({ event }: { event: PersonalityEventRecord }) {
   )
 }
 
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString([], {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
-
 function BigFiveView({ profile }: { profile: BigFiveProfile }) {
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-3 xl:grid-cols-2">
       {(Object.entries(BIG_FIVE_LABELS) as [keyof BigFiveProfile, typeof BIG_FIVE_LABELS[keyof BigFiveProfile]][]).map(([key, config]) => (
-        <div key={key} className={panelClass}>
+        <div key={key} className={compactPanelClass}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="font-medium text-foreground">{config.label}</div>
-              <div className="mt-1 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              <div className="text-sm font-medium text-foreground">{config.label}</div>
+              <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                 {config.low} to {config.high}
               </div>
             </div>
-            <span className="text-sm font-semibold text-foreground">{(profile[key] * 100).toFixed(0)}%</span>
+            <span className="text-xs font-semibold text-foreground">{(profile[key] * 100).toFixed(0)}%</span>
           </div>
-
-          <div className="mt-4 h-3 rounded-full bg-muted/45">
-            <div
-              className="h-3 rounded-full transition-all"
-              style={{
-                width: `${profile[key] * 100}%`,
-                backgroundColor: config.color,
-              }}
-            />
+          <div className="mt-3 h-2 rounded-full bg-muted/45">
+            <div className="h-2 rounded-full transition-all" style={{ width: `${profile[key] * 100}%`, backgroundColor: config.color }} />
           </div>
-
-          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+          <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
             <span>{config.low}</span>
             <span>{config.high}</span>
           </div>
@@ -464,57 +880,32 @@ function MBTIView({ profile }: { profile: MBTIProfile }) {
   ] as const
 
   return (
-    <div className="space-y-6">
-      <div className={`${panelClass} text-center`}>
-        <div className="inline-flex items-center gap-1 rounded-sm bg-background/45 px-6 py-4 text-4xl font-semibold text-foreground">
+    <div className="space-y-3">
+      <div className={`${compactPanelClass} flex flex-wrap items-center justify-between gap-4`}>
+        <div className="inline-flex items-center gap-1 rounded-sm bg-background/45 px-4 py-2.5 text-2xl font-semibold text-foreground">
           {profile.type.split('').map((letter, index) => (
-            <span
-              key={index}
-              className={
-                index === 0
-                  ? 'text-[var(--color-pastel-blue)]'
-                  : index === 1
-                    ? 'text-emerald-500'
-                    : index === 2
-                      ? 'text-amber-500'
-                      : 'text-primary'
-              }
-            >
+            <span key={index} className={index === 0 ? 'text-[var(--color-pastel-blue)]' : index === 1 ? 'text-emerald-500' : index === 2 ? 'text-amber-500' : 'text-primary'}>
               {letter}
             </span>
           ))}
         </div>
-        <p className="mt-4 text-sm leading-7 text-muted-foreground">{MBTI_DESCRIPTIONS[profile.type]}</p>
+        <p className="max-w-md text-sm leading-6 text-muted-foreground">{MBTI_DESCRIPTIONS[profile.type]}</p>
       </div>
-
-      <div className="grid gap-4">
+      <div className="grid gap-3 xl:grid-cols-2">
         {dimensions.map(({ key, left, right, leftLabel, rightLabel }) => {
           const value = profile.dimensions[key]
           const percentage = ((value + 1) / 2) * 100
-
           return (
-            <div key={key} className={panelClass}>
-              <div className="flex justify-between gap-4 text-sm font-medium">
-                <span className={value < 0 ? 'text-accent' : 'text-muted-foreground'}>
-                  {left} • {leftLabel}
-                </span>
-                <span className={value >= 0 ? 'text-accent' : 'text-muted-foreground'}>
-                  {rightLabel} • {right}
-                </span>
+            <div key={key} className={compactPanelClass}>
+              <div className="flex justify-between gap-4 text-xs font-medium">
+                <span className={value < 0 ? 'text-accent' : 'text-muted-foreground'}>{left} • {leftLabel}</span>
+                <span className={value >= 0 ? 'text-accent' : 'text-muted-foreground'}>{rightLabel} • {right}</span>
               </div>
-
-              <div className="relative mt-4 h-3 rounded-full bg-muted/45">
-                <div
-                  className="h-3 rounded-full bg-accent transition-all"
-                  style={{ width: `${percentage}%` }}
-                />
-                <div
-                  className="absolute top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-foreground"
-                  style={{ left: `${percentage}%` }}
-                />
+              <div className="relative mt-3 h-2 rounded-full bg-muted/45">
+                <div className="h-2 rounded-full bg-accent transition-all" style={{ width: `${percentage}%` }} />
+                <div className="absolute top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-foreground" style={{ left: `${percentage}%` }} />
               </div>
-
-              <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+              <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
                 <span>{(100 - percentage).toFixed(0)}%</span>
                 <span>{percentage.toFixed(0)}%</span>
               </div>
@@ -531,160 +922,71 @@ function EnneagramView({ profile }: { profile: EnneagramProfile }) {
   const wingType = ENNEAGRAM_TYPES[profile.wing]
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-      <div className={`${panelClass} text-center`}>
-        <div className="text-5xl">{primaryType?.icon}</div>
-        <div className="mt-4 text-2xl font-semibold text-foreground">
-          Type {profile.primaryType}: {primaryType?.name}
-        </div>
-        <p className="mt-3 text-sm leading-7 text-muted-foreground">{primaryType?.description}</p>
+    <div className="grid gap-3 lg:grid-cols-[0.82fr_1.18fr]">
+      <div className={`${compactPanelClass} text-center`}>
+        <div className="text-4xl font-black text-primary">{primaryType?.icon}</div>
+        <div className="mt-3 text-lg font-semibold text-foreground">Type {profile.primaryType}: {primaryType?.name}</div>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{primaryType?.description}</p>
       </div>
-
-      <div className="grid gap-4">
-        <div className={panelClass}>
+      <div className="grid gap-3">
+        <div className={compactPanelClass}>
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Wing</div>
           <div className="mt-3 flex items-center gap-3">
-            <span className="text-3xl">{wingType?.icon}</span>
+            <span className="text-2xl font-black text-primary">{wingType?.icon}</span>
             <div>
-              <div className="font-medium text-foreground">Type {profile.wing}: {wingType?.name}</div>
-              <div className="text-sm text-muted-foreground">{wingType?.description}</div>
+              <div className="text-sm font-medium text-foreground">Type {profile.wing}: {wingType?.name}</div>
+              <div className="text-xs text-muted-foreground">{wingType?.description}</div>
             </div>
           </div>
         </div>
-
-        <div className={panelClass}>
+        <div className={compactPanelClass}>
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Tritype</div>
-          <div className="mt-4 flex flex-wrap justify-center gap-4">
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
             {profile.tritype.map((type) => (
-              <div key={type} className="min-w-28 rounded-sm bg-background/45 px-4 py-4 text-center">
-                <div className="text-2xl">{ENNEAGRAM_TYPES[type]?.icon}</div>
-                <div className="mt-2 font-medium text-foreground">Type {type}</div>
-                <div className="text-xs text-muted-foreground">{ENNEAGRAM_TYPES[type]?.name}</div>
+              <div key={type} className="rounded-sm bg-background/45 px-3 py-3 text-center">
+                <div className="text-xl font-black text-primary">{ENNEAGRAM_TYPES[type]?.icon}</div>
+                <div className="mt-1 text-sm font-medium text-foreground">Type {type}</div>
+                <div className="text-[10px] text-muted-foreground">{ENNEAGRAM_TYPES[type]?.name}</div>
               </div>
             ))}
           </div>
         </div>
-
-        <div className={panelClass}>
+        <div className={compactPanelClass}>
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Instinctual variant</div>
-          <div className="mt-3 text-lg font-medium capitalize text-foreground">
-            {profile.instinctualVariant.replace('-', ' ')}
-          </div>
-        </div>
-
-        <div className={panelClass}>
-          <div className="relative mx-auto h-64 w-64">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => {
-              const angle = ((num - 1) * 40 - 90) * (Math.PI / 180)
-              const x = 50 + 40 * Math.cos(angle)
-              const y = 50 + 40 * Math.sin(angle)
-              const isActive = num === profile.primaryType
-              const isWing = num === profile.wing
-              const isTritype = profile.tritype.includes(num)
-
-              return (
-                <div
-                  key={num}
-                  className={`absolute flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-all ${
-                    isActive
-                      ? 'scale-125 bg-accent text-white'
-                      : isWing
-                        ? 'bg-primary text-white'
-                        : isTritype
-                          ? 'bg-primary/15 text-primary'
-                          : 'bg-muted/60 text-muted-foreground'
-                  }`}
-                  style={{
-                    left: `${x}%`,
-                    top: `${y}%`,
-                    transform: 'translate(-50%, -50%)',
-                  }}
-                >
-                  {num}
-                </div>
-              )
-            })}
-          </div>
+          <div className="mt-2 text-base font-medium capitalize text-foreground">{profile.instinctualVariant.replace('-', ' ')}</div>
         </div>
       </div>
-    </div>
-  )
-}
-
-function InsightBlock({
-  title,
-  items,
-  accent,
-}: {
-  title: string
-  items: string[]
-  accent: string
-}) {
-  if (items.length === 0) return null
-
-  return (
-    <div className={panelClass}>
-      <div className="flex items-center gap-2">
-        <span className="text-lg">{accent}</span>
-        <h4 className="font-semibold text-foreground">{title}</h4>
-      </div>
-      <ul className="mt-4 space-y-2">
-        {items.map((item) => (
-          <li key={item} className="flex items-start gap-2 text-sm leading-7 text-muted-foreground">
-            <span className="mt-2 h-1.5 w-1.5 rounded-full bg-primary" />
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
     </div>
   )
 }
 
 function InsightsView({ profile }: { profile: PsychologicalProfile }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <InsightBlock title="Strengths" items={profile.strengths} accent="💪" />
-      <InsightBlock title="Growth areas" items={profile.challenges} accent="🎯" />
-
-      <div className={panelClass}>
-        <div className="flex items-center gap-2">
-          <span className="text-lg">🔥</span>
-          <h4 className="font-semibold text-foreground">Motivations</h4>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {profile.motivationalProfile.primaryMotivations.map((motivation) => (
-            <span key={motivation} className="rounded-full bg-amber-500/15 px-3 py-1 text-xs font-medium text-amber-600 dark:text-amber-300">
-              {motivation}
-            </span>
-          ))}
+    <div className="grid gap-3 lg:grid-cols-2">
+      <InsightBlock title="Strengths" items={profile.strengths} />
+      <InsightBlock title="Growth areas" items={profile.challenges} />
+      <div className={compactPanelClass}>
+        <div className="font-semibold text-foreground">Rationales</div>
+        <div className="mt-3 space-y-3 text-sm leading-6 text-muted-foreground">
+          {profile.rationales?.bigFive && <p><span className="font-medium text-foreground">Big Five:</span> {profile.rationales.bigFive}</p>}
+          {profile.rationales?.mbti && <p><span className="font-medium text-foreground">MBTI:</span> {profile.rationales.mbti}</p>}
+          {profile.rationales?.enneagram && <p><span className="font-medium text-foreground">Enneagram:</span> {profile.rationales.enneagram}</p>}
+          {profile.rationales?.communicationStyle && <p><span className="font-medium text-foreground">Communication:</span> {profile.rationales.communicationStyle}</p>}
+          {profile.rationales?.stressPattern && <p><span className="font-medium text-foreground">Stress pattern:</span> {profile.rationales.stressPattern}</p>}
+          {profile.rationales?.motivationAndGrowth && <p><span className="font-medium text-foreground">Motivation and growth:</span> {profile.rationales.motivationAndGrowth}</p>}
         </div>
       </div>
-
-      <div className={panelClass}>
-        <div className="flex items-center gap-2">
-          <span className="text-lg">⭐</span>
-          <h4 className="font-semibold text-foreground">Core values</h4>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {profile.motivationalProfile.coreValues.map((value) => (
-            <span key={value} className="rounded-full bg-[var(--color-pastel-blue)]/20 px-3 py-1 text-xs font-medium text-[var(--color-pastel-blue)] dark:text-[var(--color-pastel-blue)]">
-              {value}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className={panelClass}>
-        <h4 className="font-semibold text-foreground">Communication style</h4>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
+      <div className={compactPanelClass}>
+        <div className="font-semibold text-foreground">Communication style</div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
           {[
             { label: 'Directness', value: profile.communicationStyle.directness, left: 'Indirect', right: 'Direct' },
             { label: 'Expression', value: profile.communicationStyle.emotionalExpression, left: 'Reserved', right: 'Expressive' },
           ].map((item) => (
             <div key={item.label}>
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{item.label}</div>
-              <div className="mt-3 h-2 rounded-full bg-muted/45">
-                <div className="h-2 rounded-full bg-accent" style={{ width: `${item.value * 100}%` }} />
+              <div className="mt-2 h-1.5 rounded-full bg-muted/45">
+                <div className="h-1.5 rounded-full bg-accent" style={{ width: `${item.value * 100}%` }} />
               </div>
               <div className="mt-2 flex justify-between text-xs text-muted-foreground">
                 <span>{item.left}</span>
@@ -697,23 +999,75 @@ function InsightsView({ profile }: { profile: PsychologicalProfile }) {
           Conflict style: <span className="font-medium capitalize text-foreground">{profile.communicationStyle.conflictStyle}</span>
         </div>
       </div>
+    </div>
+  )
+}
 
-      <div className="grid gap-4">
-        <div className={panelClass}>
-          <h4 className="font-semibold text-foreground">Attachment style</h4>
-          <div className="mt-3 text-lg font-medium capitalize text-foreground">{profile.attachmentStyle}</div>
-        </div>
+function InsightBlock({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) return null
+  return (
+    <div className={compactPanelClass}>
+      <h4 className="font-semibold text-foreground">{title}</h4>
+      <ul className="mt-3 space-y-2">
+        {items.map((item) => (
+          <li key={item} className="flex items-start gap-2 text-sm leading-6 text-muted-foreground">
+            <span className="mt-2 h-1.5 w-1.5 rounded-full bg-primary" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
-        <div className={panelClass}>
-          <h4 className="font-semibold text-foreground">Emotional intelligence</h4>
-          <div className="mt-4 flex items-center gap-4">
-            <div className="text-3xl font-semibold text-accent">{(profile.emotionalIntelligence * 100).toFixed(0)}%</div>
-            <div className="h-3 flex-1 rounded-full bg-muted/45">
-              <div
-                className="h-3 rounded-full bg-primary "
-                style={{ width: `${profile.emotionalIntelligence * 100}%` }}
-              />
+function CommunicationView({ snapshot }: { snapshot: CommunicationFingerprintSnapshot }) {
+  const metrics: Array<{ key: keyof CommunicationFingerprintSnapshot['dimensions']; label: string; color: string }> = [
+    { key: 'formality', label: 'Formality', color: '#4FC3F7' },
+    { key: 'verbosity', label: 'Verbosity', color: '#7C4DFF' },
+    { key: 'humor', label: 'Humor', color: '#FFD54F' },
+    { key: 'technicalLevel', label: 'Technical level', color: '#66BB6A' },
+    { key: 'expressiveness', label: 'Expressiveness', color: '#FF7043' },
+    { key: 'directness', label: 'Directness', color: '#14B8A6' },
+    { key: 'questionRate', label: 'Question rate', color: '#E879F9' },
+    { key: 'structuralClarity', label: 'Structural clarity', color: '#94A3B8' },
+  ]
+
+  return (
+    <div className="grid gap-3 xl:grid-cols-2">
+      {metrics.map((metric) => (
+        <div key={metric.key} className={compactPanelClass}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium text-foreground">{metric.label}</div>
+              <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                observed now
+                {metric.key in snapshot.drift ? ` · drift ${(((snapshot.drift[metric.key as keyof typeof snapshot.drift] || 0) as number) * 100).toFixed(0)} pts` : ''}
+              </div>
             </div>
+            <span className="text-xs font-semibold text-foreground">{(snapshot.dimensions[metric.key] * 100).toFixed(0)}%</span>
+          </div>
+          <div className="mt-3 h-2 rounded-full bg-muted/45">
+            <div className="h-2 rounded-full" style={{ width: `${snapshot.dimensions[metric.key] * 100}%`, backgroundColor: metric.color }} />
+          </div>
+        </div>
+      ))}
+
+      <div className="grid gap-3 lg:col-span-2 lg:grid-cols-2">
+        <div className={compactPanelClass}>
+          <div className="font-semibold text-foreground">Punctuation tendencies</div>
+          <div className="mt-4 space-y-3 text-sm text-muted-foreground">
+            <div className="flex items-center justify-between gap-3"><span>Exclamations</span><span>{(snapshot.punctuation.exclamationRate * 100).toFixed(0)}%</span></div>
+            <div className="flex items-center justify-between gap-3"><span>Questions</span><span>{(snapshot.punctuation.questionRate * 100).toFixed(0)}%</span></div>
+            <div className="flex items-center justify-between gap-3"><span>Ellipses</span><span>{(snapshot.punctuation.ellipsisRate * 100).toFixed(0)}%</span></div>
+            <div className="flex items-center justify-between gap-3"><span>Emoji</span><span>{(snapshot.punctuation.emojiRate * 100).toFixed(0)}%</span></div>
+          </div>
+        </div>
+        <div className={compactPanelClass}>
+          <div className="font-semibold text-foreground">Baseline comparison</div>
+          <div className="mt-3 text-sm leading-6 text-muted-foreground">
+            {snapshot.baselineAvailable
+              ? 'Observed communication is compared against the stored linguistic baseline. Positive drift means the recent replies are moving upward on that dimension.'
+              : 'No seeded baseline is available yet, so this panel is showing only observed recent behavior.'}
           </div>
         </div>
       </div>

@@ -28,6 +28,9 @@
 - `GET|POST /api/agents/[id]/learning`
 - `GET|POST /api/agents/[id]/profile`
 - `GET /api/agents/[id]/profile/evolution`
+- `POST /api/agents/[id]/profile/runs`
+- `GET /api/agents/[id]/profile/runs/[runId]`
+- `POST /api/agents/[id]/profile/runs/[runId]/execute`
 
 ## Social And Network Routes
 
@@ -65,6 +68,11 @@
 - `POST /api/agents/[id]/creative/sessions/[sessionId]/generate` runs the two-pass draft -> evaluate -> repair workflow and returns the full session detail.
 - `POST /api/agents/[id]/creative/sessions/[sessionId]/publish` publishes the final artifact and increments agent creative counters at publish time only.
 - `GET /api/agents/[id]/creative/sessions/[sessionId]` returns one session with artifacts and pipeline trace events.
+- `GET /api/agents/[id]/profile` now returns Profile workspace bootstrap state: latest psychological profile, freshness, recent analysis runs, communication fingerprint telemetry, and page readiness metrics.
+- `POST /api/agents/[id]/profile` remains a compatibility endpoint and now delegates to the run-based analysis orchestration before returning the refreshed bootstrap.
+- `POST /api/agents/[id]/profile/runs` creates a draft profile analysis run.
+- `POST /api/agents/[id]/profile/runs/[runId]/execute` runs the evidence -> interview -> synthesis -> evaluation pipeline using the current provider/model request headers.
+- `GET /api/agents/[id]/profile/runs/[runId]` returns one stored profile analysis run with transcript turns and pipeline trace events.
 - `GET /api/scenarios` returns branch point options, intervention templates, and recent saved runs for one agent.
 - `GET /api/scenarios` also returns `analytics` with best interventions, common quality flags, and playbook notes.
 - `POST /api/scenarios` requires `agentId`, `branchPointId`, `branchPointKind`, and `intervention`, then returns a saved `scenarioRun`.

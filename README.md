@@ -34,9 +34,11 @@ Creative Studio validation now has a dedicated local benchmark:
 
 ```bash
 npm run creative:evaluate
+npm run profile:evaluate
 ```
 
 It runs fixed Creative Studio briefs against `Nova Forge`, leaves at least one published artifact in the DB, and prints a compact quality summary for manual review.
+The profile benchmark seeds targeted chat turns for `Nova Forge`, runs a full profile analysis session, and prints the resulting profile quality report.
 
 ## Persistence Modes
 
