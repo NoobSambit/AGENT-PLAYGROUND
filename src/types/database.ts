@@ -701,56 +701,172 @@ export interface AgentRelationship {
 }
 
 // ============================================
-// PHASE 2: Creativity Engine Types
+// PHASE 2: Creative Studio Types
 // ============================================
 
-export type CreativeWorkType =
+export type CreativeFormat =
   | 'story'
   | 'poem'
   | 'song'
-  | 'essay'
-  | 'joke'
   | 'dialogue'
-  | 'recipe'
-  | 'advice'
-  | 'analysis'
-  | 'review'
+  | 'essay'
 
-export type CreativeWorkStyle =
+export type CreativeTone =
+  | 'cinematic'
+  | 'lyrical'
+  | 'playful'
+  | 'intimate'
   | 'dramatic'
-  | 'comedic'
-  | 'romantic'
-  | 'mysterious'
   | 'philosophical'
-  | 'inspirational'
-  | 'satirical'
+  | 'experimental'
+  | 'hopeful'
   | 'melancholic'
 
-export interface CreativeWork {
+export type CreativeLength = 'short' | 'medium' | 'long'
+
+export type CreativeSessionStatus =
+  | 'draft'
+  | 'generating'
+  | 'ready'
+  | 'published'
+  | 'failed'
+
+export type CreativeArtifactStatus =
+  | 'draft'
+  | 'revised'
+  | 'published'
+
+export type CreativePipelineStage =
+  | 'brief_normalized'
+  | 'context_selected'
+  | 'draft_generated'
+  | 'draft_evaluated'
+  | 'revision_generated'
+  | 'published'
+  | 'failed'
+
+export type CreativeContextSourceType =
+  | 'persona'
+  | 'goal'
+  | 'linguistic_profile'
+  | 'psychological_profile'
+  | 'emotion'
+  | 'emotional_history'
+  | 'message'
+  | 'memory'
+  | 'journal'
+  | 'dream'
+  | 'motif'
+
+export type CreativeRubricDimension =
+  | 'formatFidelity'
+  | 'originality'
+  | 'voiceConsistency'
+  | 'emotionalCoherence'
+  | 'specificity'
+  | 'readability'
+
+export interface CreativeBrief {
+  format: CreativeFormat
+  intent: string
+  audience: string
+  tone: CreativeTone
+  length: CreativeLength
+  mustInclude: string[]
+  avoid: string[]
+  referenceNotes: string
+  rawPrompt?: string
+}
+
+export interface CreativeContextSignal {
+  id: string
+  sourceType: CreativeContextSourceType
+  label: string
+  snippet: string
+  reason: string
+  weight: number
+  linkedEntityId?: string
+}
+
+export interface CreativeContextPacket {
+  dominantEmotion?: EmotionType | null
+  emotionalSummary: string
+  voiceDirectives: string[]
+  psychologicalDirectives: string[]
+  continuityMotifs: string[]
+  selectedSignals: CreativeContextSignal[]
+}
+
+export interface CreativeRubricScore {
+  score: number
+  rationale: string
+}
+
+export interface CreativeRubricEvaluation {
+  pass: boolean
+  overallScore: number
+  dimensions: Record<CreativeRubricDimension, CreativeRubricScore>
+  strengths: string[]
+  weaknesses: string[]
+  repairInstructions: string[]
+  evaluatorSummary: string
+}
+
+export interface CreativeArtifact {
   id: string
   agentId: string
-  type: CreativeWorkType
-  style: CreativeWorkStyle
+  sessionId: string
+  format: CreativeFormat
+  status: CreativeArtifactStatus
+  version: number
   title: string
+  summary: string
   content: string
-
-  // Context and inspiration
-  prompt?: string // User's request if any
-  inspiration?: string // What inspired this piece
-  emotionalContext?: EmotionalState // Agent's mood during creation
-
-  // Metadata
-  wordCount: number
+  render: MessageRenderData
   themes: string[]
-  mood: EmotionType
-
-  // Quality indicators (self-evaluated)
-  creativity: number // 0-1
-  coherence: number  // 0-1
-  emotionalDepth: number // 0-1
-
+  inspiration: string
+  audience: string
+  tone: CreativeTone
+  wordCount: number
+  provider?: string
+  model?: string
+  evaluation?: CreativeRubricEvaluation
   createdAt: string
-  isFavorite: boolean
+  updatedAt: string
+  publishedAt?: string
+}
+
+export interface CreativePipelineEvent {
+  id: string
+  sessionId: string
+  stage: CreativePipelineStage
+  status: 'completed' | 'skipped' | 'failed'
+  summary: string
+  payload: Record<string, unknown>
+  createdAt: string
+}
+
+export interface CreativeSession {
+  id: string
+  agentId: string
+  status: CreativeSessionStatus
+  brief: CreativeBrief
+  normalizedBrief: CreativeBrief
+  contextPacket?: CreativeContextPacket
+  latestEvaluation?: CreativeRubricEvaluation
+  draftArtifactId?: string
+  finalArtifactId?: string
+  publishedArtifactId?: string
+  provider?: string
+  model?: string
+  createdAt: string
+  updatedAt: string
+  publishedAt?: string
+}
+
+export interface CreativeLibraryItem {
+  session: CreativeSession
+  artifact: CreativeArtifact
 }
 
 // ============================================

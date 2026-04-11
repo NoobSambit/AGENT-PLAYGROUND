@@ -1,20 +1,11 @@
 import { and, count, desc, eq, gte } from 'drizzle-orm'
 import { getDb } from '@/lib/db/client'
-import { creativeWorks, dreams, journalEntries } from '@/lib/db/schema'
+import { dreams, journalEntries } from '@/lib/db/schema'
 import { andAll, asIsoString } from '@/lib/db/utils'
-import type { CreativeWork, Dream, JournalEntry, JournalEntryType, CreativeWorkType } from '@/types/database'
+import type { Dream, JournalEntry, JournalEntryType } from '@/types/database'
 
-type CreativeRow = typeof creativeWorks.$inferSelect
 type DreamRow = typeof dreams.$inferSelect
 type JournalRow = typeof journalEntries.$inferSelect
-
-function mapCreativeRow(row: CreativeRow): CreativeWork {
-  return {
-    ...row.payload,
-    id: row.id,
-    createdAt: asIsoString(row.createdAt),
-  }
-}
 
 function mapDreamRow(row: DreamRow): Dream {
   return {
@@ -34,45 +25,6 @@ function mapJournalRow(row: JournalRow): JournalEntry {
 }
 
 export class FeatureContentRepository {
-  static async listCreativeWorks(agentId: string, options?: {
-    type?: CreativeWorkType
-    limit?: number
-  }): Promise<CreativeWork[]> {
-    const rows = await getDb().query.creativeWorks.findMany({
-      where: andAll([
-        eq(creativeWorks.agentId, agentId),
-        options?.type ? eq(creativeWorks.type, options.type) : undefined
-      ]),
-      orderBy: desc(creativeWorks.createdAt),
-      limit: options?.limit,
-    })
-
-    return rows.map(mapCreativeRow)
-  }
-
-  static async saveCreativeWork(record: CreativeWork): Promise<CreativeWork> {
-    const [row] = await getDb().insert(creativeWorks).values({
-      id: record.id,
-      agentId: record.agentId,
-      type: record.type,
-      createdAt: asIsoString(record.createdAt),
-      payload: record,
-    }).returning()
-
-    return mapCreativeRow(row)
-  }
-
-  static async countCreativeWorksSince(agentId: string, start: string): Promise<number> {
-    const [row] = await getDb().select({ value: count() }).from(creativeWorks).where(
-      and(
-        eq(creativeWorks.agentId, agentId),
-        gte(creativeWorks.createdAt, asIsoString(start))
-      )
-    )
-
-    return row?.value || 0
-  }
-
   static async listDreams(agentId: string, limitCount?: number): Promise<Dream[]> {
     const rows = await getDb().query.dreams.findMany({
       where: eq(dreams.agentId, agentId),

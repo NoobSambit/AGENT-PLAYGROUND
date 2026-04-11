@@ -21,7 +21,7 @@ import { EmotionTimeline } from '@/components/emotions/EmotionTimeline'
 import { TimelineExplorer } from '@/components/timeline/TimelineExplorer'
 
 // Phase 2 Components
-import { CreativePortfolio } from '@/components/creative/CreativePortfolio'
+import { CreativeStudio } from '@/components/creative/CreativeStudio'
 import { DreamJournal } from '@/components/dreams/DreamJournal'
 import { JournalViewer } from '@/components/journal/JournalViewer'
 import { ProfileViewer } from '@/components/profile/ProfileViewer'
@@ -542,122 +542,111 @@ export default function AgentDetail() {
   }
 
   return (
-    <div className="relative min-h-screen pt-4 pb-20 mt-4 md:mt-8">
+    <div className="relative min-h-screen pt-4 pb-20 mt-4">
       {/* Decorative orbs */}
       <GradientOrb className="w-[600px] h-[600px] -top-[200px] -right-[200px] opacity-20" color="violet" />
       <GradientOrb className="w-[400px] h-[400px] top-1/2 -left-[200px] opacity-15" color="cyan" />
 
-      <div className="relative z-10 mx-auto max-w-[1800px] px-4 md:px-8">
-        <div className="flex flex-col lg:flex-row gap-8 items-start">
-          {/* Professional Sidebar Navigation */}
-          <aside className="w-full lg:w-72 lg:sticky lg:top-24 space-y-6">
-            <div className="flex flex-col gap-1 p-1 bg-surface/50 border border-border/40 rounded-sm backdrop-blur-xl">
-              <div className="px-4 py-3 border-b border-border/20 mb-2">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-primary/10 text-primary border border-primary/20">
-                    <PlaygroundLogo className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-bold tracking-tight text-foreground truncate max-w-[120px]">{currentAgent.name}</h2>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                      <span className="text-[9px] uppercase font-bold text-muted-foreground/80 tracking-widest">{currentAgent.status}</span>
-                    </div>
-                  </div>
-                </div>
+      <div className="relative z-10 mx-auto w-full px-4 md:px-8">
+        <div className="flex flex-col gap-6">
+          {/* Main Dashboard Header */}
+          <motion.header
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-surface/40 border border-border/40 p-6 rounded-sm backdrop-blur-xl flex flex-col lg:flex-row lg:items-center justify-between gap-6"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-sm bg-primary/10 text-primary border border-primary/20 shadow-lg shadow-primary/5">
+                <PlaygroundLogo className="h-6 w-6" />
               </div>
-
-              {[
-                { label: 'Core Operations', items: ['overview', 'chat', 'emotions', 'neural', 'timeline', 'memory', 'relationships', 'learning'] },
-                { label: 'Generative Suite', items: ['scenarios', 'creative', 'dreams', 'journal'] },
-                { label: 'Intel Ecosystem', items: ['profile', 'challenges', 'knowledge-graph', 'knowledge-library', 'collective', 'mentorship'] }
-              ].map((group, groupIdx) => (
-                <div key={group.label} className={cn("space-y-1", groupIdx > 0 && "mt-4")}>
-                  <h3 className="px-4 text-[10px] uppercase font-bold tracking-[0.2em] text-muted-foreground/40 mb-2">{group.label}</h3>
-                  {TAB_CONFIG.filter(t => group.items.includes(t.id)).map((tab) => {
-                    const Icon = tab.icon
-                    const isActive = activeTab === tab.id
-                    return (
-                      <button
-                        key={tab.id}
-                        onClick={() => handleTabChange(tab.id)}
-                        className={cn(
-                          "w-full flex items-center gap-3 px-4 py-2.5 rounded-sm transition-all duration-200 group relative",
-                          isActive 
-                            ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" 
-                            : "text-muted-foreground hover:bg-surface-strong hover:text-foreground"
-                        )}
-                      >
-                        <Icon className={cn("h-4 w-4", isActive ? "text-white" : "text-primary/70 group-hover:text-primary")} />
-                        <span className="text-sm font-medium">{tab.label}</span>
-                        {isActive && (
-                          <motion.div layoutId="sidebar-active" className="absolute left-0 w-1 h-4 bg-white rounded-r-full" />
-                        )}
-                      </button>
-                    )
-                  })}
+              <div>
+                <div className="flex items-center gap-3 mb-1">
+                  <h1 className="text-3xl font-black tracking-tighter text-foreground uppercase">
+                    {currentAgent.name}
+                  </h1>
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[9px] uppercase font-bold text-emerald-500 tracking-widest">{currentAgent.status}</span>
+                  </div>
                 </div>
-              ))}
-            </div>
-
-            <div className="p-5 bg-primary/5 border border-primary/10 rounded-sm">
-              <h4 className="text-[10px] uppercase font-bold tracking-widest text-primary mb-2">Workspace context</h4>
-              <p className="text-[11px] leading-relaxed text-muted-foreground/80 lowercase">
-                monitoring {currentAgent.name}&apos;s neural density across {currentAgent.memoryCount || 0} memory nodes and {currentAgent.relationshipCount || 0} social vectors.
-              </p>
-            </div>
-            
-            <button
-              onClick={() => router.back()}
-              className="w-full flex items-center justify-center gap-2 h-10 rounded-sm border border-border/60 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:bg-surface-strong transition-all"
-            >
-              <ArrowLeft className="h-3 w-3" /> Exit Workspace
-            </button>
-          </aside>
-
-          {/* Main Dashboard Surface */}
-          <main className="flex-1 min-w-0 space-y-6">
-            <motion.header
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-surface/40 border border-border/40 p-8 rounded-sm backdrop-blur-xl flex flex-col md:flex-row md:items-center justify-between gap-6"
-            >
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-widest border border-primary/20">
-                    Active Session
-                  </span>
-                  <span className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">
-                    ID: {currentAgent.id.slice(0, 8)}
-                  </span>
-                </div>
-                <h1 className="text-4xl font-extrabold tracking-tighter text-foreground mb-4">
-                  {currentAgent.name}
-                </h1>
-                <p className="text-muted-foreground text-sm leading-relaxed max-w-4xl border-l-2 border-primary/20 pl-4 py-1 italic">
+                <p className="text-muted-foreground text-xs leading-relaxed lowercase italic opacity-70">
                   &quot;{currentAgent.persona}&quot;
                 </p>
               </div>
+            </div>
 
-              <div className="flex flex-wrap gap-2 md:flex-col md:items-end">
-                <div className="flex items-center gap-2 bg-background/50 border border-border/40 px-4 py-2 rounded-sm">
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Model</span>
-                  <span className="text-xs font-bold text-foreground"> {activeProviderModel}</span>
+            <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+              <div className="flex items-center gap-4 px-4 py-2 bg-muted/20 border border-border/20 rounded-sm">
+                <div className="flex flex-col">
+                  <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Context Nodes</span>
+                  <span className="text-xs font-bold text-foreground">{currentAgent.memoryCount || 0}</span>
                 </div>
-                <div className="flex items-center gap-2 bg-background/50 border border-border/40 px-4 py-2 rounded-sm">
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Provider</span>
-                  <span className="text-xs font-bold text-foreground"> {LLM_PROVIDER_LABELS[selectedProvider]}</span>
+                <div className="flex flex-col">
+                  <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Social Vectors</span>
+                  <span className="text-xs font-bold text-foreground">{currentAgent.relationshipCount || 0}</span>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => router.push('/simulation')} className="p-2 rounded-sm border border-border/40 hover:bg-primary/10 hover:text-primary transition-all">
-                    <Sparkles className="h-4 w-4" />
-                  </button>
-                  <button onClick={() => router.push('/agents')} className="p-2 rounded-sm border border-border/40 hover:bg-primary/10 hover:text-primary transition-all">
-                    <Users className="h-4 w-4" />
-                  </button>
+                <div className="h-8 w-[1px] bg-border/20" />
+                <div className="flex flex-col">
+                  <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Model Runtime</span>
+                  <span className="text-xs font-bold text-foreground truncate max-w-[120px]">{activeProviderModel}</span>
                 </div>
               </div>
-            </motion.header>
+              
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => router.back()}
+                  className="px-4 h-10 rounded-sm border border-border/60 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-surface-strong transition-all flex items-center gap-2"
+                >
+                  <ArrowLeft className="h-3 w-3" /> Exit
+                </button>
+              </div>
+            </div>
+          </motion.header>
+
+          {/* Horizontal Navigation Row */}
+          <nav className="sticky top-2 z-50 bg-surface/80 border border-border/40 p-1 rounded-sm backdrop-blur-xl shadow-xl shadow-background/20 w-full overflow-hidden">
+            <div className="flex items-center gap-6 px-4 overflow-x-auto scrollbar-none no-scrollbar py-1">
+              {[
+                { label: 'Core', items: ['overview', 'chat', 'emotions', 'neural', 'timeline', 'memory', 'relationships', 'learning'] },
+                { label: 'Generative', items: ['scenarios', 'creative', 'dreams', 'journal'] },
+                { label: 'Intelligence', items: ['profile', 'challenges', 'knowledge-graph', 'knowledge-library', 'collective', 'mentorship'] }
+              ].map((group, idx) => (
+                <div key={group.label} className="flex items-center gap-1 shrink-0">
+                  <div className="text-[9px] uppercase font-black tracking-[0.25em] text-muted-foreground/30 mr-3 select-none">
+                    {group.label}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {TAB_CONFIG.filter(t => group.items.includes(t.id)).map((tab) => {
+                      const Icon = tab.icon
+                      const isActive = activeTab === tab.id
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => handleTabChange(tab.id)}
+                          className={cn(
+                            "flex items-center gap-2 px-3 py-1.5 rounded-sm transition-all duration-200 group relative whitespace-nowrap",
+                            isActive 
+                              ? "bg-primary text-primary-foreground shadow-md shadow-primary/20" 
+                              : "text-muted-foreground/80 hover:bg-surface-strong hover:text-foreground"
+                          )}
+                        >
+                          <Icon className={cn("h-3.5 w-3.5", isActive ? "text-white" : "text-primary/50 group-hover:text-primary")} />
+                          <span className="text-[11px] font-bold uppercase tracking-wider">{tab.label}</span>
+                          {isActive && (
+                            <motion.div layoutId="nav-active" className="absolute -bottom-1 left-2 right-2 h-0.5 bg-white/30 rounded-full" />
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {idx < 2 && <div className="ml-5 h-6 w-[1px] bg-border/20" />}
+                </div>
+              ))}
+            </div>
+          </nav>
+
+          {/* Main Dashboard Surface */}
+          <main className="min-w-0 space-y-6">
 
         <div className="flex flex-col gap-6">
           {/* Agent Info - Overview Tab Only */}
@@ -1318,21 +1307,21 @@ export default function AgentDetail() {
                 </CardContent>
               </Card>
             ) : activeTab === 'creative' ? (
-              /* Phase 2: Creative Portfolio Tab */
+              /* Creative Studio Tab */
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">
                   <CardTitle className="flex items-center gap-3 text-xl">
                     <div className="p-2 rounded-sm bg-purple-500/10">
                       <Palette className="h-6 w-6 text-purple-500" />
                     </div>
-                    Creative Portfolio
+                    Creative Studio
                   </CardTitle>
                   <CardDescription>
-                    {currentAgent.name}&apos;s creative works including stories, poems, and more
+                    Structured creative briefs, inspectable generation, and a published artifact library
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <CreativePortfolio agentId={currentAgent.id} agentName={currentAgent.name} />
+                  <CreativeStudio agentId={currentAgent.id} agentName={currentAgent.name} />
                 </CardContent>
               </Card>
             ) : activeTab === 'dreams' ? (

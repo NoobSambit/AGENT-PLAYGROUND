@@ -14,7 +14,9 @@ import type {
   AgentRecord,
   AgentRelationship,
   AgentStats,
-  CreativeWork,
+  CreativeArtifact,
+  CreativePipelineEvent,
+  CreativeSession,
   Dream,
   EmotionalEvent,
   EmotionalProfile,
@@ -156,15 +158,64 @@ export const agentRelationships = pgTable('agent_relationships', {
   index('agent_relationships_status_idx').on(table.status),
 ])
 
-export const creativeWorks = pgTable('creative_works', {
+export const creativeSessions = pgTable('creative_sessions', {
   id: text('id').primaryKey(),
   agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
-  type: text('type').notNull(),
+  status: text('status').notNull(),
+  format: text('format').notNull(),
+  brief: jsonb('brief').$type<CreativeSession['brief']>().notNull(),
+  normalizedBrief: jsonb('normalized_brief').$type<CreativeSession['normalizedBrief']>().notNull(),
+  contextPacket: jsonb('context_packet').$type<CreativeSession['contextPacket'] | null>(),
+  latestEvaluation: jsonb('latest_evaluation').$type<CreativeSession['latestEvaluation'] | null>(),
+  draftArtifactId: text('draft_artifact_id'),
+  finalArtifactId: text('final_artifact_id'),
+  publishedArtifactId: text('published_artifact_id'),
+  provider: text('provider'),
+  model: text('model'),
   createdAt,
-  payload: jsonb('payload').$type<CreativeWork>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull(),
+  publishedAt: timestamp('published_at', { withTimezone: true, mode: 'string' }),
+  payload: jsonb('payload').$type<CreativeSession>().notNull(),
 }, (table) => [
-  index('creative_works_agent_created_idx').on(table.agentId, table.createdAt),
-  index('creative_works_agent_type_created_idx').on(table.agentId, table.type, table.createdAt),
+  index('creative_sessions_agent_created_idx').on(table.agentId, table.createdAt),
+  index('creative_sessions_agent_status_created_idx').on(table.agentId, table.status, table.createdAt),
+  index('creative_sessions_agent_format_created_idx').on(table.agentId, table.format, table.createdAt),
+])
+
+export const creativeArtifacts = pgTable('creative_artifacts', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  sessionId: text('session_id').notNull().references(() => creativeSessions.id, { onDelete: 'cascade' }),
+  format: text('format').notNull(),
+  status: text('status').notNull(),
+  version: integer('version').notNull(),
+  title: text('title').notNull(),
+  summary: text('summary').notNull(),
+  wordCount: integer('word_count').notNull().default(0),
+  published: boolean('published').notNull().default(false),
+  provider: text('provider'),
+  model: text('model'),
+  createdAt,
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull(),
+  publishedAt: timestamp('published_at', { withTimezone: true, mode: 'string' }),
+  payload: jsonb('payload').$type<CreativeArtifact>().notNull(),
+}, (table) => [
+  index('creative_artifacts_session_created_idx').on(table.sessionId, table.createdAt),
+  index('creative_artifacts_agent_status_created_idx').on(table.agentId, table.status, table.createdAt),
+  index('creative_artifacts_agent_published_created_idx').on(table.agentId, table.published, table.createdAt),
+])
+
+export const creativePipelineEvents = pgTable('creative_pipeline_events', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull().references(() => creativeSessions.id, { onDelete: 'cascade' }),
+  stage: text('stage').notNull(),
+  status: text('status').notNull(),
+  summary: text('summary').notNull(),
+  createdAt,
+  payload: jsonb('payload').$type<CreativePipelineEvent>().notNull(),
+}, (table) => [
+  index('creative_pipeline_events_session_created_idx').on(table.sessionId, table.createdAt),
+  index('creative_pipeline_events_stage_created_idx').on(table.stage, table.createdAt),
 ])
 
 export const dreams = pgTable('dreams', {
@@ -384,7 +435,9 @@ export const schema = {
   memoryGraphs,
   agentPersonalityEvents,
   agentRelationships,
-  creativeWorks,
+  creativeSessions,
+  creativeArtifacts,
+  creativePipelineEvents,
   dreams,
   journalEntries,
   learningPatterns,

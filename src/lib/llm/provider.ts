@@ -64,7 +64,7 @@ export async function generateText({
     )
 
     if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`)
+      throw new Error(`Gemini API error: ${response.status} ${await response.text()}`)
     }
 
     const data = await response.json()
@@ -90,7 +90,7 @@ export async function generateText({
     })
 
     if (!response.ok) {
-      throw new Error(`Groq API error: ${response.status}`)
+      throw new Error(`Groq API error: ${response.status} ${await response.text()}`)
     }
 
     const data = await response.json()
@@ -117,7 +117,7 @@ export async function generateText({
   })
 
   if (!response.ok) {
-    throw new Error(`Ollama API error: ${response.status}`)
+    throw new Error(`Ollama API error: ${response.status} ${await response.text()}`)
   }
 
   const data = await response.json()

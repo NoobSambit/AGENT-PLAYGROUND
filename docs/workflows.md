@@ -351,6 +351,21 @@ Expected behavior:
 3. Generated output is persisted.
 4. Related counters and emotional state may update depending on the feature.
 
+### Creative Studio
+
+1. UI loads `GET /api/agents/[id]/creative`.
+2. User saves a structured brief with `POST /api/agents/[id]/creative`.
+3. The server normalizes the brief and creates a draft creative session.
+4. UI triggers `POST /api/agents/[id]/creative/sessions/[sessionId]/generate`.
+5. The server:
+   - gathers ranked context from agent state, memories, messages, journals, dreams, and prior motifs
+   - generates a draft artifact
+   - evaluates it against the creative rubric
+   - runs one repair pass when the draft misses the gate
+   - stores artifacts and pipeline events
+6. UI can publish with `POST /api/agents/[id]/creative/sessions/[sessionId]/publish`.
+7. Only publish increments agent creative counters.
+
 ## Run Multi-Agent Simulation
 
 1. Open `/simulation`.

@@ -16,6 +16,9 @@ export const TOP_LEVEL_COLLECTIONS = [
 export const AGENT_SUBCOLLECTIONS = [
   'relationships',
   'creative_works',
+  'creative_sessions',
+  'creative_artifacts',
+  'creative_pipeline_events',
   'dreams',
   'journal_entries',
   'learning_patterns',

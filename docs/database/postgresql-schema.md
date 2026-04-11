@@ -11,7 +11,9 @@
 
 ## Agent Feature Tables
 
-- `creative_works`
+- `creative_sessions`
+- `creative_artifacts`
+- `creative_pipeline_events`
 - `dreams`
 - `journal_entries`
 - `learning_patterns`
@@ -39,4 +41,5 @@
 - Query-critical fields are typed and indexed.
 - Complex feature payloads remain in `jsonb`.
 - Agent-owned tables cascade on agent delete.
+- Creative Studio keeps session state, artifact versions, and pipeline trace rows separate so published output is queryable without losing inspectability.
 - Shared history tables keep direct references and payload snapshots.

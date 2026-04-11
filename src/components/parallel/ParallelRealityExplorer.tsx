@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type SVGProps } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowRightLeft, Brain, Clock3, History, Loader2, MessageSquareDiff, Sparkles, Target, AlertTriangle, BadgeCheck, WandSparkles, BookOpen, X, ChevronRight, CheckCircle2, Info } from 'lucide-react'
+import { Brain, Clock3, History, Loader2, MessageSquareDiff, Sparkles, Target, AlertTriangle, BadgeCheck, WandSparkles, BookOpen, CheckCircle2, Info } from 'lucide-react'
 import type {
   ScenarioBranchPoint,
   ScenarioAnalyticsSummary,
@@ -188,6 +188,11 @@ function InterventionEditor({
 
 function RunSummary({ run }: { run: ScenarioRunRecord }) {
   const [activeTab, setActiveTab] = useState<'overview' | 'comparison' | 'context'>('overview')
+  const tabs: Array<{ id: 'overview' | 'comparison' | 'context'; label: string }> = [
+    { id: 'overview', label: 'Analysis' },
+    { id: 'comparison', label: 'Diff' },
+    { id: 'context', label: 'Context' },
+  ]
 
   return (
     <motion.div 
@@ -221,14 +226,10 @@ function RunSummary({ run }: { run: ScenarioRunRecord }) {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-1 bg-black/20 p-1 rounded-md inline-flex border border-white/5">
-          {[
-            { id: 'overview', label: 'Analysis' },
-            { id: 'comparison', label: 'Diff' },
-            { id: 'context', label: 'Context' }
-          ].map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id)}
               className={`px-3 py-1.5 text-xs font-semibold rounded transition-all ${
                 activeTab === tab.id
                   ? 'bg-emerald-500/20 text-emerald-300 shadow-sm'
@@ -473,7 +474,7 @@ export function ParallelRealityExplorer({
             </button>
           </div>
           <p className="text-sm text-slate-400">
-            Go back to a real moment in <strong>{agentName}'s</strong> history and change a single detail.
+            Go back to a real moment in <strong>{agentName}&apos;s</strong> history and change a single detail.
           </p>
         </div>
 
@@ -740,7 +741,7 @@ export function ParallelRealityExplorer({
   )
 }
 
-function SearchIcon(props: any) {
+function SearchIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
       {...props}

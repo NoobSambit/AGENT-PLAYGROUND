@@ -27,7 +27,7 @@ function buildAgentRow(doc) {
     stats: data.stats ?? null,
     psychological_profile: data.psychologicalProfile ?? null,
     relationship_count: data.relationshipCount || 0,
-    creative_works: data.creativeWorks || 0,
+    creative_works: 0,
     dream_count: data.dreamCount || 0,
     journal_count: data.journalCount || 0,
     challenges_completed: data.challengesCompleted || 0,
@@ -244,12 +244,73 @@ function buildRelationshipRows(agents) {
   return [...deduped.values()]
 }
 
-function buildCreativeRows(agents) {
+function buildCreativeSessionRows(agents) {
   return agents.flatMap((agentDoc) =>
-    (agentDoc.subcollections?.creative_works || []).map((doc) => ({
+    (agentDoc.subcollections?.creative_sessions || []).map((doc) => ({
       id: doc.id,
       agent_id: agentDoc.id,
-      type: doc.data?.type || 'story',
+      status: doc.data?.status || 'draft',
+      format: doc.data?.normalizedBrief?.format || doc.data?.brief?.format || 'story',
+      brief: doc.data?.brief || {},
+      normalized_brief: doc.data?.normalizedBrief || doc.data?.brief || {},
+      context_packet: doc.data?.contextPacket ?? null,
+      latest_evaluation: doc.data?.latestEvaluation ?? null,
+      draft_artifact_id: doc.data?.draftArtifactId ?? null,
+      final_artifact_id: doc.data?.finalArtifactId ?? null,
+      published_artifact_id: doc.data?.publishedArtifactId ?? null,
+      provider: doc.data?.provider ?? null,
+      model: doc.data?.model ?? null,
+      created_at: normalizeIso(doc.data?.createdAt),
+      updated_at: normalizeIso(doc.data?.updatedAt),
+      published_at: doc.data?.publishedAt ? normalizeIso(doc.data?.publishedAt) : null,
+      payload: {
+        id: doc.id,
+        ...doc.data,
+        createdAt: normalizeIso(doc.data?.createdAt),
+        updatedAt: normalizeIso(doc.data?.updatedAt),
+        publishedAt: doc.data?.publishedAt ? normalizeIso(doc.data?.publishedAt) : undefined,
+      },
+    }))
+  )
+}
+
+function buildCreativeArtifactRows(agents) {
+  return agents.flatMap((agentDoc) =>
+    (agentDoc.subcollections?.creative_artifacts || []).map((doc) => ({
+      id: doc.id,
+      agent_id: agentDoc.id,
+      session_id: doc.data?.sessionId || '',
+      format: doc.data?.format || 'story',
+      status: doc.data?.status || 'draft',
+      version: doc.data?.version || 1,
+      title: doc.data?.title || 'Untitled',
+      summary: doc.data?.summary || '',
+      word_count: doc.data?.wordCount || 0,
+      published: doc.data?.status === 'published',
+      provider: doc.data?.provider ?? null,
+      model: doc.data?.model ?? null,
+      created_at: normalizeIso(doc.data?.createdAt),
+      updated_at: normalizeIso(doc.data?.updatedAt),
+      published_at: doc.data?.publishedAt ? normalizeIso(doc.data?.publishedAt) : null,
+      payload: {
+        id: doc.id,
+        ...doc.data,
+        createdAt: normalizeIso(doc.data?.createdAt),
+        updatedAt: normalizeIso(doc.data?.updatedAt),
+        publishedAt: doc.data?.publishedAt ? normalizeIso(doc.data?.publishedAt) : undefined,
+      },
+    }))
+  )
+}
+
+function buildCreativePipelineRows(agents) {
+  return agents.flatMap((agentDoc) =>
+    (agentDoc.subcollections?.creative_pipeline_events || []).map((doc) => ({
+      id: doc.id,
+      session_id: doc.data?.sessionId || '',
+      stage: doc.data?.stage || 'brief_normalized',
+      status: doc.data?.status || 'completed',
+      summary: doc.data?.summary || '',
       created_at: normalizeIso(doc.data?.createdAt),
       payload: {
         id: doc.id,
@@ -400,7 +461,9 @@ function buildImportPlan(data) {
     ['memories', (data.collections?.memories || []).map(buildMemoryRow)],
     ['memory_graphs', (data.collections?.memory_graphs || []).map(buildMemoryGraphRow)],
     ['agent_relationships', buildRelationshipRows(agents)],
-    ['creative_works', buildCreativeRows(agents)],
+    ['creative_sessions', buildCreativeSessionRows(agents)],
+    ['creative_artifacts', buildCreativeArtifactRows(agents)],
+    ['creative_pipeline_events', buildCreativePipelineRows(agents)],
     ['dreams', buildDreamRows(agents)],
     ['journal_entries', buildJournalRows(agents)],
     ['learning_patterns', buildLearningPatternRows(agents)],

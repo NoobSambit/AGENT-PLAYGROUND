@@ -30,6 +30,14 @@ npm run db:reset -- --confirm-reset
 
 The default local setup uses `LOCAL_PG_DATA_DIR`, `LOCAL_PG_LOG_FILE`, and `LOCAL_PG_SOCKET_DIR` so PostgreSQL only runs while `npm run dev` is active. Keep those paths outside the repo so Next.js does not scan PostgreSQL socket files. If you prefer managing PostgreSQL via OS commands, set `LOCAL_PG_START_CMD` and `LOCAL_PG_STOP_CMD` instead.
 
+Creative Studio validation now has a dedicated local benchmark:
+
+```bash
+npm run creative:evaluate
+```
+
+It runs fixed Creative Studio briefs against `Nova Forge`, leaves at least one published artifact in the DB, and prints a compact quality summary for manual review.
+
 ## Persistence Modes
 
 - `firestore`: legacy runtime, Firestore only.

@@ -20,6 +20,9 @@
 ## Agent Feature Routes
 
 - `GET|POST /api/agents/[id]/creative`
+- `GET /api/agents/[id]/creative/sessions/[sessionId]`
+- `POST /api/agents/[id]/creative/sessions/[sessionId]/generate`
+- `POST /api/agents/[id]/creative/sessions/[sessionId]/publish`
 - `GET|POST /api/agents/[id]/dream`
 - `GET|POST /api/agents/[id]/journal`
 - `GET|POST /api/agents/[id]/learning`
@@ -57,6 +60,11 @@
 - `POST /api/agents/[id]/chat` now also drives learning side effects: observation capture, follow-up resolution, pattern confirmation, and adaptation refresh.
 - `GET /api/agents/[id]/learning` returns learning state built from patterns, goals, adaptations, skills, and recent observations.
 - `POST /api/agents/[id]/learning` remains available for explicit feature actions such as manual conversation analysis, goal generation, skill updates, and manual adaptation creation.
+- `GET /api/agents/[id]/creative` now returns Creative Studio bootstrap state: allowed controls, defaults, candidate context signals, recent sessions, and published library items.
+- `POST /api/agents/[id]/creative` now creates a normalized creative session draft instead of generating and publishing immediately.
+- `POST /api/agents/[id]/creative/sessions/[sessionId]/generate` runs the two-pass draft -> evaluate -> repair workflow and returns the full session detail.
+- `POST /api/agents/[id]/creative/sessions/[sessionId]/publish` publishes the final artifact and increments agent creative counters at publish time only.
+- `GET /api/agents/[id]/creative/sessions/[sessionId]` returns one session with artifacts and pipeline trace events.
 - `GET /api/scenarios` returns branch point options, intervention templates, and recent saved runs for one agent.
 - `GET /api/scenarios` also returns `analytics` with best interventions, common quality flags, and playbook notes.
 - `POST /api/scenarios` requires `agentId`, `branchPointId`, `branchPointKind`, and `intervention`, then returns a saved `scenarioRun`.
