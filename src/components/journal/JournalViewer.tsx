@@ -22,15 +22,24 @@ import type {
   JournalSession,
   JournalSessionDetail,
 } from '@/types/database'
+import {
+  JournalIcon,
+  PipelineIcon,
+  QualityIcon,
+  ContextIcon,
+  DraftIcon,
+  ArchiveLibraryIcon,
+  StageIcon,
+} from './JournalIcons'
 
 interface JournalViewerProps {
   agentId: string
   agentName: string
 }
 
-const premiumPanel = 'rounded-sm border border-zinc-800/60 bg-zinc-950/55 shadow-2xl backdrop-blur-xl'
-const subPanel = 'rounded-sm border border-zinc-800/50 bg-zinc-900/30'
-const labelStyle = 'text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500'
+const premiumPanel = 'rounded-md border border-border/40 bg-card/40 backdrop-blur-md shadow-sm'
+const subPanel = 'rounded-sm border border-border/30 bg-muted/20'
+const labelStyle = 'text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80'
 
 const TYPE_LABELS: Record<JournalEntryType, string> = {
   daily_reflection: 'Daily Reflection',
@@ -76,6 +85,13 @@ const STAGE_LABELS: Record<JournalPipelineStage, string> = {
   ready: 'Ready',
   saved: 'Saved',
   failed: 'Failed',
+}
+
+function artifactBadgeTone(score?: number) {
+  if (!score) return 'text-muted-foreground'
+  if (score >= 85) return 'text-pastel-green'
+  if (score >= 75) return 'text-pastel-yellow'
+  return 'text-pastel-red'
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
@@ -130,30 +146,24 @@ function StageRail({ detail }: { detail: JournalSessionDetail | null }) {
   const activeIndex = orderedStages.indexOf(activeStage)
 
   return (
-    <div className={`${subPanel} px-3 py-3`}>
-      <div className="mb-2 flex items-center justify-between">
-        <div className={labelStyle}>Pipeline</div>
-        <div className="text-[11px] text-zinc-400">{STAGE_LABELS[activeStage] || 'Preparing'}</div>
-      </div>
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {orderedStages.map((stage, index) => {
-          const isComplete = activeStage === 'saved' || (activeStage !== 'failed' && index < activeIndex)
-          const isActive = stage === activeStage
-          return (
-            <div key={stage} className="min-w-[108px] flex-1">
-              <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-zinc-500">{stage.replaceAll('_', ' ')}</div>
-              <div className="h-1.5 rounded-full bg-zinc-800">
-                <motion.div
-                  initial={false}
-                  animate={{ width: isComplete || isActive ? '100%' : '0%' }}
-                  transition={{ duration: 0.35 }}
-                  className={isActive ? 'h-full rounded-full bg-amber-300' : isComplete ? 'h-full rounded-full bg-emerald-400' : 'h-full rounded-full bg-zinc-700'}
-                />
-              </div>
+    <div className="flex gap-2 overflow-x-auto pb-1 w-full shrink-0">
+      {orderedStages.map((stage, index) => {
+        const isComplete = activeStage === 'saved' || (activeStage !== 'failed' && index < activeIndex)
+        const isActive = stage === activeStage
+        return (
+          <div key={stage} className="min-w-[102px] flex-1">
+            <div className={`mb-1 text-[9px] uppercase tracking-[0.18em] ${isActive ? 'text-pastel-blue font-bold' : 'text-muted-foreground'}`}>{stage.replaceAll('_', ' ')}</div>
+            <div className="h-1.5 rounded-full bg-muted/40">
+              <motion.div
+                initial={false}
+                animate={{ width: isComplete || isActive ? '100%' : '0%' }}
+                transition={{ duration: 0.35 }}
+                className={isActive ? 'h-full rounded-full bg-pastel-blue' : isComplete ? 'h-full rounded-full bg-pastel-green' : 'h-full rounded-full bg-muted/30'}
+              />
             </div>
-          )
-        })}
-      </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -161,41 +171,32 @@ function StageRail({ detail }: { detail: JournalSessionDetail | null }) {
 function DraftSkeleton({ stageLabel, stillWorking }: { stageLabel: string; stillWorking: boolean }) {
   const utilityCopy = stillWorking
     ? stageLabel === 'repair_entry'
-      ? 'Repairing weak sections against the journal rubric.'
+      ? 'Repairing against journal rubric.'
       : stageLabel === 'evaluate_quality'
-        ? 'Still evaluating voice fit and continuity against selected context.'
-        : 'Still building the draft from current emotional and memory evidence.'
+        ? 'Evaluating voice and continuity.'
+        : 'Building from emotion and memory.'
     : `Working: ${STAGE_LABELS[stageLabel as JournalPipelineStage] || stageLabel.replaceAll('_', ' ')}`
 
   return (
-    <div className="space-y-5">
-      <div className={`${labelStyle}`}>Draft In Progress</div>
-      <div className="space-y-3">
-        <div className="h-8 w-2/3 animate-pulse rounded-sm bg-zinc-800" />
-        <div className="h-4 w-1/3 animate-pulse rounded-sm bg-zinc-900" />
+    <div className="h-full flex flex-col items-center justify-center opacity-50 grayscale gap-6 max-w-sm mx-auto">
+      <DraftIcon className="h-10 w-10 text-muted-foreground" />
+      <div className="space-y-4 w-full">
+        <div className="h-8 w-2/3 animate-pulse rounded-sm bg-muted/40 mx-auto" />
+        <div className="h-4 w-1/3 animate-pulse rounded-sm bg-muted/30 mx-auto" />
       </div>
-      <div className="space-y-3">
+      <div className="space-y-3 w-full">
         {[0, 1, 2, 3, 4].map((row) => (
           <div
             key={row}
-            className="h-4 animate-pulse rounded-sm bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900"
-            style={{ width: `${row === 4 ? 62 : row % 2 === 0 ? 100 : 92}%` }}
+            className="h-4 animate-pulse rounded-sm bg-muted/20"
+            style={{ width: `${row === 4 ? 62 : row % 2 === 0 ? 100 : 92}%`, margin: '0 auto' }}
           />
         ))}
       </div>
-      <div className="flex items-center gap-2 text-sm text-zinc-400">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-amber-300" />
+      <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-pastel-blue" />
         <span>{utilityCopy}</span>
       </div>
-    </div>
-  )
-}
-
-function MetricPill({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-sm border border-zinc-800 bg-zinc-900/40 px-3 py-2">
-      <div className={labelStyle}>{label}</div>
-      <div className="mt-1 text-sm font-semibold text-zinc-100">{value}</div>
     </div>
   )
 }
@@ -364,358 +365,439 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
     return bootstrap.recentSavedEntries.find((entry) => entry.id === selectedArchiveId) || bootstrap.recentSavedEntries[0]
   }, [bootstrap?.recentSavedEntries, selectedArchiveId])
 
-  if (loading) {
-    return <div className={`${premiumPanel} p-6 text-sm text-zinc-400`}>Loading journal workspace…</div>
+  if (loading && !bootstrap) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-6 w-6 animate-spin text-pastel-purple" />
+          <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Initializing Journal Workspace</div>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-4">
-      <div className={`${premiumPanel} p-4 sm:p-5`}>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      {/* Header Bar */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-1">
+        <div className="flex items-center gap-4">
+          <div className="rounded-md bg-pastel-blue/10 p-2.5">
+            <JournalIcon className="h-5 w-5 text-pastel-blue" />
+          </div>
           <div>
-            <div className={labelStyle}>Journal Workspace</div>
-            <h3 className="mt-1 text-xl font-semibold text-zinc-100">{agentName}</h3>
-            <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-              Private session-based journaling with review, staged generation, and saved-entry-only archive history.
+            <h3 className="text-lg font-bold text-foreground leading-tight tracking-tight">
+              {agentName}&apos;s Personal Journal
+            </h3>
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest">
+              Private Reflections & Archives
             </p>
           </div>
-          <div className="flex items-center gap-2">
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-md border border-border/40 bg-muted/20 p-1">
             <button
-              type="button"
               onClick={() => setMode('compose')}
-              className={mode === 'compose' ? 'rounded-sm bg-amber-300 px-3 py-2 text-xs font-semibold text-zinc-950' : 'rounded-sm border border-zinc-800 px-3 py-2 text-xs font-semibold text-zinc-300'}
+              className={`flex items-center gap-2 rounded-sm px-3 py-1.5 text-[12px] font-bold transition-all duration-200 ${
+                mode === 'compose' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
             >
+              <DraftIcon className="h-3.5 w-3.5" />
               Compose
             </button>
             <button
-              type="button"
               onClick={() => setMode('archive')}
-              className={mode === 'archive' ? 'rounded-sm bg-amber-300 px-3 py-2 text-xs font-semibold text-zinc-950' : 'rounded-sm border border-zinc-800 px-3 py-2 text-xs font-semibold text-zinc-300'}
+              className={`flex items-center gap-2 rounded-sm px-3 py-1.5 text-[12px] font-bold transition-all duration-200 ${
+                mode === 'archive' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
             >
+              <ArchiveLibraryIcon className="h-3.5 w-3.5" />
               Archive
             </button>
-            <Button variant="outline" size="sm" onClick={() => void loadBootstrap(true)} disabled={refreshing}>
-              {refreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Refresh
-            </Button>
           </div>
-        </div>
-
-        <div className="mt-4 grid gap-2 sm:grid-cols-4">
-          <MetricPill label="Saved" value={bootstrap?.agent.journalCount || 0} />
-          <MetricPill label="Recent Sessions" value={bootstrap?.metrics.totalSessions || 0} />
-          <MetricPill label="Ready To Save" value={bootstrap?.metrics.readyToSaveCount || 0} />
-          <MetricPill label="Failed" value={bootstrap?.metrics.failedSessions || 0} />
+          <Button variant="outline" size="sm" className="h-9 gap-2 border-border/40" onClick={() => void loadBootstrap(true)} disabled={refreshing}>
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
         </div>
       </div>
 
-      {mode === 'compose' && <StageRail detail={detail} />}
-
       {error ? (
-        <div className="rounded-sm border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-          {error}
+        <div className="rounded-md border border-pastel-red/30 bg-pastel-red/5 px-4 py-3 text-[13px] text-pastel-red flex items-start gap-3">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>{error}</span>
         </div>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
-        <div className={`${premiumPanel} p-4`}>
+      <div className="grid gap-4 xl:grid-cols-[340px_1fr_440px] xl:h-[calc(100vh-220px)] xl:min-h-[700px]">
+        {/* Column 1: Input / Navigation */}
+        <div className="flex flex-col gap-4 min-h-0 overflow-hidden">
           {mode === 'compose' ? (
-            <div className="space-y-4">
-              <div>
-                <div className={labelStyle}>Compose</div>
-                <div className="mt-2 space-y-2">
-                  {bootstrap?.allowedTypes.map((entryType) => (
-                    <button
-                      key={entryType}
-                      type="button"
-                      disabled={generating}
-                      onClick={() => setType(entryType)}
-                      className={type === entryType ? 'w-full rounded-sm border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-left text-sm text-zinc-100' : 'w-full rounded-sm border border-zinc-800 bg-zinc-900/30 px-3 py-2 text-left text-sm text-zinc-400'}
-                    >
-                      {TYPE_LABELS[entryType]}
-                    </button>
-                  ))}
+            <section className={`${premiumPanel} flex flex-col flex-1 overflow-hidden`}>
+              <div className="border-b border-border/40 bg-muted/10 px-4 py-3 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <DraftIcon className="h-4 w-4" />
+                  <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Compose Pipeline</span>
                 </div>
-                <p className="mt-2 text-xs text-zinc-500">Suggested: {bootstrap ? TYPE_LABELS[bootstrap.suggestedType] : 'Daily Reflection'}</p>
               </div>
-
-              <div>
-                <div className={labelStyle}>Optional Note</div>
-                <textarea
-                  value={userNote}
-                  onChange={(event) => setUserNote(event.target.value)}
-                  disabled={generating}
-                  rows={5}
-                  className="mt-2 w-full rounded-sm border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
-                  placeholder="Anchor the draft to one tension, memory, relationship, or goal."
-                />
-              </div>
-
-              <div>
-                <div className={labelStyle}>Focus</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(Object.keys(FOCUS_LABELS) as JournalFocus[]).map((chip) => {
-                    const active = focus.includes(chip)
-                    return (
+              <div className="p-4 space-y-4 overflow-y-auto scrollbar-thin flex-1">
+                <div className="space-y-1.5">
+                  <div className={labelStyle}>Types</div>
+                  <div className="mt-2 space-y-2">
+                    {bootstrap?.allowedTypes.map((entryType) => (
                       <button
-                        key={chip}
+                        key={entryType}
                         type="button"
                         disabled={generating}
-                        onClick={() => setFocus((current) => active ? current.filter((entry) => entry !== chip) : [...current, chip].slice(0, 4))}
-                        className={active ? 'rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-zinc-100' : 'rounded-full border border-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-400'}
+                        onClick={() => setType(entryType)}
+                        className={type === entryType ? 'w-full rounded-sm border border-pastel-blue/40 bg-pastel-blue/10 px-3 py-2 text-left text-[13px] text-pastel-blue font-bold shadow-sm transition-all' : 'w-full rounded-sm border border-border/30 bg-muted/5 px-3 py-2 text-left text-[13px] text-muted-foreground hover:border-pastel-blue/20 hover:text-foreground transition-all'}
                       >
-                        {FOCUS_LABELS[chip]}
+                        {TYPE_LABELS[entryType]}
                       </button>
-                    )
-                  })}
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[10px] text-muted-foreground italic">Suggested: {bootstrap ? TYPE_LABELS[bootstrap.suggestedType] : 'Daily Reflection'}</p>
+                </div>
+
+                <div className="space-y-1.5 pt-2">
+                  <div className={labelStyle}>Optional Note</div>
+                  <textarea
+                    value={userNote}
+                    onChange={(event) => setUserNote(event.target.value)}
+                    disabled={generating}
+                    rows={4}
+                    className="w-full rounded-sm border border-border/30 bg-muted/5 px-3 py-2 text-[12px] text-foreground outline-none transition placeholder:text-muted-foreground/50 focus:border-pastel-blue/50 resize-none"
+                    placeholder="Anchor the draft to one tension, memory, relationship, or goal."
+                  />
+                </div>
+
+                <div className="space-y-1.5 pt-2">
+                  <div className={labelStyle}>Focus</div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(Object.keys(FOCUS_LABELS) as JournalFocus[]).map((chip) => {
+                      const active = focus.includes(chip)
+                      return (
+                        <button
+                          key={chip}
+                          type="button"
+                          disabled={generating}
+                          onClick={() => setFocus((current) => active ? current.filter((entry) => entry !== chip) : [...current, chip].slice(0, 4))}
+                          className={active ? 'rounded-md border border-pastel-blue/40 bg-pastel-blue/10 px-2.5 py-1 text-[11px] font-bold text-pastel-blue' : 'rounded-md border border-border/30 bg-muted/5 px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:border-pastel-blue/20 hover:text-foreground transition-all'}
+                        >
+                          {FOCUS_LABELS[chip]}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
-
-              <div className="space-y-2 pt-2">
-                <Button className="w-full" onClick={() => void handleGenerate(false)} disabled={generating || saving}>
-                  {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Generate
-                </Button>
-                <Button variant="outline" className="w-full" onClick={() => void handleGenerate(true)} disabled={generating || saving || !detail?.session}>
-                  Regenerate
-                </Button>
-                <Button variant="secondary" className="w-full" onClick={() => void handleSave()} disabled={!canSave || saving || generating}>
-                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                  Save Entry
-                </Button>
-                {saveStatus ? <div className="text-xs text-zinc-400">{saveStatus}</div> : null}
-              </div>
-
-              <div className="pt-4">
-                <div className={labelStyle}>Recent Sessions</div>
-                <div className="mt-2 space-y-2">
-                  {bootstrap?.recentSessions.length ? bootstrap.recentSessions.map((session) => (
-                    <button
-                      key={session.id}
-                      type="button"
-                      onClick={() => setActiveSessionId(session.id)}
-                      className={activeSessionId === session.id ? 'w-full rounded-sm border border-zinc-700 bg-zinc-900/60 px-3 py-2 text-left' : 'w-full rounded-sm border border-zinc-900 bg-zinc-950/40 px-3 py-2 text-left'}
-                    >
-                      <div className="text-xs text-zinc-500">{TYPE_LABELS[session.type]}</div>
-                      <div className="mt-1 text-sm font-medium text-zinc-100">{STAGE_LABELS[session.latestStage] || session.status}</div>
-                      <div className="mt-1 text-xs text-zinc-500">{formatDateTime(session.updatedAt)}</div>
-                    </button>
-                  )) : (
-                    <div className="rounded-sm border border-dashed border-zinc-800 px-3 py-5 text-sm text-zinc-500">
-                      No journal sessions yet.
-                    </div>
-                  )}
+              <div className="p-3 shrink-0 border-t border-border/30 bg-muted/5">
+                <div className="flex gap-2">
+                  <Button className="h-8 flex-1 gap-2 bg-pastel-blue hover:bg-pastel-blue/90 text-primary-foreground font-bold text-[10px] uppercase tracking-wider" onClick={() => void handleGenerate(false)} disabled={generating || saving}>
+                    {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DraftIcon className="h-3.5 w-3.5" />}
+                    Generate
+                  </Button>
+                  <Button variant="outline" className="h-8 flex-1 gap-2 font-bold text-[10px] uppercase tracking-wider border-border/40" onClick={() => void handleGenerate(true)} disabled={generating || saving || !detail?.session}>
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Regen
+                  </Button>
+                  <Button variant="secondary" className="h-8 w-10 shrink-0 p-0 border border-border/40 bg-muted hover:bg-muted" onClick={() => void handleSave()} disabled={!canSave || saving || generating}>
+                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className={`h-3.5 w-3.5 ${canSave ? 'text-pastel-green' : 'text-muted-foreground'}`} />}
+                  </Button>
                 </div>
               </div>
-            </div>
+            </section>
           ) : (
-            <div className="space-y-3">
-              <div>
-                <div className={labelStyle}>Archive</div>
-                <p className="mt-2 text-sm text-zinc-400">Only saved V2 journal entries appear here and feed downstream systems.</p>
+            <section className={`${premiumPanel} flex flex-col flex-1 overflow-hidden`}>
+              <div className="border-b border-border/40 bg-muted/10 px-4 py-3 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <ArchiveLibraryIcon className="h-4 w-4" />
+                  <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Archive Details</span>
+                </div>
               </div>
-              <div className="space-y-2">
-                {bootstrap?.recentSavedEntries.length ? bootstrap.recentSavedEntries.map((entry) => (
+              <div className="flex-1 overflow-y-auto p-2 space-y-1.5 scrollbar-thin">
+                 {bootstrap?.recentSavedEntries.length ? bootstrap.recentSavedEntries.map((entry) => (
                   <button
                     key={entry.id}
                     type="button"
                     onClick={() => setSelectedArchiveId(entry.id)}
-                    className={selectedArchiveId === entry.id ? 'w-full rounded-sm border border-zinc-700 bg-zinc-900/60 px-3 py-3 text-left' : 'w-full rounded-sm border border-zinc-900 bg-zinc-950/40 px-3 py-3 text-left'}
+                    className={`w-full text-left p-2.5 rounded-sm border transition-all duration-200 ${
+                      selectedArchiveId === entry.id ? 'border-pastel-blue/40 bg-pastel-blue/5' : 'border-border/30 bg-muted/5 hover:border-pastel-blue/20'
+                    }`}
                   >
-                    <div className="text-xs text-zinc-500">{TYPE_LABELS[entry.type]}</div>
-                    <div className="mt-1 text-sm font-semibold text-zinc-100">{entry.title}</div>
-                    <div className="mt-1 line-clamp-2 text-xs text-zinc-400">{entry.summary}</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-foreground truncate">{entry.title}</span>
+                    </div>
+                    <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider mt-0.5">{TYPE_LABELS[entry.type]}</div>
                   </button>
                 )) : (
-                  <div className="rounded-sm border border-dashed border-zinc-800 px-3 py-6 text-sm text-zinc-500">
+                  <div className="rounded-sm border border-dashed border-border/30 px-3 py-6 text-sm text-muted-foreground text-center">
                     No saved entries yet.
                   </div>
                 )}
               </div>
-            </div>
+            </section>
           )}
-        </div>
 
-        <div className={`${premiumPanel} p-5`}>
-          {mode === 'compose' ? (
-            detail?.session ? (
-              generating || detail.session.status === 'generating' ? (
-                <DraftSkeleton stageLabel={getActiveStage(detail)} stillWorking={stillWorking} />
-              ) : latestEntry ? (
-                <div className="space-y-5">
-                  <div className="space-y-2 border-b border-zinc-800/70 pb-4">
-                    <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.18em] text-zinc-500">
-                      <span>{TYPE_LABELS[latestEntry.type]}</span>
-                      <span className="text-zinc-700">/</span>
-                      <span>{latestEntry.status}</span>
-                    </div>
-                    <h2 className="max-w-3xl font-serif text-3xl leading-tight text-zinc-100">{latestEntry.title}</h2>
-                    <p className="max-w-3xl text-sm text-zinc-400">{latestEntry.summary}</p>
-                    <div className="flex flex-wrap gap-4 text-xs text-zinc-500">
-                      <span>{formatDateTime(latestEntry.updatedAt)}</span>
-                      <span>{latestEntry.mood.label}</span>
-                      <span>Version {latestEntry.version}</span>
-                    </div>
-                  </div>
-                  <article className="max-w-3xl font-serif text-[15px] leading-8 text-zinc-200">
-                    <ChatMessageContent content={latestEntry.content} blocks={latestEntry.render.blocks} />
-                  </article>
-                </div>
-              ) : (
-                <div className="text-sm text-zinc-500">This session has no generated draft yet.</div>
-              )
-            ) : (
-              <div className="text-sm text-zinc-500">Generate a journal session to enter the active workspace.</div>
-            )
-          ) : selectedArchiveEntry ? (
-            <div className="space-y-5">
-              <div className="space-y-2 border-b border-zinc-800/70 pb-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">{TYPE_LABELS[selectedArchiveEntry.type]}</div>
-                <h2 className="font-serif text-3xl leading-tight text-zinc-100">{selectedArchiveEntry.title}</h2>
-                <p className="text-sm text-zinc-400">{selectedArchiveEntry.summary}</p>
-              </div>
-              <article className="max-w-3xl font-serif text-[15px] leading-8 text-zinc-200">
-                <ChatMessageContent content={selectedArchiveEntry.content} blocks={selectedArchiveEntry.render.blocks} />
-              </article>
+          {/* Recent Runs / Sessions Container */}
+          <section className={`${premiumPanel} h-[200px] flex flex-col overflow-hidden shrink-0`}>
+            <div className="border-b border-border/40 bg-muted/10 px-3 py-2 flex items-center gap-2">
+              <PipelineIcon className="h-3.5 w-3.5" />
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em]">Recent Sessions</span>
             </div>
-          ) : (
-            <div className="text-sm text-zinc-500">Save a passing entry to populate the archive.</div>
-          )}
-        </div>
-
-        <div className={`${premiumPanel} p-4`}>
-          {mode === 'compose' ? (
-            <div className="space-y-4">
-              <div>
-                <div className={labelStyle}>Quality Gate</div>
-                {generating || detail?.session?.status === 'generating' ? (
-                  <div className="mt-2 space-y-2">
-                    {[0, 1, 2, 3].map((row) => (
-                      <div key={row} className="h-9 animate-pulse rounded-sm bg-zinc-900/70" />
-                    ))}
+            <div className="flex-1 overflow-y-auto p-2 space-y-1.5 scrollbar-thin">
+              {bootstrap?.recentSessions.length ? bootstrap.recentSessions.slice(0, 5).map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  onClick={() => { setActiveSessionId(session.id); setMode('compose'); }}
+                  className={`w-full text-left p-2.5 rounded-sm border transition-all duration-200 ${
+                    activeSessionId === session.id && mode === 'compose' ? 'border-pastel-purple/40 bg-pastel-purple/5' : 'border-border/30 bg-muted/5 hover:border-pastel-purple/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-[10px] font-bold">
+                    <span className="text-foreground">{TYPE_LABELS[session.type]}</span>
+                    <span className="text-muted-foreground uppercase text-[8px]">{STAGE_LABELS[session.latestStage] || session.status}</span>
                   </div>
-                ) : detail?.session?.latestEvaluation ? (
-                  <div className="mt-2 space-y-2">
-                    <div className={detail.session.latestEvaluation.pass ? 'rounded-sm border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 text-sm text-emerald-100' : 'rounded-sm border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm text-amber-50'}>
-                      <div className="flex items-center gap-2">
-                        {detail.session.latestEvaluation.pass ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                        <span>Overall score {detail.session.latestEvaluation.overallScore}</span>
-                      </div>
-                      <p className="mt-2 text-xs opacity-80">{detail.session.latestEvaluation.evaluatorSummary}</p>
-                    </div>
-                    {Object.entries(detail.session.latestEvaluation.dimensions).map(([dimension, score]) => (
-                      <div key={dimension} className={`${subPanel} px-3 py-3`}>
-                        <div className="flex items-center justify-between text-sm text-zinc-200">
-                          <span>{DIMENSION_LABELS[dimension as JournalQualityDimension]}</span>
-                          <span>{score.score}</span>
-                        </div>
-                        <div className="mt-2 h-1.5 rounded-full bg-zinc-800">
-                          <div className="h-full rounded-full bg-amber-300" style={{ width: `${score.score}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-2 text-sm text-zinc-500">Generate a draft to see the journal rubric.</div>
-                )}
-              </div>
-
-              <div>
-                <div className={labelStyle}>Selected Context</div>
-                {generating || detail?.session?.status === 'generating' ? (
-                  <div className="mt-2 space-y-2">
-                    {[0, 1, 2].map((row) => (
-                      <div key={row} className="h-16 animate-pulse rounded-sm bg-zinc-900/70" />
-                    ))}
-                  </div>
-                ) : detail?.session?.contextPacket?.selectedSignals.length ? (
-                  <div className="mt-2 space-y-2">
-                    {detail.session.contextPacket.selectedSignals.slice(0, 5).map((signal) => (
-                      <div key={signal.id} className={`${subPanel} px-3 py-3`}>
-                        <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">{signal.label}</div>
-                        <div className="mt-1 text-sm text-zinc-200">{signal.snippet}</div>
-                        <div className="mt-2 text-xs text-zinc-500">{signal.reason}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-2 text-sm text-zinc-500">Context will hydrate stage by stage while generation runs.</div>
-                )}
-              </div>
-
-              <div>
-                <div className={labelStyle}>Voice Conditioning</div>
-                {detail?.session?.voicePacket ? (
-                  <div className={`${subPanel} mt-2 space-y-2 px-3 py-3 text-sm text-zinc-300`}>
-                    <p>{detail.session.voicePacket.communicationFingerprintSummary || detail.session.voicePacket.linguisticProfileSummary}</p>
-                    <p className="text-zinc-500">{detail.session.voicePacket.communicationStyleSummary}</p>
-                  </div>
-                ) : (
-                  <div className="mt-2 text-sm text-zinc-500">Voice packet will appear once context conditioning completes.</div>
-                )}
-              </div>
-
-              <div>
-                <div className={labelStyle}>Structured Reflection</div>
-                {latestEntry ? (
-                  <div className="mt-2 space-y-3">
-                    {latestEntry.structured.insights.length ? (
-                      <div className={`${subPanel} px-3 py-3`}>
-                        <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">Insights</div>
-                        <div className="mt-2 space-y-1 text-sm text-zinc-200">
-                          {latestEntry.structured.insights.slice(0, 3).map((item) => <div key={item}>• {item}</div>)}
-                        </div>
-                      </div>
-                    ) : null}
-                    {latestEntry.structured.openQuestions.length ? (
-                      <div className={`${subPanel} px-3 py-3`}>
-                        <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">Open Questions</div>
-                        <div className="mt-2 space-y-1 text-sm text-zinc-200">
-                          {latestEntry.structured.openQuestions.slice(0, 3).map((item) => <div key={item}>• {item}</div>)}
-                        </div>
-                      </div>
-                    ) : null}
-                    {latestEntry.structured.nextActions.length ? (
-                      <div className={`${subPanel} px-3 py-3`}>
-                        <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">Next Actions</div>
-                        <div className="mt-2 space-y-1 text-sm text-zinc-200">
-                          {latestEntry.structured.nextActions.slice(0, 3).map((item) => <div key={item}>• {item}</div>)}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="mt-2 text-sm text-zinc-500">Structured extraction appears after draft generation.</div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className={labelStyle}>Archive Detail</div>
-              {selectedArchiveEntry ? (
-                <>
-                  <div className={`${subPanel} px-3 py-3`}>
-                    <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">Saved At</div>
-                    <div className="mt-2 text-sm text-zinc-200">{formatDateTime(selectedArchiveEntry.savedAt || selectedArchiveEntry.updatedAt)}</div>
-                  </div>
-                  <div className={`${subPanel} px-3 py-3`}>
-                    <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">Themes</div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-zinc-300">
-                      {selectedArchiveEntry.structured.themes.length ? selectedArchiveEntry.structured.themes.map((theme) => (
-                        <span key={theme} className="rounded-full border border-zinc-800 px-2 py-1">{theme}</span>
-                      )) : 'No themes extracted.'}
-                    </div>
-                  </div>
-                  <div className={`${subPanel} px-3 py-3`}>
-                    <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">Summary</div>
-                    <div className="mt-2 text-sm text-zinc-200">{selectedArchiveEntry.structured.conciseSummary}</div>
-                  </div>
-                </>
-              ) : (
-                <div className="text-sm text-zinc-500">Choose a saved entry to inspect archive metadata.</div>
+                  <div className="text-[9px] text-muted-foreground truncate opacity-80 mt-0.5">{formatDateTime(session.updatedAt)}</div>
+                </button>
+              )) : (
+                <div className="p-3 text-[10px] text-muted-foreground italic text-center">No journal sessions.</div>
               )}
             </div>
+          </section>
+        </div>
+
+        {/* Column 2: The Stage (Content Reader) */}
+        <section className={`${premiumPanel} flex flex-col min-h-0 overflow-hidden`}>
+          <div className="border-b border-border/40 bg-muted/10 px-4 py-3 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2">
+              <StageIcon className="h-4 w-4" />
+              <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Journal Viewer</span>
+            </div>
+            {mode === 'compose' && detail?.session && (
+              <div className="flex gap-2 items-center">
+                 <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground text-opacity-70 flex items-center gap-2">
+                   {detail.session.status}
+                 </span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex-1 overflow-y-auto scrollbar-thin p-8">
+            {mode === 'compose' ? (
+              detail?.session ? (
+                generating || detail.session.status === 'generating' ? (
+                  <DraftSkeleton stageLabel={getActiveStage(detail)} stillWorking={stillWorking} />
+                ) : latestEntry ? (
+                  <article className="w-full space-y-8">
+                    <header className="space-y-4 pb-8 border-b border-border/20">
+                      <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-4">
+                        <span className="text-pastel-blue">{TYPE_LABELS[latestEntry.type]}</span>
+                        <span className="opacity-50">/</span>
+                        <span>{latestEntry.status}</span>
+                      </div>
+                      <h1 className="text-4xl font-black text-foreground tracking-tight">
+                        {latestEntry.title}
+                      </h1>
+                      <p className="text-sm text-muted-foreground leading-relaxed italic opacity-80">
+                        {latestEntry.summary}
+                      </p>
+                      <div className="flex flex-wrap gap-4 text-[10px] font-bold uppercase tracking-wider text-muted-foreground mt-4">
+                        <span className="bg-muted/30 px-2 py-1 rounded-sm">{formatDateTime(latestEntry.updatedAt)}</span>
+                        <span className="bg-muted/30 px-2 py-1 rounded-sm">{latestEntry.mood.label}</span>
+                        <span className="bg-muted/30 px-2 py-1 rounded-sm">Version {latestEntry.version}</span>
+                      </div>
+                    </header>
+                    <div className="prose prose-sm prose-invert max-w-none prose-p:leading-relaxed prose-p:text-muted-foreground/90 prose-p:text-base">
+                      <ChatMessageContent content={latestEntry.content} blocks={latestEntry.render.blocks} />
+                    </div>
+                  </article>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center opacity-50 grayscale">
+                    <DraftIcon className="h-10 w-10 mb-4 text-muted-foreground" />
+                    <div className="text-sm font-semibold">No Draft Ready</div>
+                    <div className="text-xs text-muted-foreground mt-1">This session has no generated draft yet.</div>
+                  </div>
+                )
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center opacity-50 grayscale">
+                  <DraftIcon className="h-10 w-10 mb-4 text-muted-foreground" />
+                  <div className="text-sm font-semibold">Start Compose Pipeline</div>
+                  <div className="text-xs text-muted-foreground mt-1">Generate a journal session to enter active workspace.</div>
+                </div>
+              )
+            ) : selectedArchiveEntry ? (
+               <article className="w-full space-y-8">
+                <header className="space-y-4 pb-8 border-b border-border/20">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-pastel-blue">{TYPE_LABELS[selectedArchiveEntry.type]}</div>
+                  <h1 className="text-4xl font-black text-foreground tracking-tight">
+                    {selectedArchiveEntry.title}
+                  </h1>
+                  <p className="text-sm text-muted-foreground leading-relaxed italic opacity-80">
+                    {selectedArchiveEntry.summary}
+                  </p>
+                </header>
+                <div className="prose prose-sm prose-invert max-w-none prose-p:leading-relaxed prose-p:text-muted-foreground/90 prose-p:text-base">
+                  <ChatMessageContent content={selectedArchiveEntry.content} blocks={selectedArchiveEntry.render.blocks} />
+                </div>
+              </article>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center opacity-50 grayscale">
+                 <ArchiveLibraryIcon className="h-10 w-10 mb-4 text-muted-foreground" />
+                 <div className="text-sm font-semibold">No Archive Data</div>
+                 <div className="text-xs text-muted-foreground mt-1">Save a passing entry to populate the archive.</div>
+              </div>
+            )}
+          </div>
+           {/* Status Bar / Trace */}
+          {mode === 'compose' && (
+            <div className="border-t border-border/40 bg-muted/5 p-3 shrink-0 flex items-center justify-center">
+               <StageRail detail={detail} />
+            </div>
           )}
+        </section>
+
+        {/* Column 3: The Inspector (Stats & Evaluation) */}
+        <div className="flex flex-col gap-4 min-h-0 overflow-hidden">
+          <section className={`${premiumPanel} flex flex-col flex-1 overflow-hidden`}>
+            <div className="border-b border-border/40 bg-muted/10 px-4 py-3 flex items-center justify-between shrink-0">
+               <div className="flex items-center gap-2">
+                 <QualityIcon className="h-4 w-4" />
+                 <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Inspector</span>
+               </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto scrollbar-thin p-5 space-y-6">
+              {mode === 'compose' ? (
+                <>
+                  <div>
+                    <div className={labelStyle}>Quality Review</div>
+                    {generating || detail?.session?.status === 'generating' ? (
+                      <div className="mt-3 space-y-2">
+                        {[0, 1, 2, 3].map((row) => (
+                          <div key={row} className="h-9 animate-pulse rounded-sm bg-muted/20" />
+                        ))}
+                      </div>
+                    ) : detail?.session?.latestEvaluation ? (
+                      <div className="mt-3 space-y-3">
+                        <div className={detail.session.latestEvaluation.pass ? 'rounded-md border border-pastel-green/40 bg-pastel-green/5 p-4 text-center pb-5' : 'rounded-md border border-pastel-red/40 bg-pastel-red/5 p-4 text-center pb-5'}>
+                          <div className={labelStyle}>Final Score</div>
+                          <div className="flex justify-center items-center gap-2 mt-2">
+                            <span className={`text-4xl font-black tracking-tighter ${detail.session.latestEvaluation.pass ? 'text-pastel-green' : 'text-pastel-red'}`}>{detail.session.latestEvaluation.overallScore}</span>
+                            {detail.session.latestEvaluation.pass ? <CheckCircle2 className="h-6 w-6 text-pastel-green" /> : <AlertTriangle className="h-6 w-6 text-pastel-red" />}
+                          </div>
+                          <p className="mt-3 text-[10px] opacity-80 tracking-wide font-medium leading-relaxed max-w-[200px] mx-auto text-muted-foreground">{detail.session.latestEvaluation.evaluatorSummary}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          {Object.entries(detail.session.latestEvaluation.dimensions).map(([dimension, score]) => (
+                            <div key={dimension} className={`${subPanel} p-2.5 hover:border-border/40 transition-colors`}>
+                              <div className="flex items-center justify-between text-[11px] font-bold">
+                                <span className="text-muted-foreground uppercase opacity-80 text-[9px]">{DIMENSION_LABELS[dimension as JournalQualityDimension]}</span>
+                                <span className={artifactBadgeTone(score.score)}>{score.score}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-3 text-xs text-muted-foreground italic border border-dashed border-border/30 rounded-sm p-4 text-center">Generate a draft to see rubric.</div>
+                    )}
+                  </div>
+
+                  <div className="pt-2">
+                    <div className={labelStyle}>Structured Insights</div>
+                    {latestEntry ? (
+                      <div className="mt-3 space-y-3 bg-muted/20 border border-border/30 rounded-sm p-4">
+                        {latestEntry.structured.insights.length > 0 && (
+                          <div className="space-y-1.5">
+                            <div className="text-[9px] font-bold uppercase tracking-wider text-pastel-purple">Key Insights</div>
+                             <ul className="space-y-1.5 list-none m-0 p-0">
+                              {latestEntry.structured.insights.slice(0, 3).map((item) => (
+                                <li key={item} className="text-[11px] text-muted-foreground leading-relaxed flex items-start gap-2 m-0 p-0">
+                                  <span className="mt-1.5 h-1 w-1 rounded-full shrink-0 bg-pastel-purple" />
+                                  {item}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        <div className="h-px bg-border/40 my-3"></div>
+                        {latestEntry.structured.nextActions.length > 0 && (
+                          <div className="space-y-1.5">
+                            <div className="text-[9px] font-bold uppercase tracking-wider text-pastel-green">Next Actions</div>
+                             <ul className="space-y-1.5 list-none m-0 p-0">
+                              {latestEntry.structured.nextActions.slice(0, 3).map((item) => (
+                                <li key={item} className="text-[11px] text-muted-foreground leading-relaxed flex items-start gap-2 m-0 p-0">
+                                  <span className="mt-1.5 h-1 w-1 rounded-full shrink-0 bg-pastel-green" />
+                                  {item}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-3 text-xs text-muted-foreground italic border border-dashed border-border/30 rounded-sm p-4 text-center">Extraction applies to generated drafts.</div>
+                    )}
+                  </div>
+                </>
+              ) : selectedArchiveEntry ? (
+                 <>
+                   <div className="space-y-3">
+                    <div className={labelStyle}>Archive Detail</div>
+                     <div className={`${subPanel} px-3 py-3`}>
+                      <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Saved At</div>
+                      <div className="mt-1 text-xs font-bold text-foreground">{formatDateTime(selectedArchiveEntry.savedAt || selectedArchiveEntry.updatedAt)}</div>
+                    </div>
+                    <div className={`${subPanel} px-3 py-3`}>
+                      <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Themes</div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {selectedArchiveEntry.structured.themes.length ? selectedArchiveEntry.structured.themes.map((theme) => (
+                          <span key={theme} className="rounded-sm border border-border/40 bg-muted/20 px-2 py-0.5 text-[10px] text-foreground font-medium">{theme}</span>
+                        )) : <span className="text-[10px] text-muted-foreground">None</span>}
+                      </div>
+                    </div>
+                    <div className={`${subPanel} px-3 py-3`}>
+                      <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Summary</div>
+                      <div className="mt-1 text-xs text-muted-foreground leading-relaxed font-medium">{selectedArchiveEntry.structured.conciseSummary}</div>
+                    </div>
+                   </div>
+                 </>
+              ) : null}
+            </div>
+          </section>
+
+          {/* Context Viewer */}
+          <section className={`${premiumPanel} h-[180px] flex flex-col overflow-hidden shrink-0`}>
+            <div className="border-b border-border/40 bg-muted/10 px-3 py-2 flex items-center gap-2">
+              <ContextIcon className="h-3.5 w-3.5" />
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em]">Context Snapshot</span>
+            </div>
+            <div className="p-4 text-[10px] space-y-3 overflow-y-auto scrollbar-thin">
+               {mode === 'compose' ? (
+                 detail?.session?.contextPacket?.selectedSignals.length ? (
+                    <div className="space-y-3">
+                      {detail.session.contextPacket.selectedSignals.slice(0, 3).map((signal) => (
+                        <div key={signal.id} className="border-l-[3px] border-pastel-blue/40 pl-3">
+                          <div className="font-bold text-foreground uppercase tracking-widest text-[9px]">{signal.label}</div>
+                          <div className="text-muted-foreground truncate opacity-80 mt-1">{signal.snippet}</div>
+                        </div>
+                      ))}
+                    </div>
+                 ) : (
+                    <div className="text-muted-foreground italic text-center py-4">Hydrates during generation</div>
+                 )
+               ) : (
+                 <div className="space-y-2">
+                  <div className="flex justify-between items-center bg-muted/20 p-2 rounded-sm">
+                    <span className="text-muted-foreground font-bold tracking-wider uppercase text-[9px]">Session ID</span>
+                    <span className="font-mono text-foreground truncate w-[100px] text-right">{selectedArchiveEntry?.id || 'N/A'}</span>
+                  </div>
+                 </div>
+               )}
+            </div>
+          </section>
         </div>
       </div>
     </div>

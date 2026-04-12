@@ -1314,18 +1314,7 @@ export default function AgentDetail() {
             ) : activeTab === 'creative' ? (
               /* Creative Studio Tab */
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                <CardHeader className="space-y-4">
-                  <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-sm bg-purple-500/10">
-                      <Palette className="h-6 w-6 text-purple-500" />
-                    </div>
-                    Creative Studio
-                  </CardTitle>
-                  <CardDescription>
-                    Structured creative briefs, inspectable generation, and a published artifact library
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
+                <CardContent className="p-6">
                   <CreativeStudio agentId={currentAgent.id} agentName={currentAgent.name} />
                 </CardContent>
               </Card>
@@ -1350,18 +1339,7 @@ export default function AgentDetail() {
             ) : activeTab === 'journal' ? (
               /* Phase 2: Journal Tab */
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                <CardHeader className="space-y-4">
-                  <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-sm bg-amber-500/10">
-                      <BookOpen className="h-6 w-6 text-amber-500" />
-                    </div>
-                    Personal Journal
-                  </CardTitle>
-                  <CardDescription>
-                    {currentAgent.name}&apos;s personal reflections and thoughts
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
+                <CardContent className="p-6">
                   <JournalViewer agentId={currentAgent.id} agentName={currentAgent.name} />
                 </CardContent>
               </Card>
