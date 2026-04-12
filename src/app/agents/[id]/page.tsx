@@ -554,12 +554,12 @@ export default function AgentDetail() {
   }
 
   return (
-    <div className="relative min-h-screen pt-4 pb-20 mt-4">
+    <div className="relative mt-4 min-h-screen overflow-x-hidden pt-4 pb-20">
       {/* Decorative orbs */}
       <GradientOrb className="w-[600px] h-[600px] -top-[200px] -right-[200px] opacity-20" color="violet" />
       <GradientOrb className="w-[400px] h-[400px] top-1/2 -left-[200px] opacity-15" color="cyan" />
 
-      <div className="relative z-10 mx-auto w-full px-4 md:px-8">
+      <div className="relative z-10 mx-auto w-full min-w-0 px-4 md:px-8">
         <div className="flex flex-col gap-6">
           {/* Main Dashboard Header */}
           <motion.header
@@ -1287,19 +1287,9 @@ export default function AgentDetail() {
                 </CardContent>
               </Card>
             ) : activeTab === 'scenarios' ? (
-              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                <CardHeader className="space-y-4">
-                  <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-sm bg-violet-500/10">
-                      <Sparkles className="h-6 w-6 text-violet-500" />
-                    </div>
-                    What-If Lab
-                  </CardTitle>
-                  <CardDescription>
-                    Branch from real messages or memories, change one condition, then compare baseline and alternate runs
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
+              /* Scenario Workspace V2 Tab */
+              <Card className="backdrop-blur-sm border-0 bg-card/80 shadow-xl">
+                <CardContent className="min-w-0 p-6">
                   <ParallelRealityExplorer
                     agentName={currentAgent.name}
                     branchPoints={scenarioBranchPoints}

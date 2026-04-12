@@ -325,9 +325,27 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
   if (loading && !bootstrap) {
     return (
       <div className="flex min-h-[420px] items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-6 w-6 animate-spin text-violet-500" />
-          <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Loading Profile Workspace</div>
+        <div className="flex flex-col items-center gap-6">
+          <div className="relative flex h-24 w-24 items-center justify-center">
+            {/* Outer spinning dash ring */}
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-0 rounded-full border border-dashed border-violet-500/30"
+            />
+            {/* Inner pulsing ring */}
+            <motion.div
+              animate={{ scale: [0.8, 1.1, 0.8], opacity: [0.2, 0.6, 0.2] }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute inset-2 rounded-full border border-violet-500/20 bg-violet-500/5 shadow-[0_0_15px_rgba(139,92,246,0.15)]"
+            />
+            {/* Center Icon */}
+            <Brain className="relative h-8 w-8 text-violet-500" />
+          </div>
+          <div className="flex flex-col items-center gap-1.5 text-center">
+            <div className="text-[11px] font-bold uppercase tracking-[0.25em] text-violet-500">Loading Profile Workspace</div>
+            <div className="text-xs text-muted-foreground/80">Synchronizing neural pathways...</div>
+          </div>
         </div>
       </div>
     )

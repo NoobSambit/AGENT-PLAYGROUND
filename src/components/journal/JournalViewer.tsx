@@ -183,8 +183,12 @@ function DraftSkeleton({ stageLabel, stillWorking }: { stageLabel: string; still
     : `Working: ${STAGE_LABELS[stageLabel as JournalPipelineStage] || stageLabel.replaceAll('_', ' ')}`
 
   return (
-    <div className="h-full flex flex-col items-center justify-center opacity-50 grayscale gap-6 max-w-sm mx-auto">
-      <DraftIcon className="h-10 w-10 text-muted-foreground" />
+    <div className="h-full flex flex-col items-center justify-center opacity-70 gap-6 max-w-sm mx-auto">
+      <div className="relative flex h-16 w-16 items-center justify-center">
+        <motion.div animate={{ rotate: -360 }} transition={{ duration: 5, repeat: Infinity, ease: "linear" }} className="absolute inset-0 rounded-full border border-dashed border-pastel-blue/30" />
+        <motion.div animate={{ scale: [0.85, 1.15, 0.85], opacity: [0.2, 0.6, 0.2] }} transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }} className="absolute inset-2 rounded-full border border-pastel-blue/20 bg-pastel-blue/5 shadow-[0_0_15px_rgba(137,180,250,0.15)]" />
+        <DraftIcon className="relative h-5 w-5 text-pastel-blue" />
+      </div>
       <div className="space-y-4 w-full">
         <div className="h-8 w-2/3 animate-pulse rounded-sm bg-muted/40 mx-auto" />
         <div className="h-4 w-1/3 animate-pulse rounded-sm bg-muted/30 mx-auto" />
@@ -373,9 +377,27 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
   if (loading && !bootstrap) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-6 w-6 animate-spin text-pastel-purple" />
-          <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Initializing Journal Workspace</div>
+        <div className="flex flex-col items-center gap-6">
+          <div className="relative flex h-24 w-24 items-center justify-center">
+            {/* Outer spinning dash ring */}
+            <motion.div
+              animate={{ rotate: -360 }}
+              transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-0 rounded-full border border-dashed border-pastel-blue/30"
+            />
+            {/* Inner pulsing ring */}
+            <motion.div
+              animate={{ scale: [0.85, 1.15, 0.85], opacity: [0.2, 0.6, 0.2] }}
+              transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute inset-2 rounded-full border border-pastel-blue/20 bg-pastel-blue/5 shadow-[0_0_15px_rgba(137,180,250,0.15)]"
+            />
+            {/* Center Icon */}
+            <JournalIcon className="relative h-8 w-8 text-pastel-blue" />
+          </div>
+          <div className="flex flex-col items-center gap-1.5 text-center">
+            <div className="text-[11px] font-bold uppercase tracking-[0.25em] text-pastel-blue">Initializing Journal Workspace</div>
+            <div className="text-xs text-muted-foreground/80">Synchronizing private reflections...</div>
+          </div>
         </div>
       </div>
     )

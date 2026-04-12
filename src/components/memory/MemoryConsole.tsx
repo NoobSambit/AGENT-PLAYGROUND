@@ -1,10 +1,13 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Brain, RefreshCw, Search, Star, Trash2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { motion, AnimatePresence } from 'framer-motion'
 import type { MemoryOrigin, MemoryRecallResult, MemoryRecord, MemoryStatsSummary } from '@/types/database'
+import { ContextIcon } from '@/components/journal/JournalIcons'
+import { 
+  MemoryCoreIcon, DataQueryIcon, GeometricSyncIcon, VoidSearchIcon, 
+  TraceArchiveIcon, SemanticNetIcon, PriorityStarIcon, ObliterateIcon 
+} from './MemoryIcons'
 
 interface MemoryConsoleProps {
   agentId: string
@@ -14,7 +17,9 @@ interface MemoryConsoleProps {
   onMemoryMutation?: () => void | Promise<void>
 }
 
-const panelClass = 'rounded-sm border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
+const premiumPanel = 'rounded-md border border-border/40 bg-card/40 backdrop-blur-md shadow-sm'
+const subPanel = 'rounded-sm border border-border/30 bg-muted/20'
+const labelStyle = 'text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80'
 
 export function MemoryConsole({
   agentId,
@@ -163,317 +168,355 @@ export function MemoryConsole({
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Memory console</div>
-        <h3 className="mt-2 text-2xl font-semibold text-foreground">What {agentName} can actually recall</h3>
-        <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">
-          Search, filter, inspect, and remove stored memories without mixing them with separate profile or trait views.
-        </p>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Active memories" value={stats?.totalMemories || 0} tone="primary" />
-        <StatCard label="High importance" value={stats?.highImportanceMemories || 0} tone="accent" />
-        <StatCard label="Memory types" value={Object.keys(stats?.memoriesByType || {}).length} tone="secondary" />
-        <StatCard
-          label="Last saved"
-          value={stats?.lastSavedAt ? formatDate(stats.lastSavedAt) : 'None'}
-          tone="muted"
-        />
-      </div>
-
-      <div className={`${panelClass} space-y-4`}>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-1 gap-3">
-            <Input
-              value={draftSearchQuery}
-              onChange={(event) => setDraftSearchQuery(event.target.value)}
-              placeholder="Search summaries, keywords, context, or raw content"
-              className="h-11"
-            />
-            <Button variant="outline" className="gap-2" onClick={handleApplySearch}>
-              <Search className="h-4 w-4" />
-              Search
-            </Button>
+    <div className="w-full">
+      {/* Header Bar */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-1 mb-4">
+        <div className="flex items-center gap-4">
+          <div className="rounded-md bg-pastel-purple/10 p-2.5">
+            <MemoryCoreIcon className="h-5 w-5 text-pastel-purple" />
           </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="gap-2" onClick={() => void loadConsoleData(true)} disabled={refreshing}>
-              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-            <Button variant="ghost" onClick={handleResetFilters}>
-              Reset filters
-            </Button>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-bold text-foreground leading-tight tracking-tight">
+                Memory Console
+              </h3>
+            </div>
+            <p className="text-[11px] mt-0.5 font-medium text-muted-foreground uppercase tracking-widest">
+              What {agentName} can actually recall
+            </p>
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <FilterSelect
-            label="Type"
-            value={typeFilter}
-            onChange={setTypeFilter}
-            options={[
-              { value: 'all', label: 'All types' },
-              { value: 'conversation', label: 'Conversation' },
-              { value: 'fact', label: 'Fact' },
-              { value: 'interaction', label: 'Interaction' },
-            ]}
-          />
-          <FilterSelect
-            label="Origin"
-            value={originFilter}
-            onChange={setOriginFilter}
-            options={[
-              { value: 'all', label: 'All origins' },
-              { value: 'conversation', label: 'Conversation' },
-              { value: 'tool', label: 'Tool' },
-              { value: 'manual', label: 'Manual' },
-              { value: 'system', label: 'System' },
-              { value: 'imported', label: 'Imported' },
-            ]}
-          />
-          <FilterSelect
-            label="Sort"
-            value={sort}
-            onChange={setSort}
-            options={[
-              { value: 'newest', label: 'Newest first' },
-              { value: 'oldest', label: 'Oldest first' },
-              { value: 'importance', label: 'Highest importance' },
-            ]}
-          />
-          <label className="space-y-2 text-sm">
-            <span className="font-medium text-foreground">Min importance</span>
-            <select
-              value={minImportance}
-              onChange={(event) => setMinImportance(Number(event.target.value))}
-              className="h-11 w-full rounded-sm border border-border/70 bg-card/[0.62] px-3 text-sm text-foreground backdrop-blur-xl"
-            >
-              {[0, 4, 6, 8].map((value) => (
-                <option key={value} value={value}>
-                  {value === 0 ? 'Any importance' : `${value}+ only`}
-                </option>
-              ))}
-            </select>
-          </label>
+        {/* Quick Stats horizontal stack */}
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
+           <StatCard label="Total Core" value={stats?.totalMemories || 0} tone="primary" />
+           <StatCard label="High Impact" value={stats?.highImportanceMemories || 0} tone="accent" />
+           <StatCard label="Categorical" value={Object.keys(stats?.memoriesByType || {}).length} tone="secondary" />
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className={`${panelClass} space-y-4`}>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="font-semibold text-foreground">Stored memories</div>
-              <div className="text-sm text-muted-foreground">
-                {loading ? 'Loading memories...' : `${memories.length} memory records in this view`}
+      {/* Grid Layout matching Journal Bento format */}
+      <div className="grid gap-4 xl:grid-cols-[1fr_420px] xl:h-[calc(100vh-220px)] xl:min-h-[700px]">
+        
+        {/* Left Column: Filter Hub & Memory Engine */}
+        <div className="flex flex-col gap-4 min-h-0 overflow-hidden w-full">
+           
+           {/* Filtering Ribbon */}
+           <section className={`${premiumPanel} shrink-0 overflow-hidden`}>
+              <div className="border-b border-border/40 bg-muted/10 px-4 py-2.5 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <DataQueryIcon className="h-4 w-4" />
+                  <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Data Query</span>
+                </div>
+                <div className="flex items-center gap-2">
+                   <button onClick={() => void loadConsoleData(true)} disabled={refreshing} className="flex items-center gap-1.5 px-2 py-0.5 text-[9px] font-bold uppercase rounded-sm bg-muted/20 border border-border/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-all">
+                     <GeometricSyncIcon className={`h-3 w-3 ${refreshing ? 'text-pastel-purple' : ''}`} spinning={refreshing} /> Sync
+                   </button>
+                   <button onClick={handleResetFilters} className="flex items-center gap-1.5 px-2 py-0.5 text-[9px] font-bold uppercase rounded-sm bg-muted/20 border border-border/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-all">
+                     Reset
+                   </button>
+                </div>
               </div>
-            </div>
-            <span className="soft-pill">{stats?.averageImportance || 0} avg importance</span>
-          </div>
-
-          {loading ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">Loading memory console...</div>
-          ) : memories.length === 0 ? (
-            <div className="rounded-sm border border-dashed border-border/70 px-4 py-8 text-sm leading-7 text-muted-foreground">
-              No memories match this view yet. Important conversations, facts, and tool interactions will appear here as the agent keeps working.
-            </div>
-          ) : (
-            <div className="max-h-[720px] space-y-3 overflow-y-auto pr-1">
-              {memories.map((memory) => (
-                <button
-                  key={memory.id}
-                  type="button"
-                  onClick={() => setSelectedMemoryId(memory.id)}
-                  className={`w-full rounded-sm border p-4 text-left transition-all ${
-                    selectedMemoryId === memory.id
-                      ? 'border-primary/40 bg-primary/5'
-                      : 'border-border/60 bg-background/30 hover:border-primary/20 hover:bg-background/45'
-                  }`}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium capitalize text-primary">
-                          {memory.type}
-                        </span>
-                        <span className="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium capitalize text-accent">
-                          {memory.origin}
-                        </span>
-                      </div>
-                      <div className="font-medium text-foreground">{memory.summary}</div>
-                    </div>
-                    <div className="text-right text-xs text-muted-foreground">
-                      <div>{formatDate(memory.timestamp)}</div>
-                      <div className="mt-2 inline-flex items-center gap-1">
-                        <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                        {memory.importance}/10
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">
-                    {memory.content}
-                  </div>
-
-                  {memory.keywords.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {memory.keywords.slice(0, 5).map((keyword) => (
-                        <span key={`${memory.id}_${keyword}`} className="rounded-full bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
-                          {keyword}
-                        </span>
+              
+              <div className="p-3 bg-muted/5 flex flex-col gap-3">
+                 <div className="flex gap-2">
+                    <input
+                      value={draftSearchQuery}
+                      onChange={(event) => setDraftSearchQuery(event.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleApplySearch()}
+                      placeholder="Search summaries, exact quotes, or context..."
+                      className="w-full h-8 rounded-sm border border-border/30 bg-muted/20 px-3 text-[11px] font-medium text-foreground outline-none focus:border-pastel-purple/50 transition-all placeholder:text-muted-foreground/50"
+                    />
+                    <button onClick={handleApplySearch} className="h-8 px-4 flex items-center justify-center gap-2 rounded-sm bg-pastel-purple hover:bg-pastel-purple/90 text-primary-foreground text-[10px] uppercase font-bold tracking-wider shrink-0 transition-all">
+                      <VoidSearchIcon className="h-3.5 w-3.5" /> Search
+                    </button>
+                 </div>
+                 
+                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                    <FilterSelect
+                      value={typeFilter}
+                      onChange={setTypeFilter}
+                      options={[
+                        { value: 'all', label: 'All types' },
+                        { value: 'conversation', label: 'Conversation' },
+                        { value: 'fact', label: 'Fact' },
+                        { value: 'interaction', label: 'Interaction' },
+                      ]}
+                    />
+                    <FilterSelect
+                      value={originFilter}
+                      onChange={setOriginFilter}
+                      options={[
+                        { value: 'all', label: 'All origins' },
+                        { value: 'conversation', label: 'Conversation' },
+                        { value: 'tool', label: 'Tool' },
+                        { value: 'manual', label: 'Manual' },
+                        { value: 'system', label: 'System' },
+                        { value: 'imported', label: 'Imported' },
+                      ]}
+                    />
+                    <FilterSelect
+                      value={sort}
+                      onChange={setSort}
+                      options={[
+                        { value: 'newest', label: 'Newest first' },
+                        { value: 'oldest', label: 'Oldest first' },
+                        { value: 'importance', label: 'Highest priority' },
+                      ]}
+                    />
+                    <select
+                      value={minImportance}
+                      onChange={(event) => setMinImportance(Number(event.target.value))}
+                      className="h-7 w-full rounded-sm border border-border/30 bg-muted/10 px-2.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground outline-none focus:border-pastel-purple/50 transition-all cursor-pointer"
+                    >
+                      {[0, 4, 6, 8].map((value) => (
+                        <option key={value} value={value} className="bg-background text-foreground uppercase tracking-normal">
+                          {value === 0 ? 'Any urgency' : `Min ${value}+ rank`}
+                        </option>
                       ))}
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
+                    </select>
+                 </div>
+              </div>
+           </section>
+
+           {/* Core Memory Vector List */}
+           <section className={`${premiumPanel} flex flex-col flex-1 overflow-hidden min-h-0`}>
+              <div className="border-b border-border/40 bg-muted/10 px-4 py-3 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <TraceArchiveIcon className="h-4 w-4" />
+                  <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Stored Index</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{memories.length} Results</span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-pastel-purple bg-pastel-purple/10 border border-pastel-purple/20 px-2 py-0.5 rounded-sm">Avg ★ {stats?.averageImportance || 0}</span>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
+                {loading ? (
+                   <div className="flex flex-col items-center justify-center h-full opacity-50 grayscale gap-4">
+                     <SemanticNetIcon className="h-8 w-8 text-pastel-purple animate-pulse" />
+                     <div className="text-[10px] font-bold uppercase tracking-widest">Querying Neural Net...</div>
+                   </div>
+                ) : memories.length === 0 ? (
+                   <div className="h-full flex flex-col items-center justify-center p-8 text-center text-[11px] font-medium text-muted-foreground italic border border-dashed border-border/30 rounded-sm bg-muted/5 opacity-80">
+                     No memory traces match this exact configuration.
+                   </div>
+                ) : (
+                  memories.map((memory) => {
+                     const isSelected = selectedMemoryId === memory.id;
+                     return (
+                      <button
+                        key={memory.id}
+                        type="button"
+                        onClick={() => setSelectedMemoryId(memory.id)}
+                        className={`w-full rounded-sm border p-3.5 text-left transition-all duration-200 outline-none ${
+                          isSelected
+                            ? 'border-pastel-purple/40 bg-pastel-purple/5 shadow-sm ring-1 ring-pastel-purple/20'
+                            : 'border-border/30 bg-muted/5 hover:border-pastel-purple/20 hover:bg-muted/10'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start mb-2 gap-4">
+                          <div className="flex-1">
+                             <div className="text-[13px] font-bold text-foreground leading-snug tracking-tight mb-2 line-clamp-2">
+                               {memory.summary}
+                             </div>
+                             <div className="flex flex-wrap items-center gap-1.5">
+                               {memory.type && <span className="rounded-sm bg-pastel-purple/10 border border-pastel-purple/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-pastel-purple">{memory.type}</span>}
+                               {memory.origin && <span className="rounded-sm bg-pastel-blue/10 border border-pastel-blue/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-pastel-blue">{memory.origin}</span>}
+                             </div>
+                          </div>
+                          
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
+                             <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                               {formatDate(memory.timestamp)}
+                             </div>
+                             <div className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-bold ${
+                               memory.importance >= 8 ? 'bg-pastel-yellow/10 text-pastel-yellow border border-pastel-yellow/20' : 'bg-muted/30 text-muted-foreground border border-border/30'
+                             }`}>
+                               <PriorityStarIcon className="h-3.5 w-3.5" />
+                               {memory.importance}/10
+                             </div>
+                          </div>
+                        </div>
+
+                        <div className="text-[11px] font-medium leading-relaxed text-muted-foreground/90 line-clamp-2 italic border-l-2 border-border/40 pl-3 py-0.5 my-3">
+                           &quot;{memory.content}&quot;
+                        </div>
+
+                        {memory.keywords.length > 0 && (
+                           <div className="flex flex-wrap gap-1.5">
+                             {memory.keywords.slice(0, 5).map((keyword) => (
+                               <span key={`${memory.id}_${keyword}`} className="rounded-sm bg-muted/30 border border-border/20 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-muted-foreground lowercase">
+                                 #{keyword}
+                               </span>
+                             ))}
+                           </div>
+                        )}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+           </section>
         </div>
 
-        <div className="space-y-6">
-          <div className={`${panelClass} space-y-4`}>
-            <div className="flex items-center gap-3">
-              <div className="rounded-sm bg-primary/10 p-2">
-                <Brain className="h-5 w-5 text-primary" />
+        {/* Right Column: Semantic Recall & Inspector */}
+        <div className="flex flex-col gap-4 min-h-0 overflow-hidden w-full">
+           
+           {/* Semantic Recall (Vector query) */}
+           <section className={`${premiumPanel} flex flex-col shrink-0 overflow-hidden max-h-[45%]`}>
+              <div className="border-b border-border/40 bg-muted/10 px-4 py-2.5 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <SemanticNetIcon className="h-4 w-4" />
+                  <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Semantic Recall Test</span>
+                </div>
               </div>
-              <div>
-                <div className="font-semibold text-foreground">Memory recall</div>
-                <div className="text-sm text-muted-foreground">Ask what the agent remembers and why it matched</div>
+              
+              <div className="p-3 bg-muted/5 border-b border-border/30 shrink-0 flex flex-col">
+                 <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-2">Simulate associative memory trigger</p>
+                 <div className="flex gap-2">
+                   <input
+                     value={recallQuery}
+                     onChange={(event) => setRecallQuery(event.target.value)}
+                     onKeyDown={(e) => e.key === 'Enter' && handleRecall()}
+                     placeholder="e.g. Do you remember what I said about..."
+                     className="flex-1 h-8 rounded-sm border border-border/30 bg-background px-3 text-[11px] font-medium text-foreground outline-none focus:border-pastel-blue/50 transition-all placeholder:text-muted-foreground/40"
+                   />
+                   <button onClick={() => void handleRecall()} disabled={recalling} className="h-8 px-4 flex items-center justify-center gap-2 rounded-sm bg-pastel-blue hover:bg-pastel-blue/90 text-primary-foreground text-[10px] uppercase font-bold tracking-wider shrink-0 transition-all disabled:opacity-50">
+                     {recalling ? <GeometricSyncIcon className="h-3 w-3" spinning /> : <SemanticNetIcon className="h-3.5 w-3.5" />} Recall
+                   </button>
+                 </div>
               </div>
-            </div>
 
-            <div className="flex gap-3">
-              <Input
-                value={recallQuery}
-                onChange={(event) => setRecallQuery(event.target.value)}
-                placeholder="What does this agent remember about..."
-                className="h-11"
-              />
-              <Button className="gap-2" onClick={() => void handleRecall()} disabled={recalling}>
-                <Search className="h-4 w-4" />
-                {recalling ? 'Recalling...' : 'Recall'}
-              </Button>
-            </div>
+              <div className="flex-1 overflow-y-auto scrollbar-thin p-3 bg-background/20 h-[180px]">
+                {recallResults.length > 0 ? (
+                  <div className="space-y-2">
+                    {recallResults.map((result) => (
+                      <div key={`recall_${result.memory.id}`} className={`${subPanel} p-3 hover:border-pastel-blue/30 transition-all`}>
+                        <div className="flex items-start justify-between gap-3 mb-1.5">
+                          <div className="text-[11px] font-bold text-foreground leading-tight line-clamp-1">{result.memory.summary}</div>
+                          <span className="rounded-sm bg-pastel-blue/10 border border-pastel-blue/20 px-1.5 py-0.5 text-[8px] font-bold tracking-wider uppercase text-pastel-blue shrink-0">
+                            Match {result.score.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground/80 font-medium mb-2 line-clamp-2">"{result.memory.content}"</div>
+                        <ul className="space-y-1">
+                          {result.reasons.map((reason) => (
+                            <li key={`${result.memory.id}_${reason}`} className="flex gap-1.5 items-start text-[9px] font-bold text-muted-foreground uppercase tracking-wide leading-tight">
+                               <span className="text-pastel-blue mt-0.5">•</span> {reason}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center w-full opacity-40 grayscale gap-3 text-center">
+                    <DataQueryIcon className="h-6 w-6" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">No recall results.<br/>Run a query above.</span>
+                  </div>
+                )}
+              </div>
+           </section>
 
-            {recallResults.length > 0 ? (
-              <div className="space-y-3">
-                {recallResults.map((result) => (
-                  <div key={`recall_${result.memory.id}`} className="rounded-sm border border-border/60 bg-background/30 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="font-medium text-foreground">{result.memory.summary}</div>
-                      <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-                        score {result.score.toFixed(1)}
-                      </span>
+           {/* Explicit Memory Detail */}
+           <section className={`${premiumPanel} flex flex-col flex-1 overflow-hidden min-h-0`}>
+              <div className="border-b border-border/40 bg-muted/10 px-4 py-2.5 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <ContextIcon className="h-4 w-4" />
+                  <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Memory Inspector</span>
+                </div>
+                {selectedMemory && (
+                  <button
+                    onClick={() => void handleDeleteMemory(selectedMemory.id)}
+                    disabled={deletingMemoryId === selectedMemory.id}
+                    className="flex items-center gap-1.5 px-2 py-0.5 text-[9px] font-bold uppercase rounded-sm bg-pastel-red/10 border border-pastel-red/20 text-pastel-red hover:bg-pastel-red/20 transition-all disabled:opacity-50"
+                  >
+                    <ObliterateIcon className="h-3.5 w-3.5" />
+                    {deletingMemoryId === selectedMemory.id ? 'Wiping...' : 'Scrub'}
+                  </button>
+                )}
+              </div>
+
+              <div className="flex-1 overflow-y-auto scrollbar-thin p-4 xl:p-5">
+                 {!selectedMemory ? (
+                    <div className="h-full flex flex-col items-center justify-center p-8 text-center text-[11px] font-bold uppercase tracking-widest text-muted-foreground opacity-50">
+                       Select an element from the index to inspect full neurological trace data.
                     </div>
-                    <div className="mt-2 text-sm text-muted-foreground">{result.memory.content}</div>
-                    <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
-                      {result.reasons.map((reason) => (
-                        <li key={`${result.memory.id}_${reason}`}>• {reason}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-sm border border-dashed border-border/70 px-4 py-6 text-sm leading-7 text-muted-foreground">
-                Run a recall query to see the strongest matching memories and the reasons they surfaced.
-              </div>
-            )}
-          </div>
+                 ) : (
+                    <AnimatePresence mode="wait">
+                       <motion.div
+                          key={selectedMemory.id}
+                          initial={{ opacity: 0, scale: 0.98 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="space-y-5"
+                       >
+                          {/* Tags block */}
+                          <div className="flex items-center gap-2 border-b border-border/20 pb-4">
+                             <div className="h-6 px-2 rounded-sm bg-pastel-purple/10 border border-pastel-purple/20 flex items-center justify-center text-[9px] font-bold uppercase tracking-wider text-pastel-purple">{selectedMemory.type}</div>
+                             <div className="h-6 px-2 rounded-sm bg-pastel-blue/10 border border-pastel-blue/20 flex items-center justify-center text-[9px] font-bold uppercase tracking-wider text-pastel-blue">{selectedMemory.origin}</div>
+                             <div className="h-6 px-2 rounded-sm bg-muted/20 border border-border/30 flex items-center justify-center text-[9px] font-bold uppercase tracking-wider text-muted-foreground ml-auto">
+                                Rank {selectedMemory.importance}/10
+                             </div>
+                          </div>
 
-          <div className={`${panelClass} space-y-4`}>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="font-semibold text-foreground">Memory detail</div>
-                <div className="text-sm text-muted-foreground">Inspect the full stored record, context, and message links</div>
+                          {/* Data sets */}
+                          <div className="space-y-1">
+                             <div className={labelStyle}>Summarized Engram</div>
+                             <div className="text-[13px] font-bold text-foreground leading-snug">{selectedMemory.summary}</div>
+                          </div>
+
+                          <div className="space-y-1">
+                             <div className={labelStyle}>Direct Transcription / Raw Trace</div>
+                             <div className="rounded-sm bg-muted/10 border border-border/20 p-3 text-[11px] font-medium leading-relaxed text-foreground whitespace-pre-wrap selection:bg-pastel-purple/30">
+                                {selectedMemory.content}
+                             </div>
+                          </div>
+                          
+                          <div className="h-px w-full bg-border/20" />
+
+                          <div className="grid grid-cols-2 gap-4">
+                             <DetailField label="Local Context" value={selectedMemory.context} />
+                             <DetailField label="Extraction Time" value={formatDateTime(selectedMemory.timestamp)} />
+                             <DetailField label="Linked References" value={selectedMemory.linkedMessageIds.length > 0 ? String(selectedMemory.linkedMessageIds.length) : 'None'} />
+                             <DetailField label="Index Keys" value={selectedMemory.keywords.join(', ') || 'N/A'} />
+                          </div>
+                       </motion.div>
+                    </AnimatePresence>
+                 )}
               </div>
-              {selectedMemory && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="gap-2 text-destructive hover:text-destructive"
-                  onClick={() => void handleDeleteMemory(selectedMemory.id)}
-                  disabled={deletingMemoryId === selectedMemory.id}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {deletingMemoryId === selectedMemory.id ? 'Deleting...' : 'Delete'}
-                </Button>
-              )}
-            </div>
+           </section>
 
-            {!selectedMemory ? (
-              <div className="rounded-sm border border-dashed border-border/70 px-4 py-8 text-sm leading-7 text-muted-foreground">
-                Select a memory to inspect the full content, context, keywords, source, and linked message IDs.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium capitalize text-primary">
-                    {selectedMemory.type}
-                  </span>
-                  <span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-medium capitalize text-accent">
-                    {selectedMemory.origin}
-                  </span>
-                  <span className="rounded-full bg-muted/40 px-3 py-1 text-xs text-muted-foreground">
-                    {selectedMemory.importance}/10 importance
-                  </span>
-                </div>
-
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Summary</div>
-                  <div className="mt-2 text-sm leading-7 text-foreground">{selectedMemory.summary}</div>
-                </div>
-
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Full content</div>
-                  <div className="mt-2 rounded-sm bg-background/45 p-4 text-sm leading-7 text-muted-foreground">
-                    {selectedMemory.content}
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <DetailField label="Context" value={selectedMemory.context} />
-                  <DetailField label="Created" value={formatDateTime(selectedMemory.timestamp)} />
-                  <DetailField label="Linked messages" value={String(selectedMemory.linkedMessageIds.length)} />
-                  <DetailField label="Keywords" value={selectedMemory.keywords.join(', ') || 'None'} />
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
   )
 }
 
+// ------ Small Reusable Components ------ 
+
 function FilterSelect<T extends string>({
-  label,
   value,
   onChange,
   options,
 }: {
-  label: string
   value: T
   onChange: (value: T) => void
   options: Array<{ value: T; label: string }>
 }) {
   return (
-    <label className="space-y-2 text-sm">
-      <span className="font-medium text-foreground">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value as T)}
-        className="h-11 w-full rounded-sm border border-border/70 bg-card/[0.62] px-3 text-sm text-foreground backdrop-blur-xl"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value as T)}
+      className="h-7 w-full rounded-sm border border-border/30 bg-muted/10 px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground outline-none focus:border-pastel-purple/50 transition-all cursor-pointer"
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value} className="bg-background text-foreground uppercase tracking-normal">
+          {option.label}
+        </option>
+      ))}
+    </select>
   )
 }
 
@@ -487,26 +530,26 @@ function StatCard({
   tone: 'primary' | 'accent' | 'secondary' | 'muted'
 }) {
   const colorClass = tone === 'primary'
-    ? 'text-primary bg-primary/5'
+    ? 'text-pastel-purple bg-pastel-purple/10 border-pastel-purple/20'
     : tone === 'accent'
-      ? 'text-accent bg-accent/5'
+      ? 'text-pastel-yellow bg-pastel-yellow/10 border-pastel-yellow/20'
       : tone === 'secondary'
-        ? 'text-secondary bg-secondary/5'
-        : 'text-muted-foreground bg-muted/30'
+        ? 'text-pastel-green bg-pastel-green/10 border-pastel-green/20'
+        : 'text-muted-foreground bg-muted/20 border-border/30'
 
   return (
-    <div className={`rounded-sm p-4 text-center ${colorClass}`}>
-      <div className="text-2xl font-bold">{value}</div>
-      <div className="mt-1 text-sm">{label}</div>
+    <div className={`shrink-0 rounded-sm border px-3 py-1.5 flex items-center justify-center gap-2 ${colorClass}`}>
+      <div className="text-[10px] font-bold uppercase tracking-wider opacity-80">{label}</div>
+      <div className="text-sm font-black leading-none">{value}</div>
     </div>
   )
 }
 
 function DetailField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-sm bg-background/30 p-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
-      <div className="mt-2 text-sm leading-7 text-foreground">{value}</div>
+    <div className="space-y-1">
+      <div className={labelStyle}>{label}</div>
+      <div className="text-[11px] font-bold text-foreground/90">{value}</div>
     </div>
   )
 }
@@ -528,3 +571,5 @@ function formatDateTime(value: string) {
     minute: '2-digit',
   })
 }
+
+export default MemoryConsole
