@@ -11,9 +11,11 @@ import {
   MessageSquareQuote,
   RefreshCw,
   Sparkles,
+  Target,
   TrendingUp,
   Waves,
 } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { buildLLMPreferenceHeaders, getClientModelForProvider, LLM_PROVIDER_LABELS } from '@/lib/llm/clientPreference'
 import { useLLMPreferenceStore } from '@/stores/llmPreferenceStore'
@@ -51,18 +53,18 @@ interface ProfileRunDetail {
   pipelineEvents: ProfilePipelineEvent[]
 }
 
-const premiumPanel = 'rounded-md border border-border/40 bg-card/40 backdrop-blur-md shadow-sm'
-const subPanel = 'rounded-sm border border-border/30 bg-muted/20'
-const panelClass = 'rounded-sm border border-border/50 bg-card/[0.45] p-4 backdrop-blur-lg'
-const compactPanelClass = 'rounded-sm border border-border/40 bg-background/35 p-3'
-const labelStyle = 'text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80'
+const premiumPanel = 'rounded-sm bg-zinc-950/60 border border-zinc-800/60 shadow-2xl backdrop-blur-xl overflow-hidden'
+const subPanel = 'rounded-sm bg-zinc-900/40 p-5 border border-zinc-800/50 hover:border-[var(--color-pastel-purple)]/30 hover:bg-zinc-900/60 transition-all duration-300'
+const panelClass = 'rounded-sm bg-zinc-900/30 p-6 border border-zinc-800/50 transition-all duration-300 hover:bg-zinc-800/40 hover:border-zinc-700/50'
+const compactPanelClass = 'rounded-sm bg-zinc-900/30 p-5 border border-zinc-800/50 transition-all duration-300 hover:bg-zinc-800/40 hover:border-zinc-700/50'
+const labelStyle = 'text-[10px] font-bold uppercase tracking-widest text-[var(--color-pastel-purple)]'
 
 const BIG_FIVE_LABELS: Record<keyof BigFiveProfile, { label: string; low: string; high: string; color: string }> = {
-  openness: { label: 'Openness', low: 'Practical', high: 'Inventive', color: '#9333EA' },
-  conscientiousness: { label: 'Conscientiousness', low: 'Spontaneous', high: 'Organized', color: '#3B82F6' },
-  extraversion: { label: 'Extraversion', low: 'Reserved', high: 'Outgoing', color: '#F59E0B' },
-  agreeableness: { label: 'Agreeableness', low: 'Analytical', high: 'Cooperative', color: '#10B981' },
-  neuroticism: { label: 'Neuroticism', low: 'Stable', high: 'Sensitive', color: '#EF4444' },
+  openness: { label: 'Openness', low: 'Practical', high: 'Inventive', color: '#cba6f7' },
+  conscientiousness: { label: 'Conscientiousness', low: 'Spontaneous', high: 'Organized', color: '#89b4fa' },
+  extraversion: { label: 'Extraversion', low: 'Reserved', high: 'Outgoing', color: '#f9e2af' },
+  agreeableness: { label: 'Agreeableness', low: 'Analytical', high: 'Cooperative', color: '#a6e3a1' },
+  neuroticism: { label: 'Neuroticism', low: 'Stable', high: 'Sensitive', color: '#f38ba8' },
 }
 
 const MBTI_DESCRIPTIONS: Record<string, string> = {
@@ -194,9 +196,9 @@ function MetricTile({ label, value, hint }: { label: string; value: string | num
 
 function EmptyState({ title, copy }: { title: string; copy: string }) {
   return (
-    <div className="rounded-md border border-dashed border-border/30 bg-muted/5 px-6 py-10 text-center">
-      <div className="text-sm font-semibold text-foreground/80">{title}</div>
-      <p className="mx-auto mt-1 max-w-[360px] text-xs leading-relaxed text-muted-foreground">{copy}</p>
+    <div className="rounded-sm border border-dashed border-zinc-700/50 bg-zinc-900/30 px-6 py-10 text-center transition-all duration-300 hover:bg-zinc-900/50 hover:border-[var(--color-pastel-purple)]/30">
+      <div className="text-sm font-semibold text-foreground/90">{title}</div>
+      <p className="mx-auto mt-2 max-w-[360px] text-xs leading-relaxed text-muted-foreground">{copy}</p>
     </div>
   )
 }
@@ -324,7 +326,7 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
     return (
       <div className="flex min-h-[420px] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-6 w-6 animate-spin text-pastel-purple" />
+          <Loader2 className="h-6 w-6 animate-spin text-violet-500" />
           <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Loading Profile Workspace</div>
         </div>
       </div>
@@ -335,28 +337,28 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
     <div className="space-y-4">
       <div className="flex flex-col gap-4 px-1 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
-          <div className="rounded-md bg-pastel-purple/10 p-2.5">
-            <Brain className="h-5 w-5" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-sm bg-[var(--color-pastel-purple)]/10 ring-1 ring-[var(--color-pastel-purple)]/25 shadow-lg shadow-[var(--color-pastel-purple)]/10">
+            <Brain className="h-6 w-6 text-[var(--color-pastel-purple)]" />
           </div>
           <div>
-            <h3 className="text-lg font-bold leading-tight tracking-tight text-foreground">
+            <h3 className="text-xl font-bold leading-tight tracking-tight text-foreground">
               {agent.name}&apos;s Profile Intelligence
             </h3>
-            <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+            <p className="mt-0.5 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/80">
               Live evolution, manual deep analysis, and observed communication telemetry
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="rounded-md border border-border/40 bg-muted/20 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+          <div className="rounded-sm border border-zinc-800/80 bg-zinc-900/60 px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
             {LLM_PROVIDER_LABELS[selectedProvider]} · {activeModel}
           </div>
-          <Button variant="outline" size="sm" className="h-9 gap-2 border-border/40" onClick={() => void loadBootstrap(true)} disabled={refreshing}>
+          <Button variant="outline" size="sm" className="h-10 gap-2 rounded-sm border-zinc-700/60 hover:bg-zinc-800/60 transition-colors" onClick={() => void loadBootstrap(true)} disabled={refreshing}>
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button onClick={() => void handleStartAnalysis()} disabled={running} className="h-9 gap-2 font-bold">
+          <Button onClick={() => void handleStartAnalysis()} disabled={running} className="h-10 gap-2 rounded-sm bg-[var(--color-pastel-purple)] text-zinc-950 hover:bg-[var(--color-pastel-purple)]/90 font-bold shadow-md shadow-[var(--color-pastel-purple)]/20">
             {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
             {detail?.run?.status === 'running' ? 'Running analysis' : 'New analysis run'}
           </Button>
@@ -364,7 +366,7 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
       </div>
 
       {error && (
-        <div className="flex items-start gap-3 rounded-md border border-pastel-red/30 bg-pastel-red/5 px-4 py-3 text-[13px] text-pastel-red">
+        <div className="flex items-start gap-3 rounded-md border border-red-500/30 bg-red-500/5 px-4 py-3 text-[13px] text-red-500">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
@@ -382,10 +384,12 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
       <div className="grid gap-4 xl:grid-cols-[320px_1fr_360px] xl:h-[calc(100vh-220px)] xl:min-h-[720px]">
         <aside className="flex min-h-0 flex-col gap-4 overflow-hidden">
           <section className={`${premiumPanel} flex flex-col overflow-hidden`}>
-            <div className="flex items-center justify-between border-b border-border/40 bg-muted/10 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4" />
-                <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Analysis Control</span>
+            <div className="flex items-center justify-between border-b border-zinc-800/60 bg-zinc-900/60 px-5 py-3.5 backdrop-blur-sm">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-[var(--color-pastel-yellow)]/10 ring-1 ring-[var(--color-pastel-yellow)]/20 shadow-inner">
+                  <Sparkles className="h-4 w-4 text-[var(--color-pastel-yellow)]" />
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-foreground">Analysis Control</span>
               </div>
               {bootstrap?.stale && (
                 <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.15em] text-amber-300">
@@ -405,7 +409,7 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                 <div className={labelStyle}>Run status</div>
                 <div className={`${subPanel} p-3`}>
                   <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                    {detail?.run?.status === 'ready' ? <CheckCircle2 className="h-4 w-4 text-pastel-green" /> : <Clock3 className="h-4 w-4 text-muted-foreground" />}
+                    {detail?.run?.status === 'ready' ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <Clock3 className="h-4 w-4 text-muted-foreground" />}
                     {detail?.run ? detail.run.status : 'No run selected'}
                   </div>
                   <div className="mt-2 text-xs leading-6 text-muted-foreground">
@@ -438,7 +442,7 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                         key={stage}
                         className={`flex items-center justify-between rounded-sm border px-3 py-2 text-[12px] ${
                           active
-                            ? 'border-pastel-purple/40 bg-pastel-purple/10 text-foreground'
+                            ? 'border-violet-500/40 bg-violet-500/10 text-foreground'
                             : 'border-border/30 bg-muted/5 text-muted-foreground'
                         }`}
                       >
@@ -453,8 +457,8 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
           </section>
 
           <section className={`${premiumPanel} flex min-h-0 flex-1 flex-col overflow-hidden`}>
-            <div className="border-b border-border/40 bg-muted/10 px-4 py-3">
-              <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Recent Runs</span>
+            <div className="border-b border-zinc-800/60 bg-zinc-900/60 px-5 py-3.5 backdrop-blur-sm">
+              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-foreground">Recent Runs</span>
             </div>
             <div className="flex-1 space-y-1.5 overflow-y-auto p-2 scrollbar-thin">
               {(bootstrap?.recentRuns || []).length === 0 ? (
@@ -467,7 +471,7 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                       key={run.id}
                       onClick={() => setActiveRunId(run.id)}
                       className={`w-full rounded-sm border p-3 text-left transition-all ${
-                        active ? 'border-pastel-blue/40 bg-pastel-blue/5' : 'border-border/30 bg-muted/5 hover:border-pastel-blue/20'
+                        active ? 'border-blue-500/40 bg-blue-500/5' : 'border-border/30 bg-muted/5 hover:border-blue-500/20'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -490,15 +494,15 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
 
         <main className="flex min-h-0 flex-col gap-4 overflow-hidden">
           <section className={`${premiumPanel} flex min-h-0 flex-1 flex-col overflow-hidden`}>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/40 bg-muted/10 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <button onClick={() => setMode('evolution')} className={mode === 'evolution' ? 'rounded-sm bg-card px-3 py-1.5 text-[12px] font-bold text-foreground shadow-sm' : 'rounded-sm px-3 py-1.5 text-[12px] font-bold text-muted-foreground'}>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/60 bg-zinc-900/60 px-5 py-3.5 backdrop-blur-sm">
+              <div className="flex items-center gap-1.5 rounded-sm bg-zinc-950/50 p-1 ring-1 ring-zinc-800/50 shadow-inner">
+                <button onClick={() => setMode('evolution')} className={mode === 'evolution' ? 'rounded-md bg-zinc-800/80 px-4 py-1.5 text-[12px] font-bold text-foreground shadow-sm ring-1 ring-zinc-700/50' : 'rounded-md px-4 py-1.5 text-[12px] font-bold text-muted-foreground hover:text-foreground/80 transition-colors'}>
                   Evolution
                 </button>
-                <button onClick={() => setMode('analysis')} className={mode === 'analysis' ? 'rounded-sm bg-card px-3 py-1.5 text-[12px] font-bold text-foreground shadow-sm' : 'rounded-sm px-3 py-1.5 text-[12px] font-bold text-muted-foreground'}>
+                <button onClick={() => setMode('analysis')} className={mode === 'analysis' ? 'rounded-md bg-zinc-800/80 px-4 py-1.5 text-[12px] font-bold text-foreground shadow-sm ring-1 ring-zinc-700/50' : 'rounded-md px-4 py-1.5 text-[12px] font-bold text-muted-foreground hover:text-foreground/80 transition-colors'}>
                   Derived Analysis
                 </button>
-                <button onClick={() => setMode('communication')} className={mode === 'communication' ? 'rounded-sm bg-card px-3 py-1.5 text-[12px] font-bold text-foreground shadow-sm' : 'rounded-sm px-3 py-1.5 text-[12px] font-bold text-muted-foreground'}>
+                <button onClick={() => setMode('communication')} className={mode === 'communication' ? 'rounded-md bg-zinc-800/80 px-4 py-1.5 text-[12px] font-bold text-foreground shadow-sm ring-1 ring-zinc-700/50' : 'rounded-md px-4 py-1.5 text-[12px] font-bold text-muted-foreground hover:text-foreground/80 transition-colors'}>
                   Communication
                 </button>
               </div>
@@ -515,7 +519,7 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                         <div className="text-sm font-medium text-muted-foreground">Core Traits (Immutable)</div>
                         <div className="mt-4 grid gap-4 md:grid-cols-2">
                           {Object.entries(agent.coreTraits || {}).map(([trait, score]) => (
-                            <TraitBar key={trait} label={trait} score={score} colorClass="bg-primary" />
+                            <TraitBar key={trait} label={trait} score={score as number} colorClass="bg-primary" />
                           ))}
                         </div>
                       </div>
@@ -523,20 +527,20 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                         <div className="text-sm font-medium text-muted-foreground">Dynamic Traits (Evolving)</div>
                         <div className="mt-4 grid gap-4 md:grid-cols-2">
                           {Object.entries(agent.dynamicTraits || {}).map(([trait, score]) => (
-                            <TraitBar key={trait} label={trait} score={score} colorClass="bg-accent" />
+                            <TraitBar key={trait} label={trait} score={score as number} colorClass="bg-accent" />
                           ))}
                         </div>
                       </div>
                     </div>
 
                     <div className={`${panelClass} space-y-4`}>
-                      <div className="flex items-center gap-3">
-                        <div className="rounded-sm bg-accent/10 p-2">
-                          <TrendingUp className="h-5 w-5 text-accent" />
+                      <div className="flex items-center gap-4 border-b border-zinc-800/50 pb-4">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-[var(--color-pastel-green)]/10 ring-1 ring-[var(--color-pastel-green)]/20 shadow-inner">
+                          <TrendingUp className="h-5 w-5 text-[var(--color-pastel-green)]" />
                         </div>
                         <div>
                           <div className="font-semibold text-foreground">Recent evolution events</div>
-                          <div className="text-sm text-muted-foreground">Trait movement stays explainable and tied to observed behavior.</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">Trait movement stays explainable and tied to observed behavior.</div>
                         </div>
                       </div>
                       {!evolution || evolution.events.length === 0 ? (
@@ -561,7 +565,7 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                     <>
                       <div className="grid gap-3 xl:grid-cols-[0.78fr_1.22fr]">
                         <div className={`${compactPanelClass} flex items-center gap-3`}>
-                          <div className="flex h-12 w-12 items-center justify-center rounded-sm bg-pastel-purple/10 text-xl font-black text-pastel-purple">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-sm bg-violet-500/10 text-xl font-black text-violet-500">
                             {selectedProfile.mbti.type}
                           </div>
                           <div>
@@ -592,14 +596,14 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1.5 rounded-sm bg-zinc-950/50 p-1 ring-1 ring-zinc-800/50 w-fit">
                         {(['bigfive', 'mbti', 'enneagram', 'insights'] as const).map((tab) => {
                           const active = profileTab === tab
                           return (
                             <button
                               key={tab}
                               onClick={() => setProfileTab(tab)}
-                              className={active ? 'rounded-sm border border-pastel-purple/40 bg-pastel-purple/10 px-3 py-1.5 text-[12px] font-bold text-foreground' : 'rounded-sm border border-border/30 bg-muted/5 px-3 py-1.5 text-[12px] font-bold text-muted-foreground'}
+                              className={active ? 'rounded-md bg-zinc-800/80 px-4 py-1.5 text-[12px] font-bold text-[#cba6f7] shadow-sm ring-1 ring-zinc-700/50' : 'rounded-md px-4 py-1.5 text-[12px] font-bold text-muted-foreground hover:text-foreground/80 transition-colors'}
                             >
                               {tab === 'bigfive' ? 'Big Five' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                             </button>
@@ -624,12 +628,12 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                     <>
                       <div className={`${panelClass} grid gap-5 lg:grid-cols-[0.95fr_1.05fr]`}>
                         <div className="flex items-center gap-4">
-                          <div className="rounded-md bg-pastel-blue/10 p-3">
-                            <Languages className="h-6 w-6 text-pastel-blue" />
+                          <div className="flex h-12 w-12 items-center justify-center rounded-sm bg-[var(--color-pastel-blue)]/10 ring-1 ring-[var(--color-pastel-blue)]/20 shadow-inner">
+                            <Languages className="h-6 w-6 text-[var(--color-pastel-blue)]" />
                           </div>
                           <div>
-                            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Observed communication fingerprint</div>
-                            <div className="mt-2 text-2xl font-semibold text-foreground">
+                            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-[#cba6f7]">Observed communication fingerprint</div>
+                            <div className="mt-1.5 text-2xl font-semibold text-foreground">
                               {selectedCommunication.enoughData ? 'Live voice telemetry' : 'Early communication sample'}
                             </div>
                             <div className="mt-1 text-sm text-muted-foreground">
@@ -659,9 +663,11 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
           {mode === 'analysis' && (
             <>
               <section className={`${premiumPanel} flex min-h-0 flex-1 flex-col overflow-hidden`}>
-                <div className="flex items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-3">
-                  <MessageSquareQuote className="h-4 w-4" />
-                  <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Interview Transcript</span>
+                <div className="flex items-center gap-3 border-b border-zinc-800/60 bg-zinc-900/60 px-5 py-3.5 backdrop-blur-sm">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-[var(--color-pastel-blue)]/10 ring-1 ring-[var(--color-pastel-blue)]/20 shadow-inner">
+                    <MessageSquareQuote className="h-4 w-4 text-[var(--color-pastel-blue)]" />
+                  </div>
+                  <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-foreground">Interview Transcript</span>
                 </div>
                 <div className="flex-1 space-y-3 overflow-y-auto p-4 scrollbar-thin">
                   {(detail?.interviewTurns || []).length === 0 ? (
@@ -679,9 +685,11 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
               </section>
 
               <section className={`${premiumPanel} max-h-[240px] overflow-hidden`}>
-                <div className="flex items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-3">
-                  <Waves className="h-4 w-4" />
-                  <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Pipeline Trace</span>
+                <div className="flex items-center gap-3 border-b border-zinc-800/60 bg-zinc-900/60 px-5 py-3.5 backdrop-blur-sm">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-[var(--color-pastel-pink)]/10 ring-1 ring-[var(--color-pastel-pink)]/20 shadow-inner">
+                    <Waves className="h-4 w-4 text-[var(--color-pastel-pink)]" />
+                  </div>
+                  <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-foreground">Pipeline Trace</span>
                 </div>
                 <div className="space-y-2 overflow-y-auto p-4 scrollbar-thin">
                   {(detail?.pipelineEvents || []).length === 0 ? (
@@ -704,9 +712,11 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
 
           {mode === 'evolution' && (
             <section className={`${premiumPanel} flex min-h-0 flex-1 flex-col overflow-hidden`}>
-              <div className="flex items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-3">
-                <TrendingUp className="h-4 w-4" />
-                <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Why this matters</span>
+              <div className="flex items-center gap-3 border-b border-zinc-800/60 bg-zinc-900/60 px-5 py-3.5 backdrop-blur-sm">
+                <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-[var(--color-pastel-green)]/10 ring-1 ring-[var(--color-pastel-green)]/20 shadow-inner">
+                  <TrendingUp className="h-4 w-4 text-[var(--color-pastel-green)]" />
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-foreground">Why this matters</span>
               </div>
               <div className="space-y-4 p-4 text-sm leading-7 text-muted-foreground">
                 <p>This layer is meant to move slowly. Real evidence can be recorded even when rounded trait percentages do not visibly jump.</p>
@@ -725,9 +735,11 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
 
           {mode === 'communication' && (
             <section className={`${premiumPanel} flex min-h-0 flex-1 flex-col overflow-hidden`}>
-              <div className="flex items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-3">
-                <Languages className="h-4 w-4" />
-                <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Observed Evidence</span>
+              <div className="flex items-center gap-3 border-b border-zinc-800/60 bg-zinc-900/60 px-5 py-3.5 backdrop-blur-sm">
+                <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-[var(--color-pastel-blue)]/10 ring-1 ring-[var(--color-pastel-blue)]/20 shadow-inner">
+                  <Languages className="h-4 w-4 text-[var(--color-pastel-blue)]" />
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-foreground">Observed Evidence</span>
               </div>
               <div className="flex-1 space-y-4 overflow-y-auto p-4 scrollbar-thin">
                 {!selectedCommunication ? (
@@ -801,7 +813,7 @@ function EvolutionEventCard({ event }: { event: PersonalityEventRecord }) {
   const evidenceSummary = getEventEvidenceSummary(event)
 
   return (
-    <div className="rounded-sm border border-border/70 bg-background/45 p-4">
+    <div className="rounded-sm border border-zinc-800/60 bg-zinc-950/40 p-4 transition-colors hover:bg-zinc-900/60 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="font-medium text-foreground">{event.summary}</div>
@@ -846,74 +858,75 @@ function EvolutionEventCard({ event }: { event: PersonalityEventRecord }) {
 
 function BigFiveView({ profile }: { profile: BigFiveProfile }) {
   return (
-    <div className="grid gap-3 xl:grid-cols-2">
-      {(Object.entries(BIG_FIVE_LABELS) as [keyof BigFiveProfile, typeof BIG_FIVE_LABELS[keyof BigFiveProfile]][]).map(([key, config]) => (
-        <div key={key} className={compactPanelClass}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-medium text-foreground">{config.label}</div>
-              <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                {config.low} to {config.high}
-              </div>
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
+      {(Object.entries(BIG_FIVE_LABELS) as [keyof BigFiveProfile, typeof BIG_FIVE_LABELS[keyof BigFiveProfile]][]).map(([key, config], idx) => {
+        const val = profile[key]
+        const percentage = val * 100
+        return (
+          <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.05 }} key={String(key)} className={compactPanelClass}>
+            <div className="flex justify-between items-center mb-4">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-[#cba6f7]">{config.label}</div>
+              <span className="text-[11px] font-semibold text-muted-foreground">{percentage.toFixed(0)}%</span>
             </div>
-            <span className="text-xs font-semibold text-foreground">{(profile[key] * 100).toFixed(0)}%</span>
-          </div>
-          <div className="mt-3 h-2 rounded-full bg-muted/45">
-            <div className="h-2 rounded-full transition-all" style={{ width: `${profile[key] * 100}%`, backgroundColor: config.color }} />
-          </div>
-          <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
-            <span>{config.low}</span>
-            <span>{config.high}</span>
-          </div>
-        </div>
-      ))}
-    </div>
+            <div className="relative h-1.5 w-full rounded-sm bg-zinc-800/40">
+              <div className="absolute top-0 bottom-0 left-0 rounded-sm transition-all duration-700" style={{ width: `${percentage}%`, backgroundColor: config.color, opacity: 0.3 }} />
+              <div className="absolute top-1/2 h-3.5 w-1.5 -translate-y-1/2 rounded-sm shadow-md shadow-black/50" style={{ left: `${percentage}%`, backgroundColor: config.color }} />
+            </div>
+            <div className="mt-4 flex justify-between text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+              <span className={val < 0.5 ? 'text-foreground' : ''}>{config.low}</span>
+              <span className={val >= 0.5 ? 'text-foreground' : ''}>{config.high}</span>
+            </div>
+          </motion.div>
+        )
+      })}
+    </motion.div>
   )
 }
 
 function MBTIView({ profile }: { profile: MBTIProfile }) {
   const dimensions = [
-    { key: 'extraversion_introversion', left: 'I', right: 'E', leftLabel: 'Introverted', rightLabel: 'Extraverted' },
-    { key: 'sensing_intuition', left: 'S', right: 'N', leftLabel: 'Sensing', rightLabel: 'Intuitive' },
-    { key: 'thinking_feeling', left: 'T', right: 'F', leftLabel: 'Thinking', rightLabel: 'Feeling' },
-    { key: 'judging_perceiving', left: 'J', right: 'P', leftLabel: 'Judging', rightLabel: 'Perceiving' },
+    { key: 'extraversion_introversion', left: 'I', right: 'E', leftLabel: 'Introverted', rightLabel: 'Extraverted', color: 'var(--color-pastel-blue)' },
+    { key: 'sensing_intuition', left: 'S', right: 'N', leftLabel: 'Sensing', rightLabel: 'Intuitive', color: 'var(--color-pastel-green)' },
+    { key: 'thinking_feeling', left: 'T', right: 'F', leftLabel: 'Thinking', rightLabel: 'Feeling', color: 'var(--color-pastel-yellow)' },
+    { key: 'judging_perceiving', left: 'J', right: 'P', leftLabel: 'Judging', rightLabel: 'Perceiving', color: 'var(--color-pastel-purple)' },
   ] as const
 
   return (
-    <div className="space-y-3">
-      <div className={`${compactPanelClass} flex flex-wrap items-center justify-between gap-4`}>
-        <div className="inline-flex items-center gap-1 rounded-sm bg-background/45 px-4 py-2.5 text-2xl font-semibold text-foreground">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
+      <div className={`${compactPanelClass} flex flex-col md:flex-row items-start md:items-center gap-5`}>
+        <div className="flex px-4 py-3 rounded-sm bg-zinc-950/40 border border-zinc-800/50 shadow-inner">
           {profile.type.split('').map((letter, index) => (
-            <span key={index} className={index === 0 ? 'text-[var(--color-pastel-blue)]' : index === 1 ? 'text-emerald-500' : index === 2 ? 'text-amber-500' : 'text-primary'}>
+            <span key={index} className="text-3xl font-bold tracking-widest mx-0.5" style={{ color: dimensions[index].color }}>
               {letter}
             </span>
           ))}
         </div>
-        <p className="max-w-md text-sm leading-6 text-muted-foreground">{MBTI_DESCRIPTIONS[profile.type]}</p>
+        <div className="flex-1">
+          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#cba6f7]">Identity Synthesis</div>
+          <p className="mt-2 text-sm leading-6 text-foreground/80">{MBTI_DESCRIPTIONS[profile.type]}</p>
+        </div>
       </div>
-      <div className="grid gap-3 xl:grid-cols-2">
-        {dimensions.map(({ key, left, right, leftLabel, rightLabel }) => {
-          const value = profile.dimensions[key]
+      <div className="grid gap-3">
+        {dimensions.map(({ key, left, right, leftLabel, rightLabel, color }, idx) => {
+          const value = profile.dimensions[key as keyof typeof profile.dimensions]
           const percentage = ((value + 1) / 2) * 100
+          
           return (
-            <div key={key} className={compactPanelClass}>
-              <div className="flex justify-between gap-4 text-xs font-medium">
-                <span className={value < 0 ? 'text-accent' : 'text-muted-foreground'}>{left} • {leftLabel}</span>
-                <span className={value >= 0 ? 'text-accent' : 'text-muted-foreground'}>{rightLabel} • {right}</span>
+            <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: idx * 0.05 }} key={String(key)} className={compactPanelClass}>
+              <div className="flex items-center justify-between gap-4 text-[10px] font-bold uppercase tracking-widest mb-3">
+                <span className={value < 0 ? 'text-foreground' : 'text-muted-foreground/40'}>{leftLabel} ({left})</span>
+                <span className={value >= 0 ? 'text-foreground' : 'text-muted-foreground/40'}>({right}) {rightLabel}</span>
               </div>
-              <div className="relative mt-3 h-2 rounded-full bg-muted/45">
-                <div className="h-2 rounded-full bg-accent transition-all" style={{ width: `${percentage}%` }} />
-                <div className="absolute top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-foreground" style={{ left: `${percentage}%` }} />
+              <div className="relative h-1 w-full rounded-sm bg-zinc-800/60">
+                <div className="absolute top-1/2 h-3.5 w-1.5 -translate-y-1/2 rounded-sm shadow-md shadow-black/80" style={{ left: `${percentage}%`, backgroundColor: color }} />
+                <div className="absolute top-1/2 h-0.5 -translate-y-1/2 transition-all opacity-40" style={{ left: value < 0 ? `${percentage}%` : '50%', right: value >= 0 ? `${100 - percentage}%` : '50%', backgroundColor: color }} />
+                <div className="absolute top-1/2 left-1/2 h-2 w-0.5 -translate-y-1/2 -translate-x-1/2 bg-zinc-600" />
               </div>
-              <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
-                <span>{(100 - percentage).toFixed(0)}%</span>
-                <span>{percentage.toFixed(0)}%</span>
-              </div>
-            </div>
+            </motion.div>
           )
         })}
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -922,96 +935,136 @@ function EnneagramView({ profile }: { profile: EnneagramProfile }) {
   const wingType = ENNEAGRAM_TYPES[profile.wing]
 
   return (
-    <div className="grid gap-3 lg:grid-cols-[0.82fr_1.18fr]">
-      <div className={`${compactPanelClass} text-center`}>
-        <div className="text-4xl font-black text-primary">{primaryType?.icon}</div>
-        <div className="mt-3 text-lg font-semibold text-foreground">Type {profile.primaryType}: {primaryType?.name}</div>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">{primaryType?.description}</p>
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid gap-3 lg:grid-cols-[220px_1fr]">
+      <div className={`${compactPanelClass} flex flex-col items-center justify-center p-6 text-center`}>
+        <div className="relative flex h-24 w-24 items-center justify-center rounded-sm bg-[var(--color-pastel-purple)]/10 ring-1 ring-[var(--color-pastel-purple)]/30 shadow-inner">
+          <span className="text-5xl font-black tracking-tighter text-[var(--color-pastel-purple)]">{profile.primaryType}</span>
+          <div className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-sm bg-zinc-950 border border-zinc-700/50 shadow-md">
+            <span className="text-xs font-bold text-muted-foreground">w{profile.wing}</span>
+          </div>
+        </div>
+        <div className="mt-5 text-[15px] font-bold text-foreground capitalize tracking-wide">{primaryType?.name}</div>
+        <div className="mt-1.5 text-[10px] uppercase tracking-widest text-[#cba6f7]">Dominant Paradigm</div>
       </div>
-      <div className="grid gap-3">
-        <div className={compactPanelClass}>
-          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Wing</div>
-          <div className="mt-3 flex items-center gap-3">
-            <span className="text-2xl font-black text-primary">{wingType?.icon}</span>
-            <div>
-              <div className="text-sm font-medium text-foreground">Type {profile.wing}: {wingType?.name}</div>
-              <div className="text-xs text-muted-foreground">{wingType?.description}</div>
+      
+      <div className="grid gap-3 content-start">
+        <div className={`${compactPanelClass} flex flex-col sm:flex-row gap-5`}>
+          <div className="flex-1">
+             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">Core Drive</div>
+             <p className="text-xs leading-relaxed text-foreground/80">{primaryType?.description}</p>
+          </div>
+          <div className="w-[1px] bg-zinc-800/50 hidden sm:block" />
+          <div className="flex-1">
+             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">Wing Influence ({wingType?.name})</div>
+             <p className="text-xs leading-relaxed text-foreground/80">{wingType?.description}</p>
+          </div>
+        </div>
+
+        <div className={`${compactPanelClass} grid sm:grid-cols-2 gap-5 items-center`}>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-[#cba6f7] mb-3">Instinctual Stack</div>
+            <div className="inline-flex rounded-sm bg-zinc-950/40 border border-zinc-800/50 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-foreground shadow-sm">
+              {profile.instinctualVariant.replace('-', ' ')}
             </div>
           </div>
-        </div>
-        <div className={compactPanelClass}>
-          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Tritype</div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-3">
-            {profile.tritype.map((type) => (
-              <div key={type} className="rounded-sm bg-background/45 px-3 py-3 text-center">
-                <div className="text-xl font-black text-primary">{ENNEAGRAM_TYPES[type]?.icon}</div>
-                <div className="mt-1 text-sm font-medium text-foreground">Type {type}</div>
-                <div className="text-[10px] text-muted-foreground">{ENNEAGRAM_TYPES[type]?.name}</div>
-              </div>
-            ))}
+          <div>
+             <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#cba6f7] mb-3">Tritype</div>
+             <div className="flex gap-2">
+              {profile.tritype.map((type, i) => (
+                <div key={type} className={`flex h-10 w-10 items-center justify-center rounded-sm border border-zinc-800/50 bg-zinc-950/40 text-sm font-black shadow-inner object-cover ${i === 0 ? 'text-[var(--color-pastel-purple)]' : i === 1 ? 'text-[var(--color-pastel-blue)]' : 'text-muted-foreground'}`}>
+                  {type}
+                </div>
+              ))}
+             </div>
           </div>
         </div>
-        <div className={compactPanelClass}>
-          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">Instinctual variant</div>
-          <div className="mt-2 text-base font-medium capitalize text-foreground">{profile.instinctualVariant.replace('-', ' ')}</div>
-        </div>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
 function InsightsView({ profile }: { profile: PsychologicalProfile }) {
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
-      <InsightBlock title="Strengths" items={profile.strengths} />
-      <InsightBlock title="Growth areas" items={profile.challenges} />
-      <div className={compactPanelClass}>
-        <div className="font-semibold text-foreground">Rationales</div>
-        <div className="mt-3 space-y-3 text-sm leading-6 text-muted-foreground">
-          {profile.rationales?.bigFive && <p><span className="font-medium text-foreground">Big Five:</span> {profile.rationales.bigFive}</p>}
-          {profile.rationales?.mbti && <p><span className="font-medium text-foreground">MBTI:</span> {profile.rationales.mbti}</p>}
-          {profile.rationales?.enneagram && <p><span className="font-medium text-foreground">Enneagram:</span> {profile.rationales.enneagram}</p>}
-          {profile.rationales?.communicationStyle && <p><span className="font-medium text-foreground">Communication:</span> {profile.rationales.communicationStyle}</p>}
-          {profile.rationales?.stressPattern && <p><span className="font-medium text-foreground">Stress pattern:</span> {profile.rationales.stressPattern}</p>}
-          {profile.rationales?.motivationAndGrowth && <p><span className="font-medium text-foreground">Motivation and growth:</span> {profile.rationales.motivationAndGrowth}</p>}
-        </div>
+    <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="space-y-3">
+      <div className="grid gap-3 lg:grid-cols-2">
+        <InsightBlock title="Core Strengths" items={profile.strengths} variant="positive" />
+        <InsightBlock title="Growth Areas" items={profile.challenges} variant="warning" />
       </div>
+
       <div className={compactPanelClass}>
-        <div className="font-semibold text-foreground">Communication style</div>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#cba6f7] mb-5">Communication Flow Matrix</div>
+        <div className="grid gap-x-8 gap-y-6 md:grid-cols-2">
           {[
-            { label: 'Directness', value: profile.communicationStyle.directness, left: 'Indirect', right: 'Direct' },
-            { label: 'Expression', value: profile.communicationStyle.emotionalExpression, left: 'Reserved', right: 'Expressive' },
+            { label: 'Directness', value: profile.communicationStyle.directness, left: 'Indirect / Diplomatic', right: 'Direct / Blunt', color: 'var(--color-pastel-blue)' },
+            { label: 'Emotional Expression', value: profile.communicationStyle.emotionalExpression, left: 'Reserved / Logical', right: 'Expressive / Open', color: 'var(--color-pastel-pink)' },
           ].map((item) => (
             <div key={item.label}>
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{item.label}</div>
-              <div className="mt-2 h-1.5 rounded-full bg-muted/45">
-                <div className="h-1.5 rounded-full bg-accent" style={{ width: `${item.value * 100}%` }} />
+              <div className="flex justify-between items-end mb-3">
+                 <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{item.label}</div>
+                 <div className="text-[10px] text-foreground font-bold">{(item.value * 100).toFixed(0)}%</div>
               </div>
-              <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-                <span>{item.left}</span>
-                <span>{item.right}</span>
+              <div className="relative h-1.5 w-full rounded-sm bg-zinc-800/50 overflow-hidden shadow-inner">
+                <div className="absolute top-0 bottom-0 left-0 rounded-sm transition-all" style={{ width: `${item.value * 100}%`, backgroundColor: item.color }} />
+              </div>
+              <div className="mt-2.5 flex justify-between text-[9px] uppercase tracking-widest text-muted-foreground/60">
+                <span className={item.value < 0.5 ? 'text-foreground/90 font-medium' : ''}>{item.left}</span>
+                <span className={item.value >= 0.5 ? 'text-foreground/90 font-medium' : ''}>{item.right}</span>
               </div>
             </div>
           ))}
         </div>
-        <div className="mt-4 text-sm text-muted-foreground">
-          Conflict style: <span className="font-medium capitalize text-foreground">{profile.communicationStyle.conflictStyle}</span>
+        <div className="mt-6 rounded-sm bg-zinc-950/40 border border-zinc-800/50 p-4 flex justify-between items-center">
+           <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Default Conflict Strategy</span>
+           <span className="text-xs font-bold uppercase tracking-widest text-[#cba6f7]">{profile.communicationStyle.conflictStyle}</span>
         </div>
       </div>
-    </div>
+
+      <div className={compactPanelClass}>
+        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#cba6f7] mb-5">Psychological Rationales</div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            { key: 'bigFive', label: 'Big Five Synthesis' },
+            { key: 'mbti', label: 'MBTI Foundation' },
+            { key: 'enneagram', label: 'Enneagram Drive' },
+            { key: 'communicationStyle', label: 'Communication' },
+            { key: 'stressPattern', label: 'Stress Dynamics' },
+            { key: 'motivationAndGrowth', label: 'Growth Levers' },
+          ].map((item) => {
+            const content = profile.rationales?.[item.key as keyof PsychologicalProfile['rationales']]
+            if (!content) return null
+            return (
+              <div key={item.key} className="relative rounded-sm border border-zinc-800/40 bg-zinc-950/20 p-4 overflow-hidden">
+                 <div className="absolute top-0 left-0 w-1 h-full bg-zinc-800/60" />
+                 <div className="pl-2">
+                   <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2.5">{item.label}</div>
+                   <p className="text-xs leading-relaxed text-foreground/75 relative z-10">{content}</p>
+                 </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </motion.div>
   )
 }
 
-function InsightBlock({ title, items }: { title: string; items: string[] }) {
+function InsightBlock({ title, items, variant }: { title: string; items: string[]; variant: 'positive' | 'warning' }) {
   if (items.length === 0) return null
+  const Icon = variant === 'positive' ? CheckCircle2 : Target
+  const colorClass = variant === 'positive' ? 'text-[var(--color-pastel-green)]' : 'text-[var(--color-pastel-yellow)]'
+  
   return (
     <div className={compactPanelClass}>
-      <h4 className="font-semibold text-foreground">{title}</h4>
-      <ul className="mt-3 space-y-2">
+      <div className={`text-[11px] font-bold uppercase tracking-[0.2em] mb-4 flex items-center gap-2.5 ${colorClass}`}>
+        <div className={`p-1.5 rounded-sm bg-current/10`}>
+          <Icon className="h-4 w-4" />
+        </div>
+        {title}
+      </div>
+      <ul className="space-y-3.5">
         {items.map((item) => (
-          <li key={item} className="flex items-start gap-2 text-sm leading-6 text-muted-foreground">
-            <span className="mt-2 h-1.5 w-1.5 rounded-full bg-primary" />
+          <li key={item} className="flex items-start gap-3.5 text-xs leading-5 text-foreground/80">
+            <div className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-sm ${variant === 'positive' ? 'bg-[var(--color-pastel-green)]/80' : 'bg-[var(--color-pastel-yellow)]/80'}`} />
             <span>{item}</span>
           </li>
         ))}
@@ -1035,7 +1088,7 @@ function CommunicationView({ snapshot }: { snapshot: CommunicationFingerprintSna
   return (
     <div className="grid gap-3 xl:grid-cols-2">
       {metrics.map((metric) => (
-        <div key={metric.key} className={compactPanelClass}>
+        <div key={String(metric.key)} className={compactPanelClass}>
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-sm font-medium text-foreground">{metric.label}</div>
