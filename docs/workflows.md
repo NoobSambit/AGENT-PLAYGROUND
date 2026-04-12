@@ -155,6 +155,57 @@ The server:
 - turns strong patterns into active `learning_adaptations`
 - feeds active adaptations back into later prompts
 
+The chat turn can also include active dream residue in prompt assembly when `agents.activeDreamImpression` exists and is still unexpired.
+
+When that happens the stored assistant message writes lightweight inspectable metadata:
+
+- `metadata.dreamImpression.sourceDreamId`
+- `metadata.dreamImpression.behaviorTilt`
+- `metadata.dreamImpression.expiresAt`
+
+## Run Dream Workspace V2
+
+### High-Level Flow
+
+1. Open `/agents/[id]`.
+2. Switch to `Dreams`.
+3. `GET /api/agents/[id]/dream` returns bootstrap state.
+4. User chooses dream type, optional note, and optional focus chips.
+5. `POST /api/agents/[id]/dream` creates a draft session.
+6. `POST /api/agents/[id]/dream/sessions/[sessionId]/generate` runs:
+   - prepare context
+   - condition subconscious
+   - draft dream
+   - extract symbols
+   - evaluate quality
+   - optional repair
+   - derive impression preview
+7. UI polls `GET /api/agents/[id]/dream/sessions/[sessionId]` for stage progress.
+8. User reviews the result.
+9. `POST /api/agents/[id]/dream/sessions/[sessionId]/save` persists the final artifact.
+
+### What Updates
+
+- `dream_sessions`
+- `dreams`
+- `dream_pipeline_events`
+
+### What Only Save Updates
+
+- `agents.dream_count`
+- `agents.stats.dreamsGenerated`
+- `agents.active_dream_impression`
+- `agents.emotional_state`
+- `agents.emotional_history`
+
+### What Draft Generation Must Not Update
+
+- timeline visibility
+- archive metrics
+- counters
+- downstream context selection
+- active behavioral residue
+
 This matters because the learning tab no longer creates its own learning data on page load.
 
 ## Scenario: Stress + Identity + Project

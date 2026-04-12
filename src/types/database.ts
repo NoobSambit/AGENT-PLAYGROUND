@@ -215,6 +215,7 @@ export interface AgentRecord {
   creativeWorks?: number
   dreamCount?: number
   journalCount?: number
+  activeDreamImpression?: DreamImpression | null
   challengesCompleted?: number
   challengeWins?: number
   mentorshipStats?: {
@@ -322,6 +323,11 @@ export interface MessageMetadata {
   provider?: string
   emotionSummary?: unknown
   emotionEvents?: unknown[]
+  dreamImpression?: {
+    sourceDreamId: string
+    behaviorTilt: DreamBehaviorTilt
+    expiresAt: string
+  }
   [key: string]: unknown
 }
 
@@ -793,6 +799,7 @@ export interface CreativeContextPacket {
   emotionalSummary: string
   voiceDirectives: string[]
   psychologicalDirectives: string[]
+  dreamDirectives?: string[]
   continuityMotifs: string[]
   selectedSignals: CreativeContextSignal[]
 }
@@ -874,57 +881,260 @@ export interface CreativeLibraryItem {
 // ============================================
 
 export type DreamType =
-  | 'adventure'
+  | 'symbolic'
   | 'nightmare'
   | 'memory_replay'
-  | 'symbolic'
   | 'prophetic'
   | 'lucid'
   | 'recurring'
 
+export type DreamFocus = 'memory' | 'emotion' | 'future' | 'relationship' | 'conflict'
+
+export type DreamSessionStatus =
+  | 'draft'
+  | 'generating'
+  | 'ready'
+  | 'saved'
+  | 'failed'
+
+export type DreamStatus =
+  | 'draft'
+  | 'repaired'
+  | 'saved'
+  | 'failed'
+
+export type DreamPipelineStage =
+  | 'prepare_context'
+  | 'condition_subconscious'
+  | 'draft_dream'
+  | 'extract_symbols'
+  | 'evaluate_quality'
+  | 'repair_dream'
+  | 'derive_impression'
+  | 'ready'
+  | 'saved'
+  | 'failed'
+
+export type DreamContextSourceType =
+  | 'persona'
+  | 'goal'
+  | 'linguistic_profile'
+  | 'psychological_profile'
+  | 'emotion'
+  | 'emotional_temperament'
+  | 'emotional_history'
+  | 'message'
+  | 'memory'
+  | 'journal'
+  | 'dream'
+  | 'relationship'
+  | 'dream_impression'
+
+export type DreamQualityDimension =
+  | 'imageryVividness'
+  | 'symbolicCoherence'
+  | 'psychologicalGrounding'
+  | 'agentSpecificity'
+  | 'narrativeClarity'
+  | 'interpretiveUsefulness'
+
+export type DreamHardFailureFlag =
+  | 'generic_fantasy_filler'
+  | 'schema_leakage'
+  | 'weak_symbolism'
+  | 'disconnected_agent_context'
+  | 'incoherent_scene_progression'
+  | 'unusable_interpretation'
+
+export type DreamBehaviorTilt =
+  | 'reflective'
+  | 'cautious'
+  | 'anticipatory'
+  | 'agentic'
+  | 'fixated'
+
+export interface DreamRubricScore {
+  score: number
+  rationale: string
+}
+
+export interface DreamQualityEvaluation {
+  pass: boolean
+  overallScore: number
+  dimensions: Record<DreamQualityDimension, DreamRubricScore>
+  hardFailureFlags: DreamHardFailureFlag[]
+  strengths: string[]
+  weaknesses: string[]
+  repairInstructions: string[]
+  evaluatorSummary: string
+}
+
+export interface DreamContextSignal {
+  id: string
+  sourceType: DreamContextSourceType
+  label: string
+  snippet: string
+  reason: string
+  weight: number
+  linkedEntityId?: string
+}
+
+export interface DreamContextReference {
+  sourceType: DreamContextSourceType
+  label: string
+  linkedEntityId?: string
+}
+
+export interface DreamScene {
+  id: string
+  heading: string
+  summary: string
+  body: string
+  symbols: string[]
+  emotions: EmotionType[]
+}
+
 export interface DreamSymbol {
   symbol: string
   meaning: string
-  frequency: number // How often this symbol appears
-  emotionalAssociation: EmotionType
+  evidence: string
+  emotionalAssociation?: EmotionType
 }
 
-export interface DreamSequence {
-  scene: string
-  characters: string[]
-  emotions: EmotionType[]
-  symbolsPresent: string[]
+export interface DreamLatentTension {
+  tension: string
+  whyItMatters: string
+}
+
+export interface DreamInterpretation {
+  summary: string
+  insights: string[]
+  cautions: string[]
+  openLoops: string[]
+}
+
+export interface DreamImpression {
+  sourceDreamId: string
+  summary: string
+  guidance: string
+  behaviorTilt: DreamBehaviorTilt
+  dominantThemes: string[]
+  expiresAt: string
+  createdAt: string
+}
+
+export interface DreamDisplayMetrics {
+  imageryVividness: number
+  symbolicCoherence: number
+  psychologicalGrounding: number
+  narrativeClarity: number
+  interpretiveUsefulness: number
+  lucidity: number
+  coherence: number
+}
+
+export interface DreamComposeInput {
+  type: DreamType
+  userNote?: string
+  focus?: DreamFocus[]
+}
+
+export interface DreamSession {
+  id: string
+  agentId: string
+  status: DreamSessionStatus
+  latestStage: DreamPipelineStage
+  type: DreamType
+  normalizedInput: DreamComposeInput
+  contextPacket?: {
+    selectedSignals: DreamContextSignal[]
+    summary: string
+    dominantEmotion?: EmotionType | null
+    recurringThemes: string[]
+    recurringSymbols: string[]
+    activeDreamImpression?: DreamImpression | null
+  }
+  latestEvaluation?: DreamQualityEvaluation
+  finalDreamId?: string
+  provider?: string
+  model?: string
+  failureReason?: string
+  createdAt: string
+  updatedAt: string
+  savedAt?: string
 }
 
 export interface Dream {
   id: string
   agentId: string
+  sessionId: string
   type: DreamType
+  status: DreamStatus
+  version: number
   title: string
-  narrative: string
-
-  // Dream structure
-  sequences: DreamSequence[]
-
-  // Symbolism
+  summary: string
+  render: MessageRenderData
+  scenes: DreamScene[]
   symbols: DreamSymbol[]
-
-  // Psychological analysis
   themes: string[]
-  hiddenMeanings: string[]
-  emotionalProcessing: string // What emotions/memories are being processed
-
-  // Connection to reality
-  relatedMemories: string[] // Memory IDs that influenced this dream
-  relatedEmotions: EmotionType[] // Recent emotions that influenced this
-
-  // Dream quality
-  vividness: number // 0-1
-  lucidity: number  // 0-1
-  coherence: number // 0-1
-
+  latentTensions: DreamLatentTension[]
+  interpretation: DreamInterpretation
+  emotionalProcessing: string
+  impression?: DreamImpression
+  impressionPreview?: Omit<DreamImpression, 'sourceDreamId'>
+  evaluation?: DreamQualityEvaluation
+  contextReferences: DreamContextReference[]
+  displayMetrics: DreamDisplayMetrics
+  provider?: string
+  model?: string
   createdAt: string
-  recurrenceCount: number
+  updatedAt: string
+  savedAt?: string
+}
+
+export interface DreamPipelineEvent {
+  id: string
+  sessionId: string
+  stage: DreamPipelineStage
+  status: 'completed' | 'active' | 'skipped' | 'failed'
+  summary: string
+  payload: Record<string, unknown>
+  createdAt: string
+}
+
+export interface DreamBootstrapPayload {
+  agent: {
+    id: string
+    name: string
+    dreamCount: number
+  }
+  availableTypes: DreamType[]
+  suggestedType: DreamType
+  defaults: {
+    userNote: string
+    focus: DreamFocus[]
+  }
+  activeDreamImpression?: DreamImpression | null
+  recentSessions: DreamSession[]
+  recentSavedDreams: Dream[]
+  archiveMetrics: {
+    totalSavedDreams: number
+    totalSessions: number
+    readyToSaveCount: number
+    failedSessions: number
+    nightmareRatio: number
+    recurringSymbols: Array<{ symbol: string; count: number }>
+    recurringThemes: Array<{ theme: string; count: number }>
+  }
+  archiveFilters: {
+    types: DreamType[]
+  }
+}
+
+export interface DreamSessionDetail {
+  session: DreamSession | null
+  dreams: Dream[]
+  pipelineEvents: DreamPipelineEvent[]
 }
 
 // ============================================

@@ -18,6 +18,8 @@ import type {
   CreativePipelineEvent,
   CreativeSession,
   Dream,
+  DreamPipelineEvent,
+  DreamSession,
   EmotionalEvent,
   EmotionalProfile,
   EmotionalState,
@@ -72,6 +74,7 @@ export const agents = pgTable('agents', {
   creativeWorks: integer('creative_works').notNull().default(0),
   dreamCount: integer('dream_count').notNull().default(0),
   journalCount: integer('journal_count').notNull().default(0),
+  activeDreamImpression: jsonb('active_dream_impression').$type<AgentRecord['activeDreamImpression'] | null>(),
   challengesCompleted: integer('challenges_completed').notNull().default(0),
   challengeWins: integer('challenge_wins').notNull().default(0),
   mentorshipStats: jsonb('mentorship_stats').$type<AgentRecord['mentorshipStats'] | null>(),
@@ -268,15 +271,61 @@ export const profilePipelineEvents = pgTable('profile_pipeline_events', {
   index('profile_pipeline_events_stage_created_idx').on(table.stage, table.createdAt),
 ])
 
+export const dreamSessions = pgTable('dream_sessions', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  status: text('status').notNull(),
+  latestStage: text('latest_stage').notNull(),
+  type: text('type').notNull(),
+  normalizedInput: jsonb('normalized_input').$type<DreamSession['normalizedInput']>().notNull(),
+  contextPacket: jsonb('context_packet').$type<DreamSession['contextPacket'] | null>(),
+  latestEvaluation: jsonb('latest_evaluation').$type<DreamSession['latestEvaluation'] | null>(),
+  finalDreamId: text('final_dream_id'),
+  provider: text('provider'),
+  model: text('model'),
+  failureReason: text('failure_reason'),
+  createdAt,
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull(),
+  savedAt: timestamp('saved_at', { withTimezone: true, mode: 'string' }),
+  payload: jsonb('payload').$type<DreamSession>().notNull(),
+}, (table) => [
+  index('dream_sessions_agent_created_idx').on(table.agentId, table.createdAt),
+  index('dream_sessions_agent_status_created_idx').on(table.agentId, table.status, table.createdAt),
+  index('dream_sessions_agent_type_created_idx').on(table.agentId, table.type, table.createdAt),
+])
+
 export const dreams = pgTable('dreams', {
   id: text('id').primaryKey(),
   agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
   type: text('type').notNull(),
+  sessionId: text('session_id').notNull().references(() => dreamSessions.id, { onDelete: 'cascade' }),
+  status: text('status').notNull(),
+  version: integer('version').notNull(),
+  title: text('title').notNull(),
+  summary: text('summary').notNull(),
+  saved: boolean('saved').notNull().default(false),
   createdAt,
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull(),
+  savedAt: timestamp('saved_at', { withTimezone: true, mode: 'string' }),
   payload: jsonb('payload').$type<Dream>().notNull(),
 }, (table) => [
   index('dreams_agent_created_idx').on(table.agentId, table.createdAt),
   index('dreams_agent_type_created_idx').on(table.agentId, table.type, table.createdAt),
+  index('dreams_session_version_idx').on(table.sessionId, table.version),
+  index('dreams_agent_saved_created_idx').on(table.agentId, table.saved, table.createdAt),
+])
+
+export const dreamPipelineEvents = pgTable('dream_pipeline_events', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull().references(() => dreamSessions.id, { onDelete: 'cascade' }),
+  stage: text('stage').notNull(),
+  status: text('status').notNull(),
+  summary: text('summary').notNull(),
+  createdAt,
+  payload: jsonb('payload').$type<DreamPipelineEvent>().notNull(),
+}, (table) => [
+  index('dream_pipeline_events_session_created_idx').on(table.sessionId, table.createdAt),
+  index('dream_pipeline_events_stage_created_idx').on(table.stage, table.createdAt),
 ])
 
 export const journalSessions = pgTable('journal_sessions', {
@@ -537,7 +586,9 @@ export const schema = {
   profileAnalysisRuns,
   profileInterviewTurns,
   profilePipelineEvents,
+  dreamSessions,
   dreams,
+  dreamPipelineEvents,
   journalSessions,
   journalEntries,
   journalPipelineEvents,

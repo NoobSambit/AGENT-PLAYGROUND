@@ -20,6 +20,7 @@ Provides inspectability across messages, memories, relationships, dreams, journa
 ## Lifecycle
 
 - Timeline is assembled from persisted feature records rather than a standalone event table.
+- Dream events are sourced only from saved Dream V2 artifacts.
 - Journal events are sourced only from saved V2 journal entries; draft, ready-but-unsaved, and failed sessions are excluded.
 
 ## Failure Modes

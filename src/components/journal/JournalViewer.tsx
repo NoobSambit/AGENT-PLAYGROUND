@@ -123,6 +123,11 @@ function shouldShowRepair(detail: JournalSessionDetail | null) {
   return Boolean(detail?.pipelineEvents.some((event) => event.stage === 'repair_entry'))
 }
 
+function getPreferredSessionId(sessions: JournalBootstrapPayload['recentSessions']) {
+  const preferred = sessions.find((session) => session.status !== 'generating')
+  return preferred?.id || null
+}
+
 function useStillWorking(generating: boolean) {
   const [stillWorking, setStillWorking] = useState(false)
 
@@ -230,7 +235,7 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
       setType((current) => payload.allowedTypes.includes(current) ? current : payload.suggestedType)
       setUserNote((current) => current || payload.defaults.userNote)
       if (!activeSessionId) {
-        setActiveSessionId(payload.recentSessions[0]?.id || null)
+        setActiveSessionId(getPreferredSessionId(payload.recentSessions))
       }
       if (!selectedArchiveId) {
         setSelectedArchiveId(payload.recentSavedEntries[0]?.id || null)
@@ -616,8 +621,10 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center opacity-50 grayscale">
                     <DraftIcon className="h-10 w-10 mb-4 text-muted-foreground" />
-                    <div className="text-sm font-semibold">No Draft Ready</div>
-                    <div className="text-xs text-muted-foreground mt-1">This session has no generated draft yet.</div>
+                    <div className="text-sm font-semibold">{detail.session.status === 'failed' ? 'Session Ended' : 'No Draft Ready'}</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {detail.session.failureReason || 'This session has no generated draft yet.'}
+                    </div>
                   </div>
                 )
               ) : (

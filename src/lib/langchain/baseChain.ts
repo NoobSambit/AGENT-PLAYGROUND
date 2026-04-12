@@ -280,6 +280,7 @@ export class BaseChain {
     phase1Context?: Phase1Context,
     agentName?: string,
     psychologicalContext?: string,
+    dreamContext?: string,
     knowledgeContext?: string,
     learningContext?: string
   ): string {
@@ -360,6 +361,13 @@ Psychological profile and relationship tendencies:
 ${psychologicalContext}`
     }
 
+    if (dreamContext) {
+      systemPrompt += `
+
+Active dream residue:
+${dreamContext}`
+    }
+
     if (knowledgeContext) {
       systemPrompt += `
 
@@ -399,6 +407,7 @@ ${personalityContext}`
     emotionalProfile?: EmotionalProfile
     emotionalState?: EmotionalState
     psychologicalContext?: string
+    dreamContext?: string
     knowledgeContext?: string
     learningContext?: string
   }): string {
@@ -414,6 +423,7 @@ ${personalityContext}`
       },
       params.agentName,
       params.psychologicalContext,
+      params.dreamContext,
       params.knowledgeContext,
       params.learningContext
     )

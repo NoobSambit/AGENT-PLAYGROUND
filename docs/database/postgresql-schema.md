@@ -17,7 +17,9 @@
 - `profile_analysis_runs`
 - `profile_interview_turns`
 - `profile_pipeline_events`
+- `dream_sessions`
 - `dreams`
+- `dream_pipeline_events`
 - `journal_sessions`
 - `journal_entries`
 - `journal_pipeline_events`
@@ -48,5 +50,6 @@
 - Agent-owned tables cascade on agent delete.
 - Creative Studio keeps session state, artifact versions, and pipeline trace rows separate so published output is queryable without losing inspectability.
 - Profile Intelligence keeps analysis runs, interview transcript turns, and pipeline trace rows separate so the latest psychological profile can be updated without losing run history.
+- Dream Workspace keeps compose sessions, versioned draft/saved dream artifacts, and pipeline trace rows separate so staged generation, repair history, explicit save boundaries, and active dream residue stay inspectable.
 - Journal Workspace keeps compose sessions, versioned draft/saved entries, and pipeline trace rows separate so review state, repair history, and explicit save boundaries stay inspectable.
 - Shared history tables keep direct references and payload snapshots.

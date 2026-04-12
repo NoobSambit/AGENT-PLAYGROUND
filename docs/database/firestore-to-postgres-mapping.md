@@ -24,7 +24,9 @@
 - `agents/{id}/profile_analysis_runs` -> `profile_analysis_runs`
 - `agents/{id}/profile_interview_turns` -> `profile_interview_turns`
 - `agents/{id}/profile_pipeline_events` -> `profile_pipeline_events`
+- `agents/{id}/dream_sessions` -> `dream_sessions`
 - `agents/{id}/dreams` -> `dreams`
+- `agents/{id}/dream_pipeline_events` -> `dream_pipeline_events`
 - `agents/{id}/journal_entries` -> `journal_entries`
 - `agents/{id}/learning_patterns` -> `learning_patterns`
 - `agents/{id}/learning_goals` -> `learning_goals`
@@ -38,6 +40,7 @@
 
 - Relationship mirrors are deduplicated into one sorted pair row.
 - Legacy `creative_works` are intentionally not backfilled into the new Creative Studio tables.
+- Legacy pre-V2 dream rows are intentionally deleted during Dream Workspace cutover rather than migrated into the new session model.
 - Skill progression IDs become `${agentId}:${category}`.
 - Rate limit IDs become `${feature}:${agentId}`.
 - Agent counters remain on `agents` and are verified against imported child records.

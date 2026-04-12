@@ -662,11 +662,24 @@ export class EmotionalService {
 
     if (source === 'dream_generation') {
       deltas.surprise += 0.07
-      deltas.fear += countMatches(text, ['shadow', 'chase', 'fall', 'nightmare', 'dark']) > 0 ? 0.05 : 0.02
-      deltas.anticipation += 0.02
+      const nightmareMarkers = countMatches(text, ['shadow', 'chase', 'fall', 'nightmare', 'dark', 'teeth', 'threat'])
+      const propheticMarkers = countMatches(text, ['prophetic', 'future', 'warning', 'forecast', 'signal', 'coming'])
+      const recurringMarkers = countMatches(text, ['recurring', 'again', 'returning', 'loop', 'stuck', 'repeating'])
+      deltas.fear += nightmareMarkers > 0 ? 0.06 : recurringMarkers > 0 ? 0.03 : 0.02
+      deltas.anticipation += propheticMarkers > 0 ? 0.05 : 0.02
+      deltas.sadness += recurringMarkers > 0 ? 0.03 : 0
       reasons.set('surprise', 'Dream generation surfaced unusual symbolic combinations.')
-      reasons.set('fear', 'Dream imagery can trigger a small residual caution signal.')
-      reasons.set('anticipation', 'The dream left unresolved threads to think about.')
+      reasons.set('fear', nightmareMarkers > 0
+        ? 'Nightmare imagery left a stronger residual caution signal.'
+        : recurringMarkers > 0
+          ? 'Recurring dream loops left behind a guarded emotional residue.'
+          : 'Dream imagery can trigger a small residual caution signal.')
+      reasons.set('anticipation', propheticMarkers > 0
+        ? 'Prophetic dream signals increased forward-looking vigilance.'
+        : 'The dream left unresolved threads to think about.')
+      if (recurringMarkers > 0) {
+        reasons.set('sadness', 'Recurring motifs can deepen a sense of unresolved emotional weight.')
+      }
     }
 
     const boundedDeltas = this.boundDeltas(deltas)

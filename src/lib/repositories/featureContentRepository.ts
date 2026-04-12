@@ -12,6 +12,8 @@ function mapDreamRow(row: DreamRow): Dream {
     ...row.payload,
     id: row.id,
     createdAt: asIsoString(row.createdAt),
+    updatedAt: asIsoString(row.updatedAt),
+    savedAt: row.savedAt ? asIsoString(row.savedAt) : undefined,
   }
 }
 
@@ -27,7 +29,10 @@ function mapJournalRow(row: JournalRow): JournalEntry {
 export class FeatureContentRepository {
   static async listDreams(agentId: string, limitCount?: number): Promise<Dream[]> {
     const rows = await getDb().query.dreams.findMany({
-      where: eq(dreams.agentId, agentId),
+      where: andAll([
+        eq(dreams.agentId, agentId),
+        eq(dreams.saved, true),
+      ]),
       orderBy: desc(dreams.createdAt),
       limit: limitCount,
     })
@@ -38,8 +43,16 @@ export class FeatureContentRepository {
     const [row] = await getDb().insert(dreams).values({
       id: record.id,
       agentId: record.agentId,
+      sessionId: record.sessionId,
       type: record.type,
+      status: record.status,
+      version: record.version,
+      title: record.title,
+      summary: record.summary,
+      saved: Boolean(record.savedAt),
       createdAt: asIsoString(record.createdAt),
+      updatedAt: asIsoString(record.updatedAt),
+      savedAt: record.savedAt ? asIsoString(record.savedAt) : null,
       payload: record,
     }).returning()
 
@@ -50,6 +63,7 @@ export class FeatureContentRepository {
     const [row] = await getDb().select({ value: count() }).from(dreams).where(
       and(
         eq(dreams.agentId, agentId),
+        eq(dreams.saved, true),
         gte(dreams.createdAt, asIsoString(start))
       )
     )

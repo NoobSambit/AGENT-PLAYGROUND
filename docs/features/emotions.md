@@ -48,6 +48,11 @@ Emotion state is surfaced through:
 - `POST /api/agents/[id]/chat`
 - content generation flows such as creative, dream, and journal where applicable
 
+Dream-specific note:
+
+- saving a Dream V2 artifact can activate `agents.activeDreamImpression`
+- that impression is not a replacement for live emotion; it is a bounded behavioral tint layered beside the emotional state
+
 ## Ownership
 
 - Services: `emotionalService`, `AgentService`

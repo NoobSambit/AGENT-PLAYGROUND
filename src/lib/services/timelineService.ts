@@ -9,6 +9,7 @@ import {
   NarrativeThread,
   TimelineFilters,
   AgentRecord,
+  Dream,
   JournalEntry,
   MemoryRecord,
   MessageRecord,
@@ -51,6 +52,7 @@ export class TimelineService {
     agent: AgentRecord,
     memories: MemoryRecord[],
     messages: MessageRecord[],
+    dreams: Dream[] = [],
     journalEntries: JournalEntry[] = [],
     filters?: TimelineFilters
   ): Promise<TimelineEvent[]> {
@@ -69,6 +71,9 @@ export class TimelineService {
       const emotionalEvents = this.convertEmotionalEventsToTimeline(agent.id, agent.emotionalHistory)
       events.push(...emotionalEvents)
     }
+
+    const dreamEvents = this.convertDreamsToTimeline(agent.id, dreams)
+    events.push(...dreamEvents)
 
     const journalEvents = this.convertJournalEntriesToTimeline(agent.id, journalEntries)
     events.push(...journalEvents)
@@ -198,6 +203,25 @@ export class TimelineService {
         collection: 'journal_entries',
         documentId: entry.id,
       }
+    }))
+  }
+
+  private convertDreamsToTimeline(agentId: string, dreams: Dream[]): TimelineEvent[] {
+    return dreams.map((dream) => ({
+      id: `dream-${dream.id}`,
+      agentId,
+      type: 'dream' as TimelineEventType,
+      title: dream.title,
+      description: dream.summary,
+      timestamp: dream.savedAt || dream.updatedAt || dream.createdAt,
+      importance: Math.min(10, Math.max(5, Math.round((dream.evaluation?.overallScore || 80) / 10))),
+      metadata: {
+        topics: [dream.type, ...dream.themes].slice(0, 6),
+      },
+      contentRef: {
+        collection: 'dreams',
+        documentId: dream.id,
+      },
     }))
   }
 

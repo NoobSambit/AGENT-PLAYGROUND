@@ -16,6 +16,7 @@ import { PersonalityEventService } from './personalityEventService'
 import { PersonalityService } from './personalityService'
 import { LearningService } from './learningService'
 import { buildMessageRenderData } from '@/lib/chat/rendering'
+import { dreamService } from './dreamService'
 
 const STOP_WORDS = new Set([
   'the', 'and', 'for', 'are', 'but', 'not', 'you', 'that', 'with', 'this', 'from',
@@ -111,6 +112,7 @@ export class ChatTurnService {
     })
 
     let response: AgentResponse
+    const activeDreamImpression = dreamService.getActiveImpression(agent)
 
     try {
       response = await AgentChain.getInstance(agentId).generateResponse(
@@ -162,6 +164,13 @@ export class ChatTurnService {
           phase: event.phase,
           source: event.source,
         })),
+        ...(activeDreamImpression ? {
+          dreamImpression: {
+            sourceDreamId: activeDreamImpression.sourceDreamId,
+            behaviorTilt: activeDreamImpression.behaviorTilt,
+            expiresAt: activeDreamImpression.expiresAt,
+          },
+        } : {}),
       },
     })
 

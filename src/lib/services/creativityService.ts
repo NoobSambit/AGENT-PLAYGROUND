@@ -635,6 +635,9 @@ class CreativityService {
     const recentDreams = await FeatureContentRepository.listDreams(agent.id, 1)
     const library = await CreativeStudioRepository.listPublishedLibrary(agent.id)
     const dominantEmotion = emotionalService.getDominantEmotion(agent.emotionalState, agent.emotionalProfile)
+    const activeDreamImpression = agent.activeDreamImpression && new Date(agent.activeDreamImpression.expiresAt).getTime() > Date.now()
+      ? agent.activeDreamImpression
+      : null
 
     const signals: CreativeContextSignal[] = []
 
@@ -735,10 +738,22 @@ class CreativityService {
         id: `dream-${dream.id}`,
         sourceType: 'dream',
         label: `Dream image ${index + 1}`,
-        snippet: summarizeText(dream.narrative, 180),
+        snippet: summarizeText(`${dream.summary} Themes: ${dream.themes.join(', ')}`, 180),
         reason: 'Dream fragments can enrich imagery and symbolism.',
         weight: 0.62 - index * 0.04,
         linkedEntityId: dream.id,
+      })
+    }
+
+    if (activeDreamImpression) {
+      signals.push({
+        id: `dream-impression-${activeDreamImpression.sourceDreamId}`,
+        sourceType: 'dream',
+        label: 'Active dream residue',
+        snippet: summarizeText(`${activeDreamImpression.behaviorTilt}: ${activeDreamImpression.summary}`, 180),
+        reason: 'A saved dream can softly bias emphasis or imagery without taking over.',
+        weight: 0.57,
+        linkedEntityId: activeDreamImpression.sourceDreamId,
       })
     }
 
@@ -763,6 +778,10 @@ class CreativityService {
       emotionalSummary: this.describeEmotionalContext(agent),
       voiceDirectives: this.buildVoiceDirectives(agent, brief),
       psychologicalDirectives: this.buildPsychologicalDirectives(agent),
+      dreamDirectives: activeDreamImpression ? [
+        `Active dream tilt: ${activeDreamImpression.behaviorTilt}.`,
+        `Residual guidance: ${activeDreamImpression.guidance}`,
+      ] : [],
       continuityMotifs: library.slice(0, 3).map((item) => item.artifact.title),
       selectedSignals,
     }
@@ -779,6 +798,7 @@ class CreativityService {
       'You are writing a creative piece, not answering like a generic assistant.',
       `Format: ${brief.format}. Tone: ${brief.tone}. Audience: ${brief.audience}.`,
       `Emotional summary: ${contextPacket.emotionalSummary}`,
+      ...(contextPacket.dreamDirectives?.length ? [`Dream residue: ${contextPacket.dreamDirectives.join(' ')}`] : []),
       `Voice directives: ${contextPacket.voiceDirectives.join(' | ')}`,
       `Psychological directives: ${contextPacket.psychologicalDirectives.join(' | ') || 'Maintain internal coherence and curiosity.'}`,
       'Return valid JSON with keys: title, summary, content, themes, inspiration.',

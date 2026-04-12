@@ -5,6 +5,8 @@
 ```bash
 npm run lint
 npm run build
+npm run dream:evaluate
+npm run dream:cutover -- --confirm-cutover
 npm run db:migrate
 npm run db:export-firestore -- --out=./tmp/firestore-export.json
 npm run db:backfill -- --input=./tmp/firestore-export.json --dry-run
@@ -30,4 +32,5 @@ npm run db:verify-parity -- --input=./tmp/firestore-export.json
 
 - Run `npm run lint`.
 - Run `npm run build` for non-trivial changes.
+- Run `npm run dream:evaluate` when Dream Workspace prompts, quality heuristics, or behavior tinting change.
 - If the change affects persistence, run `npm run db:verify-parity` against a representative export.

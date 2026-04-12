@@ -400,14 +400,21 @@ export default function AgentDetail() {
     if (!currentAgent) return
     try {
       const loadedMemories = memories.length > 0 ? memories : await loadMemories()
-      const journalBootstrap = await fetch(`/api/agents/${currentAgent.id}/journal`, { cache: 'no-store' })
+      const [journalBootstrap, dreamBootstrap] = await Promise.all([
+        fetch(`/api/agents/${currentAgent.id}/journal`, { cache: 'no-store' }),
+        fetch(`/api/agents/${currentAgent.id}/dream`, { cache: 'no-store' }),
+      ])
       const journalPayload = journalBootstrap.ok
         ? await journalBootstrap.json() as { recentSavedEntries?: JournalEntry[] }
+        : null
+      const dreamPayload = dreamBootstrap.ok
+        ? await dreamBootstrap.json() as { recentSavedDreams?: import('@/types/database').Dream[] }
         : null
       const events = await timelineService.aggregateEvents(
         currentAgent as unknown as AgentRecord,
         loadedMemories,
         messages as unknown as MessageRecord[],
+        dreamPayload?.recentSavedDreams || [],
         journalPayload?.recentSavedEntries || []
       )
       setTimelineEvents(events)
@@ -1319,20 +1326,9 @@ export default function AgentDetail() {
                 </CardContent>
               </Card>
             ) : activeTab === 'dreams' ? (
-              /* Phase 2: Dream Journal Tab */
+              /* Dream Workspace V2 Tab */
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                <CardHeader className="space-y-4">
-                  <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-sm bg-[var(--color-pastel-purple)]/20">
-                      <Moon className="h-6 w-6 text-[var(--color-pastel-purple)]" />
-                    </div>
-                    Dream Journal
-                  </CardTitle>
-                  <CardDescription>
-                    Explore {currentAgent.name}&apos;s subconscious through generated dreams
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
+                <CardContent className="p-6">
                   <DreamJournal agentId={currentAgent.id} agentName={currentAgent.name} />
                 </CardContent>
               </Card>

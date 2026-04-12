@@ -13,6 +13,7 @@ import {
 } from '@/lib/journal/firestoreStore'
 import { JournalWorkspaceRepository } from '@/lib/repositories/journalWorkspaceRepository'
 import { RelationshipRepository } from '@/lib/repositories/relationshipRepository'
+import { FeatureContentRepository } from '@/lib/repositories/featureContentRepository'
 import type {
   AgentRecord,
   JournalBootstrapPayload,
@@ -39,6 +40,7 @@ import { MessageService } from './messageService'
 
 const DAILY_LIMIT = 12
 const RATE_WINDOW_MS = 24 * 60 * 60 * 1000
+const STALE_GENERATING_SESSION_MS = 3 * 60 * 1000
 
 const JOURNAL_TYPES: JournalEntryType[] = [
   'daily_reflection',
@@ -164,13 +166,14 @@ class JournalService {
     const recentSessions = readsFromPostgres(getPersistenceMode())
       ? await JournalWorkspaceRepository.listSessions(agentId, { limit: 8 })
       : await listJournalSessionsFromFirestore(agentId, 8)
+    const normalizedSessions = await Promise.all(recentSessions.map((session) => this.recoverStaleGeneratingSession(agentId, session)))
 
     const recentSavedEntries = readsFromPostgres(getPersistenceMode())
       ? await JournalWorkspaceRepository.listEntriesForAgent(agentId, { savedOnly: true, limit: 8 })
       : await listSavedJournalEntriesFromFirestore(agentId, 8)
 
-    const readyToSaveCount = recentSessions.filter((session) => session.status === 'ready').length
-    const failedSessions = recentSessions.filter((session) => session.status === 'failed').length
+    const readyToSaveCount = normalizedSessions.filter((session) => session.status === 'ready').length
+    const failedSessions = normalizedSessions.filter((session) => session.status === 'failed').length
 
     return {
       agent: {
@@ -184,7 +187,7 @@ class JournalService {
         userNote: '',
         focus: [],
       },
-      recentSessions,
+      recentSessions: normalizedSessions,
       recentSavedEntries,
       metrics: {
         totalSavedEntries: recentSavedEntries.length,
@@ -245,10 +248,11 @@ class JournalService {
 
   async getSessionDetail(agentId: string, sessionId: string): Promise<JournalSessionDetail> {
     if (readsFromPostgres(getPersistenceMode())) {
-      const session = await JournalWorkspaceRepository.getSession(sessionId)
-      if (!session || session.agentId !== agentId) {
+      const rawSession = await JournalWorkspaceRepository.getSession(sessionId)
+      if (!rawSession || rawSession.agentId !== agentId) {
         return { session: null, entries: [], pipelineEvents: [] }
       }
+      const session = await this.recoverStaleGeneratingSession(agentId, rawSession)
       return {
         session,
         entries: await JournalWorkspaceRepository.listEntriesForSession(sessionId),
@@ -256,7 +260,11 @@ class JournalService {
       }
     }
 
-    return getJournalSessionDetailFromFirestore(agentId, sessionId)
+    const detail = await getJournalSessionDetailFromFirestore(agentId, sessionId)
+    return {
+      ...detail,
+      session: detail.session ? await this.recoverStaleGeneratingSession(agentId, detail.session) : null,
+    }
   }
 
   async generateSession(agentId: string, sessionId: string, providerInfo: LLMProviderInfo | null): Promise<JournalSessionDetail> {
@@ -530,6 +538,37 @@ class JournalService {
     return detail.session?.agentId === agentId ? detail.session : null
   }
 
+  private async recoverStaleGeneratingSession(agentId: string, session: JournalSession): Promise<JournalSession> {
+    if (session.status !== 'generating') return session
+
+    const ageMs = Date.now() - new Date(session.updatedAt || session.createdAt).getTime()
+    if (Number.isNaN(ageMs) || ageMs < STALE_GENERATING_SESSION_MS) return session
+
+    const recovered: JournalSession = {
+      ...session,
+      status: 'failed',
+      latestStage: 'failed',
+      failureReason: session.failureReason || 'A previous generation stalled before completion. Regenerate to start a fresh draft.',
+      updatedAt: new Date().toISOString(),
+    }
+
+    await this.saveSession(recovered)
+    await this.savePipelineEvent(agentId, {
+      id: generateId('journal_event'),
+      sessionId: session.id,
+      stage: 'failed',
+      status: 'failed',
+      summary: 'Recovered a stale generating session and marked it failed so the workspace can return to compose.',
+      payload: {
+        recoveredFromStage: session.latestStage,
+        previousUpdatedAt: session.updatedAt,
+      },
+      createdAt: recovered.updatedAt,
+    })
+
+    return recovered
+  }
+
   private async getEntryRecord(entryId: string) {
     if (readsFromPostgres(getPersistenceMode())) {
       return JournalWorkspaceRepository.getEntry(entryId)
@@ -583,11 +622,12 @@ class JournalService {
   }
 
   private async buildContextSignals(agent: AgentRecord, input: JournalComposeInput): Promise<JournalContextSignal[]> {
-    const [memories, messages, relationships, savedJournals] = await Promise.all([
+    const [memories, messages, relationships, savedJournals, savedDreams] = await Promise.all([
       MemoryService.getRecentMemories(agent.id, 10),
       MessageService.getMessagesByAgentId(agent.id),
       RelationshipRepository.listForAgent(agent.id),
       this.listSavedEntries(agent.id, { limit: 3 }),
+      FeatureContentRepository.listDreams(agent.id, 2),
     ])
 
     const signals: JournalContextSignal[] = [
@@ -718,6 +758,30 @@ class JournalService {
         reason: 'Saved journal history maintains continuity without inheriting legacy drafts.',
         weight: 0.6 - index * 0.04,
         linkedEntityId: entry.id,
+      })
+    }
+
+    for (const [index, dream] of savedDreams.entries()) {
+      signals.push({
+        id: `dream-${dream.id}`,
+        sourceType: 'journal',
+        label: `Saved dream ${index + 1}`,
+        snippet: summarizeText(`${dream.summary} Themes: ${dream.themes.join(', ')}`, 180),
+        reason: 'Saved dreams can improve introspective continuity without leaking draft-only material.',
+        weight: 0.56 - index * 0.04,
+        linkedEntityId: dream.id,
+      })
+    }
+
+    if (agent.activeDreamImpression && new Date(agent.activeDreamImpression.expiresAt).getTime() > Date.now()) {
+      signals.push({
+        id: `dream-impression-${agent.activeDreamImpression.sourceDreamId}`,
+        sourceType: 'emotion',
+        label: 'Active dream residue',
+        snippet: summarizeText(`${agent.activeDreamImpression.behaviorTilt}: ${agent.activeDreamImpression.summary}`, 180),
+        reason: 'An active saved dream can softly tint present reflection and continuity.',
+        weight: 0.58,
+        linkedEntityId: agent.activeDreamImpression.sourceDreamId,
       })
     }
 

@@ -24,6 +24,9 @@
 - `POST /api/agents/[id]/creative/sessions/[sessionId]/generate`
 - `POST /api/agents/[id]/creative/sessions/[sessionId]/publish`
 - `GET|POST /api/agents/[id]/dream`
+- `GET /api/agents/[id]/dream/sessions/[sessionId]`
+- `POST /api/agents/[id]/dream/sessions/[sessionId]/generate`
+- `POST /api/agents/[id]/dream/sessions/[sessionId]/save`
 - `GET|POST /api/agents/[id]/journal`
 - `GET /api/agents/[id]/journal/sessions/[sessionId]`
 - `POST /api/agents/[id]/journal/sessions/[sessionId]/generate`
@@ -71,6 +74,11 @@
 - `POST /api/agents/[id]/creative/sessions/[sessionId]/generate` runs the two-pass draft -> evaluate -> repair workflow and returns the full session detail.
 - `POST /api/agents/[id]/creative/sessions/[sessionId]/publish` publishes the final artifact and increments agent creative counters at publish time only.
 - `GET /api/agents/[id]/creative/sessions/[sessionId]` returns one session with artifacts and pipeline trace events.
+- `GET /api/agents/[id]/dream` now returns Dream Workspace bootstrap state: available dream types, suggested type, minimal compose defaults, active dream impression, recent sessions, recent saved dreams, and archive metrics.
+- `POST /api/agents/[id]/dream` now creates a Dream V2 draft session instead of generating and saving immediately.
+- `POST /api/agents/[id]/dream/sessions/[sessionId]/generate` runs the prepare-context -> conditioning -> draft -> extraction -> evaluation -> optional repair -> impression-preview workflow and persists real stage events.
+- `POST /api/agents/[id]/dream/sessions/[sessionId]/save` only succeeds for passing ready sessions and is the only dream write that increments counters, updates live emotion, activates the dream impression, and makes the artifact visible downstream.
+- `GET /api/agents/[id]/dream/sessions/[sessionId]` returns one dream session with artifact versions and pipeline trace events.
 - `GET /api/agents/[id]/journal` now returns Journal Workspace bootstrap state: allowed types, suggested type, minimal compose defaults, recent sessions, recent saved entries, metrics, and archive filters.
 - `POST /api/agents/[id]/journal` now creates a draft journal session with explicit compose intent instead of generating and saving immediately.
 - `POST /api/agents/[id]/journal/sessions/[sessionId]/generate` runs the prepare-context -> voice-conditioning -> draft -> evaluation -> optional repair workflow and persists pipeline events for real loading UI.
