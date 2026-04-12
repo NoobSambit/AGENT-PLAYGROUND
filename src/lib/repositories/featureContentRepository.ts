@@ -64,6 +64,7 @@ export class FeatureContentRepository {
     const rows = await getDb().query.journalEntries.findMany({
       where: andAll([
         eq(journalEntries.agentId, agentId),
+        eq(journalEntries.saved, true),
         options?.type ? eq(journalEntries.type, options.type) : undefined
       ]),
       orderBy: desc(journalEntries.createdAt),
@@ -76,9 +77,16 @@ export class FeatureContentRepository {
     const [row] = await getDb().insert(journalEntries).values({
       id: record.id,
       agentId: record.agentId,
+      sessionId: record.sessionId,
       type: record.type,
+      status: record.status,
+      version: record.version,
+      title: record.title,
+      summary: record.summary,
+      saved: Boolean(record.savedAt),
       createdAt: asIsoString(record.createdAt),
       updatedAt: asIsoString(record.updatedAt),
+      savedAt: record.savedAt ? asIsoString(record.savedAt) : null,
       payload: record,
     }).returning()
 
@@ -89,6 +97,7 @@ export class FeatureContentRepository {
     const [row] = await getDb().select({ value: count() }).from(journalEntries).where(
       and(
         eq(journalEntries.agentId, agentId),
+        eq(journalEntries.saved, true),
         gte(journalEntries.createdAt, asIsoString(start))
       )
     )

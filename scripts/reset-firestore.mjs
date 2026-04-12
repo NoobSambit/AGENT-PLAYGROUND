@@ -64,6 +64,8 @@ const agentSubcollections = [
   'relationships',
   'dreams',
   'journal_entries',
+  'journal_sessions',
+  'journal_pipeline_events',
   'creative_works',
   'creative_sessions',
   'creative_artifacts',

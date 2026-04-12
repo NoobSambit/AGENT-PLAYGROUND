@@ -26,6 +26,7 @@ import type {
   MessageRecord,
 } from '@/types/database'
 import { AgentService } from './agentService'
+import { agentStatsService } from './agentStatsService'
 import { emotionalService } from './emotionalService'
 
 const DAILY_LIMIT = 20
@@ -466,7 +467,7 @@ class CreativityService {
       createdAt: new Date().toISOString(),
     })
 
-    let finalArtifact = {
+    let finalArtifact: CreativeArtifact = {
       ...savedDraft,
       evaluation: draftEvaluation,
       updatedAt: new Date().toISOString(),
@@ -575,7 +576,7 @@ class CreativityService {
       const agent = await AgentService.getAgentById(agentId)
       if (agent) {
         const nextStats = {
-          ...agent.stats,
+          ...agentStatsService.normalizeStats(agent.stats),
           creativeWorksCreated: (agent.stats?.creativeWorksCreated || 0) + 1,
         }
 

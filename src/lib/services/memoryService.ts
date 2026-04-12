@@ -149,7 +149,10 @@ async function listMemoriesFromFirestore(agentId: string, options?: {
     records = records.filter((memory) => memory.origin === options.origin)
   }
   if (options?.createdBefore) {
-    records = records.filter((memory) => new Date(memory.timestamp).getTime() <= new Date(options.createdBefore).getTime())
+    const createdBefore = options.createdBefore
+    records = records.filter((memory) => memory.timestamp
+      ? new Date(memory.timestamp).getTime() <= new Date(createdBefore).getTime()
+      : false)
   }
   return records
 }

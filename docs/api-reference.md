@@ -25,6 +25,9 @@
 - `POST /api/agents/[id]/creative/sessions/[sessionId]/publish`
 - `GET|POST /api/agents/[id]/dream`
 - `GET|POST /api/agents/[id]/journal`
+- `GET /api/agents/[id]/journal/sessions/[sessionId]`
+- `POST /api/agents/[id]/journal/sessions/[sessionId]/generate`
+- `POST /api/agents/[id]/journal/sessions/[sessionId]/save`
 - `GET|POST /api/agents/[id]/learning`
 - `GET|POST /api/agents/[id]/profile`
 - `GET /api/agents/[id]/profile/evolution`
@@ -68,6 +71,11 @@
 - `POST /api/agents/[id]/creative/sessions/[sessionId]/generate` runs the two-pass draft -> evaluate -> repair workflow and returns the full session detail.
 - `POST /api/agents/[id]/creative/sessions/[sessionId]/publish` publishes the final artifact and increments agent creative counters at publish time only.
 - `GET /api/agents/[id]/creative/sessions/[sessionId]` returns one session with artifacts and pipeline trace events.
+- `GET /api/agents/[id]/journal` now returns Journal Workspace bootstrap state: allowed types, suggested type, minimal compose defaults, recent sessions, recent saved entries, metrics, and archive filters.
+- `POST /api/agents/[id]/journal` now creates a draft journal session with explicit compose intent instead of generating and saving immediately.
+- `POST /api/agents/[id]/journal/sessions/[sessionId]/generate` runs the prepare-context -> voice-conditioning -> draft -> evaluation -> optional repair workflow and persists pipeline events for real loading UI.
+- `POST /api/agents/[id]/journal/sessions/[sessionId]/save` only succeeds for passing ready sessions and is the only journal write that increments counters or feeds downstream consumers.
+- `GET /api/agents/[id]/journal/sessions/[sessionId]` returns one journal session with entry versions and live pipeline events.
 - `GET /api/agents/[id]/profile` now returns Profile workspace bootstrap state: latest psychological profile, freshness, recent analysis runs, communication fingerprint telemetry, and page readiness metrics.
 - `POST /api/agents/[id]/profile` remains a compatibility endpoint and now delegates to the run-based analysis orchestration before returning the refreshed bootstrap.
 - `POST /api/agents/[id]/profile/runs` creates a draft profile analysis run.

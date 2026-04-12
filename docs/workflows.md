@@ -378,6 +378,25 @@ Expected behavior:
 6. UI can publish with `POST /api/agents/[id]/creative/sessions/[sessionId]/publish`.
 7. Only publish increments agent creative counters.
 
+### Journal Workspace
+
+1. UI loads `GET /api/agents/[id]/journal`.
+2. User creates a draft session with `POST /api/agents/[id]/journal`.
+3. UI immediately switches into the active session workspace and triggers `POST /api/agents/[id]/journal/sessions/[sessionId]/generate`.
+4. The server:
+   - ranks bounded context from persona, goals, profiles, emotion, messages, memories, relationships, and saved V2 journal history
+   - builds a voice packet using recent communication fingerprint evidence when enough replies exist, otherwise falls back to profile baselines
+   - generates a draft journal entry
+   - evaluates the draft against the stored journal rubric
+   - runs one repair pass if needed
+   - persists pipeline events for every meaningful stage transition
+5. While generation runs, the client polls `GET /api/agents/[id]/journal/sessions/[sessionId]` and renders the stage rail from real pipeline state.
+6. `POST /api/agents/[id]/journal/sessions/[sessionId]/save` is the explicit second step. Only that save:
+   - marks the final version as saved
+   - increments journal counters
+   - updates emotional state
+   - makes the entry visible to timeline and downstream consumers
+
 ## Run Multi-Agent Simulation
 
 1. Open `/simulation`.

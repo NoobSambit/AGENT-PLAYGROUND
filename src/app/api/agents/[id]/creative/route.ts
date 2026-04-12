@@ -72,7 +72,17 @@ export async function POST(
   try {
     const { id: agentId } = await params
     const body = await request.json() as CreateSessionRequest
-    const session = await creativityService.createSession(agentId, body)
+    const session = await creativityService.createSession(agentId, {
+      format: body.format as Parameters<typeof creativityService.createSession>[1]['format'],
+      intent: body.intent,
+      audience: body.audience,
+      tone: body.tone as Parameters<typeof creativityService.createSession>[1]['tone'],
+      length: body.length as Parameters<typeof creativityService.createSession>[1]['length'],
+      mustInclude: Array.isArray(body.mustInclude) ? body.mustInclude : body.mustInclude ? [body.mustInclude] : undefined,
+      avoid: Array.isArray(body.avoid) ? body.avoid : body.avoid ? [body.avoid] : undefined,
+      referenceNotes: body.referenceNotes,
+      rawPrompt: body.rawPrompt,
+    })
 
     if (getPersistenceMode() !== 'postgres') {
       await writeCreativeSessionToFirestore(session)

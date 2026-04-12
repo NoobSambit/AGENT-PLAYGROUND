@@ -11,6 +11,8 @@
     "scenarios:evaluate": "node --env-file=.env.local scripts/evaluate-scenarios.mjs",
     "creative:evaluate": "node --env-file=.env.local scripts/evaluate-creative.mjs",
     "profile:evaluate": "node --env-file=.env.local scripts/evaluate-profile.mjs",
+    "journal:evaluate": "node --env-file=.env.local scripts/evaluate-journal.mjs",
+    "journal:cutover": "node --env-file=.env.local scripts/journal-cutover.mjs",
     "db:migrate": "node --env-file=.env.local scripts/db-migrate.mjs",
     "db:export-firestore": "node --env-file=.env.local scripts/firestore-export.mjs",
     "db:backfill": "node --env-file=.env.local scripts/firestore-to-postgres.mjs",

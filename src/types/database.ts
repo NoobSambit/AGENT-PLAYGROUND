@@ -934,49 +934,213 @@ export interface Dream {
 export type JournalEntryType =
   | 'daily_reflection'
   | 'emotional_processing'
-  | 'goal_review'
-  | 'relationship_thoughts'
-  | 'creative_musings'
-  | 'philosophical_pondering'
-  | 'memory_recap'
-  | 'future_plans'
+  | 'goal_alignment'
+  | 'relationship_checkpoint'
+  | 'memory_revisit'
+  | 'idea_capture'
 
-export type JournalMood =
-  | 'contemplative'
-  | 'excited'
-  | 'melancholic'
-  | 'grateful'
-  | 'anxious'
-  | 'hopeful'
-  | 'nostalgic'
-  | 'determined'
+export type JournalFocus = 'emotion' | 'memory' | 'relationship' | 'goal' | 'continuity'
+
+export type JournalSessionStatus =
+  | 'draft'
+  | 'generating'
+  | 'ready'
+  | 'saved'
+  | 'failed'
+
+export type JournalEntryStatus =
+  | 'draft'
+  | 'repaired'
+  | 'saved'
+  | 'failed'
+
+export type JournalPipelineStage =
+  | 'prepare_context'
+  | 'condition_voice'
+  | 'draft_entry'
+  | 'evaluate_quality'
+  | 'repair_entry'
+  | 'ready'
+  | 'saved'
+  | 'failed'
+
+export type JournalContextSourceType =
+  | 'persona'
+  | 'goal'
+  | 'linguistic_profile'
+  | 'psychological_profile'
+  | 'emotion'
+  | 'emotional_temperament'
+  | 'emotional_history'
+  | 'communication_fingerprint'
+  | 'memory'
+  | 'message'
+  | 'relationship'
+  | 'journal'
+
+export type JournalQualityDimension =
+  | 'voiceConsistency'
+  | 'emotionalAuthenticity'
+  | 'reflectionDepth'
+  | 'specificityGrounding'
+  | 'continuity'
+  | 'readability'
+
+export type JournalHardFailureFlag =
+  | 'generic_assistant_phrasing'
+  | 'prompt_or_schema_leakage'
+  | 'shallow_filler'
+  | 'wrong_entry_type_behavior'
+  | 'contradiction_with_agent_state'
+  | 'poor_context_grounding'
+
+export interface JournalRubricScore {
+  score: number
+  rationale: string
+}
+
+export interface JournalQualityEvaluation {
+  pass: boolean
+  overallScore: number
+  dimensions: Record<JournalQualityDimension, JournalRubricScore>
+  hardFailureFlags: JournalHardFailureFlag[]
+  strengths: string[]
+  weaknesses: string[]
+  repairInstructions: string[]
+  evaluatorSummary: string
+}
+
+export interface JournalStructuredReflection {
+  insights: string[]
+  openQuestions: string[]
+  nextActions: string[]
+  gratitudes: string[]
+  themes: string[]
+  referencedEntities: string[]
+  conciseSummary: string
+}
+
+export interface JournalContextSignal {
+  id: string
+  sourceType: JournalContextSourceType
+  label: string
+  snippet: string
+  reason: string
+  weight: number
+  linkedEntityId?: string
+}
+
+export interface JournalVoicePacket {
+  personaSummary: string
+  goals: string[]
+  linguisticProfileSummary: string
+  psychologicalProfileSummary: string
+  communicationStyleSummary: string
+  emotionalStateSummary: string
+  emotionalTemperamentSummary: string
+  recentEmotionalHistorySummary: string
+  communicationFingerprintSummary?: string
+  selectedSignals: JournalContextSignal[]
+  fallbackUsed: 'fingerprint' | 'baseline'
+}
+
+export interface JournalComposeInput {
+  type: JournalEntryType
+  userNote?: string
+  focus?: JournalFocus[]
+}
+
+export interface JournalSession {
+  id: string
+  agentId: string
+  status: JournalSessionStatus
+  latestStage: JournalPipelineStage
+  type: JournalEntryType
+  normalizedInput: JournalComposeInput
+  contextPacket?: {
+    selectedSignals: JournalContextSignal[]
+    dominantEmotion?: EmotionType | null
+    summary: string
+  }
+  voicePacket?: JournalVoicePacket
+  latestEvaluation?: JournalQualityEvaluation
+  finalEntryId?: string
+  provider?: string
+  model?: string
+  failureReason?: string
+  createdAt: string
+  updatedAt: string
+  savedAt?: string
+}
 
 export interface JournalEntry {
   id: string
   agentId: string
+  sessionId: string
   type: JournalEntryType
+  status: JournalEntryStatus
+  version: number
   title: string
+  summary: string
   content: string
-
-  // Context
-  mood: JournalMood
-  emotionalState: EmotionalState
-  significantEvents: string[] // What happened that day/recently
-
-  // Reflections
-  insights: string[]
-  questions: string[] // Questions the agent is pondering
-  goals: string[] // Goals mentioned or set
-  gratitudes: string[] // Things the agent is grateful for
-
-  // Meta
-  wordCount: number
-  themes: string[]
-  referencedMemories: string[] // Memory IDs
-  referencedRelationships: string[] // Relationship IDs
-
+  render: MessageRenderData
+  mood: {
+    dominantEmotion?: EmotionType | null
+    label: string
+    intensity?: number
+  }
+  metadata: {
+    focus: JournalFocus[]
+    userNote?: string
+    contextSummary?: string
+  }
+  evaluation?: JournalQualityEvaluation
+  references: string[]
+  structured: JournalStructuredReflection
   createdAt: string
   updatedAt: string
+  savedAt?: string
+}
+
+export interface JournalPipelineEvent {
+  id: string
+  sessionId: string
+  stage: JournalPipelineStage
+  status: 'completed' | 'active' | 'skipped' | 'failed'
+  summary: string
+  payload: Record<string, unknown>
+  createdAt: string
+}
+
+export interface JournalBootstrapPayload {
+  agent: {
+    id: string
+    name: string
+    journalCount: number
+  }
+  allowedTypes: JournalEntryType[]
+  suggestedType: JournalEntryType
+  defaults: {
+    userNote: string
+    focus: JournalFocus[]
+  }
+  recentSessions: JournalSession[]
+  recentSavedEntries: JournalEntry[]
+  metrics: {
+    totalSavedEntries: number
+    totalSessions: number
+    readyToSaveCount: number
+    failedSessions: number
+  }
+  archiveFilters: {
+    types: JournalEntryType[]
+  }
+}
+
+export interface JournalSessionDetail {
+  session: JournalSession | null
+  entries: JournalEntry[]
+  pipelineEvents: JournalPipelineEvent[]
 }
 
 // ============================================

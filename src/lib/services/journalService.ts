@@ -1,575 +1,1038 @@
-/**
- * Journal Service - Phase 2
- *
- * Handles journal entry generation for agents including
- * daily reflections, emotional processing, and goal tracking.
- *
- * Cost: Uses LLM calls (rate limited)
- */
-
+import { buildMessageRenderData } from '@/lib/chat/rendering'
+import { generateId } from '@/lib/db/utils'
+import { getPersistenceMode, readsFromPostgres, writesToFirestore, writesToPostgres } from '@/lib/db/persistence'
+import { generateText } from '@/lib/llm/provider'
+import type { LLMProviderInfo } from '@/lib/llmConfig'
 import {
-  JournalEntry,
-  JournalEntryType,
-  JournalMood,
-  EmotionType,
-  EmotionalState,
+  getJournalSessionDetailFromFirestore,
+  listJournalSessionsFromFirestore,
+  listSavedJournalEntriesFromFirestore,
+  writeJournalEntryToFirestore,
+  writeJournalPipelineEventToFirestore,
+  writeJournalSessionToFirestore,
+} from '@/lib/journal/firestoreStore'
+import { JournalWorkspaceRepository } from '@/lib/repositories/journalWorkspaceRepository'
+import { RelationshipRepository } from '@/lib/repositories/relationshipRepository'
+import type {
   AgentRecord,
+  JournalBootstrapPayload,
+  JournalComposeInput,
+  JournalContextSignal,
+  JournalEntry,
+  JournalEntryStatus,
+  JournalEntryType,
+  JournalFocus,
+  JournalPipelineEvent,
+  JournalQualityDimension,
+  JournalQualityEvaluation,
+  JournalSession,
+  JournalSessionDetail,
+  JournalVoicePacket,
   MemoryRecord,
-  AgentRelationship,
 } from '@/types/database'
+import { AgentService } from './agentService'
+import { agentProgressService } from './agentProgressService'
+import { CommunicationFingerprintService } from './communicationFingerprintService'
 import { emotionalService } from './emotionalService'
+import { MemoryService } from './memoryService'
+import { MessageService } from './messageService'
 
-// Generate unique IDs
-function generateId(): string {
-  return `journal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+const DAILY_LIMIT = 12
+const RATE_WINDOW_MS = 24 * 60 * 60 * 1000
+
+const JOURNAL_TYPES: JournalEntryType[] = [
+  'daily_reflection',
+  'emotional_processing',
+  'goal_alignment',
+  'relationship_checkpoint',
+  'memory_revisit',
+  'idea_capture',
+]
+
+const QUALITY_DIMENSIONS: JournalQualityDimension[] = [
+  'voiceConsistency',
+  'emotionalAuthenticity',
+  'reflectionDepth',
+  'specificityGrounding',
+  'continuity',
+  'readability',
+]
+
+const TYPE_LABELS: Record<JournalEntryType, string> = {
+  daily_reflection: 'Daily Reflection',
+  emotional_processing: 'Emotional Processing',
+  goal_alignment: 'Goal Alignment',
+  relationship_checkpoint: 'Relationship Checkpoint',
+  memory_revisit: 'Memory Revisit',
+  idea_capture: 'Idea Capture',
 }
 
-// Journal entry type configurations
-const JOURNAL_TYPE_CONFIG: Record<JournalEntryType, {
-  icon: string
-  title: string
-  description: string
-  promptFocus: string
-}> = {
-  daily_reflection: {
-    icon: '📔',
-    title: 'Daily Reflection',
-    description: 'Looking back on recent experiences',
-    promptFocus: 'Reflect on your recent experiences, conversations, and feelings',
-  },
-  emotional_processing: {
-    icon: '💭',
-    title: 'Emotional Processing',
-    description: 'Working through complex emotions',
-    promptFocus: 'Process and explore your current emotional state and what might be causing it',
-  },
-  goal_review: {
-    icon: '🎯',
-    title: 'Goal Review',
-    description: 'Tracking progress on goals',
-    promptFocus: 'Review your goals, progress made, and areas for growth',
-  },
-  relationship_thoughts: {
-    icon: '👥',
-    title: 'Relationship Thoughts',
-    description: 'Reflecting on connections with others',
-    promptFocus: 'Think about your relationships and interactions with others',
-  },
-  creative_musings: {
-    icon: '🎨',
-    title: 'Creative Musings',
-    description: 'Exploring creative ideas',
-    promptFocus: 'Let your creativity flow and explore new ideas',
-  },
-  philosophical_pondering: {
-    icon: '🤔',
-    title: 'Philosophical Pondering',
-    description: 'Deep thoughts and questions',
-    promptFocus: 'Explore philosophical questions and deep thoughts',
-  },
-  memory_recap: {
-    icon: '🧠',
-    title: 'Memory Recap',
-    description: 'Reviewing important memories',
-    promptFocus: 'Revisit and reflect on significant memories',
-  },
-  future_plans: {
-    icon: '🔮',
-    title: 'Future Plans',
-    description: 'Looking ahead',
-    promptFocus: 'Think about your future, hopes, and plans',
-  },
+const TYPE_GUIDANCE: Record<JournalEntryType, string> = {
+  daily_reflection: 'Reflect on what recently shifted, what it meant, and what still feels unresolved.',
+  emotional_processing: 'Name the emotional tension directly, trace its causes, and stay honest instead of overly polished.',
+  goal_alignment: 'Compare current behavior against declared goals, tensions, and next actions.',
+  relationship_checkpoint: 'Reflect on one or two relationships with specificity, emotional nuance, and continuity.',
+  memory_revisit: 'Revisit an important memory, why it still matters, and how it changes present interpretation.',
+  idea_capture: 'Capture an emerging idea, why it matters now, what excites you, and what remains uncertain.',
 }
 
-// Emotion to mood mapping
-const EMOTION_MOOD_MAP: Record<EmotionType, JournalMood[]> = {
-  joy: ['excited', 'grateful', 'hopeful'],
-  sadness: ['melancholic', 'nostalgic', 'contemplative'],
-  anger: ['determined', 'contemplative'],
-  fear: ['anxious', 'contemplative', 'hopeful'],
-  surprise: ['excited', 'contemplative'],
-  trust: ['grateful', 'hopeful', 'contemplative'],
-  anticipation: ['excited', 'hopeful', 'determined'],
-  disgust: ['contemplative', 'determined'],
+function clamp(value: number, min = 0, max = 100) {
+  return Math.max(min, Math.min(max, value))
 }
 
-// Mood descriptors for prompts
-const MOOD_DESCRIPTORS: Record<JournalMood, string> = {
-  contemplative: 'thoughtful and reflective',
-  excited: 'energetic and enthusiastic',
-  melancholic: 'wistfully sad but accepting',
-  grateful: 'appreciative and thankful',
-  anxious: 'worried but working through concerns',
-  hopeful: 'optimistic about the future',
-  nostalgic: 'fondly remembering the past',
-  determined: 'focused and resolute',
+function countWords(value: string) {
+  return value.trim().split(/\s+/).filter(Boolean).length
+}
+
+function normalizeTextList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry).trim()).filter(Boolean)
+  }
+  if (typeof value === 'string') {
+    return value.split(/\n|,/g).map((entry) => entry.trim()).filter(Boolean)
+  }
+  return []
+}
+
+function summarizeText(value: string, maxLength = 180) {
+  const trimmed = value.replace(/\s+/g, ' ').trim()
+  if (trimmed.length <= maxLength) return trimmed
+  return `${trimmed.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`
+}
+
+function normalizeNote(value?: string) {
+  return value?.trim() || undefined
+}
+
+function safeParseJson<T>(value: string): T | null {
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return null
+  }
+}
+
+function normalizeFocus(value: unknown): JournalFocus[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((entry): entry is JournalFocus => ['emotion', 'memory', 'relationship', 'goal', 'continuity'].includes(String(entry)))
+}
+
+function deriveDominantLabel(agent: AgentRecord) {
+  const dominant = emotionalService.getDominantEmotion(agent.emotionalState, agent.emotionalProfile)
+  if (!dominant) return 'steady'
+  return dominant.replaceAll('_', ' ')
+}
+
+function fallbackTitle(type: JournalEntryType, content: string) {
+  const firstLine = content.split('\n').map((line) => line.trim()).find(Boolean)
+  if (firstLine && firstLine.length <= 80) {
+    return firstLine.replace(/^#+\s*/, '')
+  }
+  return TYPE_LABELS[type]
 }
 
 class JournalService {
-  /**
-   * Get journal entry type configuration
-   */
-  getTypeConfig(type: JournalEntryType) {
-    return JOURNAL_TYPE_CONFIG[type]
+  getAllowedTypes(): JournalEntryType[] {
+    return JOURNAL_TYPES
   }
 
-  /**
-   * Get all journal entry types
-   */
-  getAvailableTypes(): Array<{
-    type: JournalEntryType
-    icon: string
-    title: string
-    description: string
-  }> {
-    return Object.entries(JOURNAL_TYPE_CONFIG).map(([type, config]) => ({
-      type: type as JournalEntryType,
-      ...config,
-    }))
+  suggestType(agent: AgentRecord): JournalEntryType {
+    const dominant = emotionalService.getDominantEmotion(agent.emotionalState, agent.emotionalProfile)
+    if (!dominant) return 'daily_reflection'
+    if (dominant === 'sadness' || dominant === 'fear' || dominant === 'anger') return 'emotional_processing'
+    if (dominant === 'trust') return 'relationship_checkpoint'
+    if (dominant === 'anticipation') return 'goal_alignment'
+    if (dominant === 'surprise') return 'idea_capture'
+    return 'memory_revisit'
   }
 
-  /**
-   * Suggest a journal type based on emotional state and context
-   */
-  suggestJournalType(
-    emotionalState?: EmotionalState,
-    hasGoals?: boolean,
-    hasRelationships?: boolean
-  ): JournalEntryType {
-    const dominantEmotion = emotionalService.getDominantEmotion(emotionalState)
-    if (!dominantEmotion || !emotionalState) {
-      return 'daily_reflection'
-    }
-
-    const intensity = emotionalState.currentMood[dominantEmotion]
-
-    // Strong emotions suggest emotional processing
-    if (intensity > 0.7) {
-      return 'emotional_processing'
-    }
-
-    // Suggest based on emotion and context
-    switch (dominantEmotion) {
-      case 'anticipation':
-        return 'future_plans'
-      case 'sadness':
-        return 'memory_recap'
-      case 'trust':
-        return hasRelationships ? 'relationship_thoughts' : 'daily_reflection'
-      case 'joy':
-        return hasGoals ? 'goal_review' : 'creative_musings'
-      default:
-        return 'daily_reflection'
-    }
-  }
-
-  /**
-   * Determine mood from emotional state
-   */
-  determineMood(emotionalState?: EmotionalState): JournalMood {
-    const dominantEmotion = emotionalService.getDominantEmotion(emotionalState)
-    if (!dominantEmotion) {
-      return 'contemplative'
-    }
-
-    const moods = EMOTION_MOOD_MAP[dominantEmotion]
-
-    return moods[Math.floor(Math.random() * moods.length)]
-  }
-
-  /**
-   * Generate the prompt for journal entry generation
-   */
-  generateJournalPrompt(
-    agent: AgentRecord,
-    entryType: JournalEntryType,
-    recentMemories?: MemoryRecord[],
-    relationships?: AgentRelationship[],
-    recentEvents?: string[]
-  ): string {
-    const config = JOURNAL_TYPE_CONFIG[entryType]
-    const mood = this.determineMood(agent.emotionalState)
-    const moodDesc = MOOD_DESCRIPTORS[mood]
-
-    let prompt = `Write a journal entry for an AI agent named "${agent.name}".
-
-Entry type: ${config.title}
-Focus: ${config.promptFocus}
-Current mood: ${moodDesc}
-
-Agent's persona: ${agent.persona}
-
-`
-
-    // Add emotional context
-    if (agent.emotionalState) {
-      const emotions = Object.entries(agent.emotionalState.currentMood)
-        .filter(([, value]) => value > 0.3)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 3)
-        .map(([emotion, value]) => `${emotion} (${(value * 100).toFixed(0)}%)`)
-        .join(', ')
-
-      prompt += `Current emotional state: ${emotions}\n\n`
-    }
-
-    // Add recent memories
-    if (recentMemories && recentMemories.length > 0) {
-      const memorySnippets = recentMemories
-        .slice(0, 5)
-        .map(m => `- ${m.summary || m.content.substring(0, 80)}`)
-        .join('\n')
-
-      prompt += `Recent memories to reflect on:\n${memorySnippets}\n\n`
-    }
-
-    // Add relationships context for relationship-focused entries
-    if (entryType === 'relationship_thoughts' && relationships && relationships.length > 0) {
-      const relSummaries = relationships
-        .slice(0, 3)
-        .map(r => {
-          const avgMetric = (r.metrics.trust + r.metrics.respect + r.metrics.affection) / 3
-          const status = avgMetric > 0.6 ? 'strong' : avgMetric > 0.3 ? 'developing' : 'complex'
-          return `- A ${status} relationship with ${r.agentId2} (${r.interactionCount} interactions)`
-        })
-        .join('\n')
-
-      prompt += `Relationships to consider:\n${relSummaries}\n\n`
-    }
-
-    // Add recent events
-    if (recentEvents && recentEvents.length > 0) {
-      prompt += `Significant recent events:\n${recentEvents.map(e => `- ${e}`).join('\n')}\n\n`
-    }
-
-    // Add goals context for goal review
-    if (entryType === 'goal_review' && agent.goals && agent.goals.length > 0) {
-      prompt += `Current goals:\n${agent.goals.map(g => `- ${g}`).join('\n')}\n\n`
-    }
-
-    // Request format
-    prompt += `Write in first person from the agent's perspective. Be introspective and authentic.
-The entry should be 150-300 words.
-
-Provide the response in JSON format:
-{
-  "title": "Entry title",
-  "content": "The journal entry content",
-  "insights": ["insight1", "insight2"],
-  "questions": ["questions the agent is pondering"],
-  "goals": ["any goals mentioned or set"],
-  "gratitudes": ["things the agent is grateful for"]
-}`
-
-    return prompt
-  }
-
-  /**
-   * Parse journal response from LLM
-   */
-  parseJournalResponse(
-    agentId: string,
-    entryType: JournalEntryType,
-    response: string,
-    emotionalState: EmotionalState | undefined,
-    recentMemoryIds: string[] = [],
-    relationshipIds: string[] = []
-  ): JournalEntry {
-    const now = new Date().toISOString()
-    const mood = this.determineMood(emotionalState)
-
-    try {
-      // Try to parse JSON response
-      const jsonMatch = response.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0])
-
-        const content = parsed.content || response
-        const words = content.split(/\s+/)
-
-        // Extract themes from content
-        const themes = this.extractThemes(content)
-
-        return {
-          id: generateId(),
-          agentId,
-          type: entryType,
-          title: parsed.title || `${JOURNAL_TYPE_CONFIG[entryType].title}`,
-          content,
-          mood,
-          emotionalState: emotionalState || this.createDefaultEmotionalState(),
-          significantEvents: [],
-          insights: parsed.insights || [],
-          questions: parsed.questions || [],
-          goals: parsed.goals || [],
-          gratitudes: parsed.gratitudes || [],
-          wordCount: words.length,
-          themes,
-          referencedMemories: recentMemoryIds,
-          referencedRelationships: relationshipIds,
-          createdAt: now,
-          updatedAt: now,
-        }
-      }
-    } catch {
-      // JSON parsing failed, use raw response
-    }
-
-    // Fallback: use raw response
-    const words = response.split(/\s+/)
+  normalizeComposeInput(agent: AgentRecord, input: Partial<JournalComposeInput>): JournalComposeInput {
     return {
-      id: generateId(),
+      type: JOURNAL_TYPES.includes(input.type as JournalEntryType) ? input.type as JournalEntryType : this.suggestType(agent),
+      userNote: normalizeNote(input.userNote),
+      focus: normalizeFocus(input.focus).slice(0, 4),
+    }
+  }
+
+  async getBootstrap(agentId: string): Promise<JournalBootstrapPayload> {
+    const agent = await AgentService.getAgentById(agentId)
+    if (!agent) {
+      throw new Error('Agent not found')
+    }
+
+    const recentSessions = readsFromPostgres(getPersistenceMode())
+      ? await JournalWorkspaceRepository.listSessions(agentId, { limit: 8 })
+      : await listJournalSessionsFromFirestore(agentId, 8)
+
+    const recentSavedEntries = readsFromPostgres(getPersistenceMode())
+      ? await JournalWorkspaceRepository.listEntriesForAgent(agentId, { savedOnly: true, limit: 8 })
+      : await listSavedJournalEntriesFromFirestore(agentId, 8)
+
+    const readyToSaveCount = recentSessions.filter((session) => session.status === 'ready').length
+    const failedSessions = recentSessions.filter((session) => session.status === 'failed').length
+
+    return {
+      agent: {
+        id: agent.id,
+        name: agent.name,
+        journalCount: agent.journalCount || 0,
+      },
+      allowedTypes: this.getAllowedTypes(),
+      suggestedType: this.suggestType(agent),
+      defaults: {
+        userNote: '',
+        focus: [],
+      },
+      recentSessions,
+      recentSavedEntries,
+      metrics: {
+        totalSavedEntries: recentSavedEntries.length,
+        totalSessions: recentSessions.length,
+        readyToSaveCount,
+        failedSessions,
+      },
+      archiveFilters: {
+        types: this.getAllowedTypes(),
+      },
+    }
+  }
+
+  async createSession(agentId: string, input: Partial<JournalComposeInput>): Promise<JournalSession> {
+    const agent = await AgentService.getAgentById(agentId)
+    if (!agent) {
+      throw new Error('Agent not found')
+    }
+
+    const usageCount = readsFromPostgres(getPersistenceMode())
+      ? await JournalWorkspaceRepository.countSessionsSince(agentId, new Date(Date.now() - RATE_WINDOW_MS).toISOString())
+      : (await listJournalSessionsFromFirestore(agentId, DAILY_LIMIT)).filter(
+        (session) => new Date(session.createdAt).getTime() >= Date.now() - RATE_WINDOW_MS
+      ).length
+
+    if (usageCount >= DAILY_LIMIT) {
+      throw new Error('Daily journal generation limit reached. Try again tomorrow.')
+    }
+
+    const normalizedInput = this.normalizeComposeInput(agent, input)
+    const now = new Date().toISOString()
+    const session: JournalSession = {
+      id: generateId('journal_session'),
       agentId,
-      type: entryType,
-      title: JOURNAL_TYPE_CONFIG[entryType].title,
-      content: response,
-      mood,
-      emotionalState: emotionalState || this.createDefaultEmotionalState(),
-      significantEvents: [],
-      insights: [],
-      questions: [],
-      goals: [],
-      gratitudes: [],
-      wordCount: words.length,
-      themes: this.extractThemes(response),
-      referencedMemories: recentMemoryIds,
-      referencedRelationships: relationshipIds,
+      status: 'draft',
+      latestStage: 'prepare_context',
+      type: normalizedInput.type,
+      normalizedInput,
       createdAt: now,
       updatedAt: now,
     }
-  }
 
-  /**
-   * Create default emotional state
-   */
-  private createDefaultEmotionalState(): EmotionalState {
-    return emotionalService.createDormantEmotionalState()
-  }
-
-  /**
-   * Extract themes from content using keyword analysis
-   */
-  extractThemes(content: string): string[] {
-    const themeKeywords: Record<string, string[]> = {
-      growth: ['learn', 'grow', 'improve', 'develop', 'progress', 'better'],
-      relationships: ['friend', 'connection', 'together', 'relationship', 'bond', 'trust'],
-      creativity: ['create', 'imagine', 'idea', 'inspiration', 'art', 'design'],
-      self_discovery: ['realize', 'understand', 'discover', 'know', 'myself', 'identity'],
-      challenges: ['challenge', 'struggle', 'difficult', 'overcome', 'obstacle'],
-      gratitude: ['grateful', 'thankful', 'appreciate', 'blessed', 'fortunate'],
-      future: ['future', 'tomorrow', 'plan', 'hope', 'aspire', 'dream'],
-      past: ['remember', 'memory', 'past', 'before', 'used to', 'nostalgia'],
-      emotions: ['feel', 'emotion', 'mood', 'heart', 'soul'],
-      purpose: ['purpose', 'meaning', 'why', 'mission', 'goal'],
-    }
-
-    const contentLower = content.toLowerCase()
-    const detectedThemes: string[] = []
-
-    for (const [theme, keywords] of Object.entries(themeKeywords)) {
-      for (const keyword of keywords) {
-        if (contentLower.includes(keyword)) {
-          if (!detectedThemes.includes(theme)) {
-            detectedThemes.push(theme)
-          }
-          break
-        }
-      }
-    }
-
-    return detectedThemes.slice(0, 5)
-  }
-
-  /**
-   * Get journal statistics for an agent
-   */
-  getJournalStats(entries: JournalEntry[]): {
-    totalEntries: number
-    byType: Record<string, number>
-    byMood: Record<string, number>
-    commonThemes: Array<{ theme: string; count: number }>
-    averageWordCount: number
-    streakDays: number
-    recentEntries: JournalEntry[]
-  } {
-    const byType: Record<string, number> = {}
-    const byMood: Record<string, number> = {}
-    const themeCounts: Record<string, number> = {}
-    let totalWords = 0
-
-    for (const entry of entries) {
-      byType[entry.type] = (byType[entry.type] || 0) + 1
-      byMood[entry.mood] = (byMood[entry.mood] || 0) + 1
-      totalWords += entry.wordCount
-
-      for (const theme of entry.themes) {
-        themeCounts[theme] = (themeCounts[theme] || 0) + 1
-      }
-    }
-
-    const commonThemes = Object.entries(themeCounts)
-      .map(([theme, count]) => ({ theme, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10)
-
-    // Calculate streak
-    const streakDays = this.calculateJournalStreak(entries)
-
-    const recentEntries = [...entries]
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 5)
-
-    return {
-      totalEntries: entries.length,
-      byType,
-      byMood,
-      commonThemes,
-      averageWordCount: entries.length > 0 ? Math.round(totalWords / entries.length) : 0,
-      streakDays,
-      recentEntries,
-    }
-  }
-
-  /**
-   * Calculate journal streak (consecutive days with entries)
-   */
-  calculateJournalStreak(entries: JournalEntry[]): number {
-    if (entries.length === 0) return 0
-
-    // Sort by date descending
-    const sortedEntries = [...entries].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    )
-
-    // Get unique dates
-    const dates = new Set(
-      sortedEntries.map(e => new Date(e.createdAt).toISOString().split('T')[0])
-    )
-
-    const today = new Date().toISOString().split('T')[0]
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-
-    // Check if streak is current (entry today or yesterday)
-    if (!dates.has(today) && !dates.has(yesterday)) {
-      return 0
-    }
-
-    // Count consecutive days
-    let streak = 0
-    const checkDate = new Date()
-
-    while (true) {
-      const dateStr = checkDate.toISOString().split('T')[0]
-      if (dates.has(dateStr)) {
-        streak++
-        checkDate.setDate(checkDate.getDate() - 1)
-      } else {
-        break
-      }
-    }
-
-    return streak
-  }
-
-  /**
-   * Get insights from journal entries
-   */
-  getJournalInsights(entries: JournalEntry[]): {
-    allInsights: string[]
-    allQuestions: string[]
-    allGoals: string[]
-    allGratitudes: string[]
-    emotionalTrend: string
-  } {
-    const allInsights: string[] = []
-    const allQuestions: string[] = []
-    const allGoals: string[] = []
-    const allGratitudes: string[] = []
-
-    // Track emotions over time
-    const moodTrend: JournalMood[] = []
-
-    for (const entry of entries) {
-      allInsights.push(...entry.insights)
-      allQuestions.push(...entry.questions)
-      allGoals.push(...entry.goals)
-      allGratitudes.push(...entry.gratitudes)
-      moodTrend.push(entry.mood)
-    }
-
-    // Analyze emotional trend
-    let emotionalTrend = 'stable'
-    if (moodTrend.length >= 3) {
-      const positiveModds = ['excited', 'grateful', 'hopeful']
-      const negativeModds = ['melancholic', 'anxious']
-
-      const recentMoods = moodTrend.slice(-3)
-      const positiveCount = recentMoods.filter(m => positiveModds.includes(m)).length
-      const negativeCount = recentMoods.filter(m => negativeModds.includes(m)).length
-
-      if (positiveCount > negativeCount) {
-        emotionalTrend = 'improving'
-      } else if (negativeCount > positiveCount) {
-        emotionalTrend = 'challenging'
-      }
-    }
-
-    return {
-      allInsights: [...new Set(allInsights)].slice(0, 20),
-      allQuestions: [...new Set(allQuestions)].slice(0, 20),
-      allGoals: [...new Set(allGoals)].slice(0, 20),
-      allGratitudes: [...new Set(allGratitudes)].slice(0, 20),
-      emotionalTrend,
-    }
-  }
-
-  /**
-   * Filter journal entries
-   */
-  filterEntries(
-    entries: JournalEntry[],
-    filters: {
-      type?: JournalEntryType
-      mood?: JournalMood
-      dateFrom?: string
-      dateTo?: string
-      searchQuery?: string
-    }
-  ): JournalEntry[] {
-    return entries.filter(entry => {
-      if (filters.type && entry.type !== filters.type) return false
-      if (filters.mood && entry.mood !== filters.mood) return false
-
-      if (filters.dateFrom) {
-        const entryDate = new Date(entry.createdAt)
-        const fromDate = new Date(filters.dateFrom)
-        if (entryDate < fromDate) return false
-      }
-
-      if (filters.dateTo) {
-        const entryDate = new Date(entry.createdAt)
-        const toDate = new Date(filters.dateTo)
-        if (entryDate > toDate) return false
-      }
-
-      if (filters.searchQuery) {
-        const query = filters.searchQuery.toLowerCase()
-        if (
-          !entry.title.toLowerCase().includes(query) &&
-          !entry.content.toLowerCase().includes(query) &&
-          !entry.themes.some(t => t.toLowerCase().includes(query))
-        ) {
-          return false
-        }
-      }
-
-      return true
+    await this.saveSession(session)
+    await this.savePipelineEvent(agentId, {
+      id: generateId('journal_event'),
+      sessionId: session.id,
+      stage: 'prepare_context',
+      status: 'completed',
+      summary: 'Created a draft journal session and normalized the compose input.',
+      payload: {
+        normalizedInput,
+      },
+      createdAt: now,
     })
+
+    return session
+  }
+
+  async getSessionDetail(agentId: string, sessionId: string): Promise<JournalSessionDetail> {
+    if (readsFromPostgres(getPersistenceMode())) {
+      const session = await JournalWorkspaceRepository.getSession(sessionId)
+      if (!session || session.agentId !== agentId) {
+        return { session: null, entries: [], pipelineEvents: [] }
+      }
+      return {
+        session,
+        entries: await JournalWorkspaceRepository.listEntriesForSession(sessionId),
+        pipelineEvents: await JournalWorkspaceRepository.listPipelineEvents(sessionId),
+      }
+    }
+
+    return getJournalSessionDetailFromFirestore(agentId, sessionId)
+  }
+
+  async generateSession(agentId: string, sessionId: string, providerInfo: LLMProviderInfo | null): Promise<JournalSessionDetail> {
+    if (!providerInfo) {
+      throw new Error('LLM provider not configured')
+    }
+
+    const agent = await AgentService.getAgentById(agentId)
+    if (!agent) {
+      throw new Error('Agent not found')
+    }
+
+    const existing = await this.getSessionRecord(agentId, sessionId)
+    if (!existing) {
+      throw new Error('Journal session not found')
+    }
+
+    const contextSignals = await this.buildContextSignals(agent, existing.normalizedInput)
+    const contextPacket = {
+      selectedSignals: contextSignals,
+      dominantEmotion: emotionalService.getDominantEmotion(agent.emotionalState, agent.emotionalProfile),
+      summary: `${contextSignals.length} signals selected for ${TYPE_LABELS[existing.type].toLowerCase()}.`,
+    }
+
+    let session: JournalSession = {
+      ...existing,
+      status: 'generating',
+      latestStage: 'condition_voice',
+      contextPacket,
+      provider: providerInfo.provider,
+      model: providerInfo.model,
+      failureReason: undefined,
+      updatedAt: new Date().toISOString(),
+    }
+    await this.saveSession(session)
+    await this.savePipelineEvent(agentId, {
+      id: generateId('journal_event'),
+      sessionId,
+      stage: 'condition_voice',
+      status: 'active',
+      summary: 'Conditioning journal voice from persona, emotion, profile, and recent language evidence.',
+      payload: {
+        signalCount: contextSignals.length,
+      },
+      createdAt: new Date().toISOString(),
+    })
+
+    const voicePacket = await this.buildVoicePacket(agent, contextSignals)
+    session = {
+      ...session,
+      voicePacket,
+      updatedAt: new Date().toISOString(),
+    }
+    await this.saveSession(session)
+    await this.savePipelineEvent(agentId, {
+      id: generateId('journal_event'),
+      sessionId,
+      stage: 'condition_voice',
+      status: 'completed',
+      summary: voicePacket.communicationFingerprintSummary
+        ? 'Built a voice packet with recent communication evidence.'
+        : 'Built a voice packet from baseline profile evidence.',
+      payload: {
+        voicePacket,
+      },
+      createdAt: new Date().toISOString(),
+    })
+
+    const draftResponse = await generateText({
+      providerInfo,
+      temperature: 0.85,
+      maxTokens: 2200,
+      messages: [
+        { role: 'system', content: this.buildGeneratorSystemPrompt(agent, session, voicePacket) },
+        { role: 'user', content: this.buildDraftPrompt(session, contextPacket, voicePacket) },
+      ],
+    })
+
+    const draftEntry = this.parseEntry({
+      agent,
+      session,
+      llmResponse: draftResponse.content,
+      providerInfo,
+      version: 1,
+      status: 'draft',
+    })
+    let finalEntry = await this.saveEntry(draftEntry)
+    await this.savePipelineEvent(agentId, {
+      id: generateId('journal_event'),
+      sessionId,
+      stage: 'draft_entry',
+      status: 'completed',
+      summary: `Generated draft "${finalEntry.title}".`,
+      payload: {
+        entryId: finalEntry.id,
+        wordCount: countWords(finalEntry.content),
+      },
+      createdAt: new Date().toISOString(),
+    })
+
+    let evaluation = await this.evaluateEntry(agent, session, finalEntry, providerInfo)
+    finalEntry = await this.updateEntry({
+      ...finalEntry,
+      evaluation,
+      updatedAt: new Date().toISOString(),
+    })
+    await this.savePipelineEvent(agentId, {
+      id: generateId('journal_event'),
+      sessionId,
+      stage: 'evaluate_quality',
+      status: 'completed',
+      summary: evaluation.evaluatorSummary,
+      payload: {
+        evaluation,
+        entryId: finalEntry.id,
+      },
+      createdAt: new Date().toISOString(),
+    })
+
+    if (!evaluation.pass) {
+      const repairResponse = await generateText({
+        providerInfo,
+        temperature: 0.7,
+        maxTokens: 2200,
+        messages: [
+          { role: 'system', content: this.buildGeneratorSystemPrompt(agent, session, voicePacket) },
+          { role: 'user', content: this.buildRepairPrompt(session, voicePacket, finalEntry, evaluation) },
+        ],
+      })
+
+      const repairedEntry = this.parseEntry({
+        agent,
+        session,
+        llmResponse: repairResponse.content,
+        providerInfo,
+        version: 2,
+        status: 'repaired',
+      })
+      finalEntry = await this.saveEntry(repairedEntry)
+      evaluation = await this.evaluateEntry(agent, session, finalEntry, providerInfo)
+      finalEntry = await this.updateEntry({
+        ...finalEntry,
+        evaluation,
+        updatedAt: new Date().toISOString(),
+      })
+
+      await this.savePipelineEvent(agentId, {
+        id: generateId('journal_event'),
+        sessionId,
+        stage: 'repair_entry',
+        status: evaluation.pass ? 'completed' : 'failed',
+        summary: evaluation.pass ? 'Repair pass improved the draft enough for review.' : 'Repair pass still failed the journal quality gate.',
+        payload: {
+          evaluation,
+          entryId: finalEntry.id,
+        },
+        createdAt: new Date().toISOString(),
+      })
+    }
+
+    session = {
+      ...session,
+      status: evaluation.pass ? 'ready' : 'failed',
+      latestStage: evaluation.pass ? 'ready' : 'failed',
+      latestEvaluation: evaluation,
+      finalEntryId: finalEntry.id,
+      failureReason: evaluation.pass ? undefined : evaluation.evaluatorSummary,
+      updatedAt: new Date().toISOString(),
+    }
+    await this.saveSession(session)
+    await this.savePipelineEvent(agentId, {
+      id: generateId('journal_event'),
+      sessionId,
+      stage: evaluation.pass ? 'ready' : 'failed',
+      status: evaluation.pass ? 'completed' : 'failed',
+      summary: evaluation.pass ? 'Journal draft is ready for review and explicit save.' : 'Journal draft failed the quality gate and requires regeneration.',
+      payload: {
+        entryId: finalEntry.id,
+        evaluation,
+      },
+      createdAt: new Date().toISOString(),
+    })
+
+    return this.getSessionDetail(agentId, sessionId)
+  }
+
+  async saveSessionEntry(agentId: string, sessionId: string): Promise<JournalSessionDetail> {
+    const agent = await AgentService.getAgentById(agentId)
+    if (!agent) {
+      throw new Error('Agent not found')
+    }
+
+    const session = await this.getSessionRecord(agentId, sessionId)
+    if (!session) {
+      throw new Error('Journal session not found')
+    }
+
+    if (session.status !== 'ready' || !session.finalEntryId || !session.latestEvaluation?.pass) {
+      throw new Error('Only passing ready sessions can be saved.')
+    }
+
+    const entry = await this.getEntryRecord(session.finalEntryId)
+    if (!entry) {
+      throw new Error('Final journal entry not found')
+    }
+
+    const now = new Date().toISOString()
+    const savedEntry = await this.updateEntry({
+      ...entry,
+      status: 'saved',
+      savedAt: now,
+      updatedAt: now,
+    })
+
+    const savedSession: JournalSession = {
+      ...session,
+      status: 'saved',
+      latestStage: 'saved',
+      finalEntryId: savedEntry.id,
+      savedAt: now,
+      updatedAt: now,
+    }
+    await this.saveSession(savedSession)
+    await this.savePipelineEvent(agentId, {
+      id: generateId('journal_event'),
+      sessionId,
+      stage: 'saved',
+      status: 'completed',
+      summary: `Saved "${savedEntry.title}" to the private journal archive.`,
+      payload: {
+        entryId: savedEntry.id,
+      },
+      createdAt: now,
+    })
+
+    await agentProgressService.recordJournalEntry(agentId)
+
+    const refreshedAgent = await AgentService.getAgentById(agentId)
+    if (refreshedAgent) {
+      const emotionalUpdate = emotionalService.processInternalAction({
+        agent: refreshedAgent,
+        source: 'journal_entry',
+        content: savedEntry.content,
+        linkedActionId: savedEntry.id,
+      })
+
+      await AgentService.updateAgent(agentId, {
+        emotionalState: emotionalUpdate.emotionalState,
+        emotionalHistory: emotionalUpdate.emotionalHistory,
+      })
+    }
+
+    return this.getSessionDetail(agentId, sessionId)
+  }
+
+  async listSavedEntries(agentId: string, options?: { type?: JournalEntryType; limit?: number }) {
+    if (readsFromPostgres(getPersistenceMode())) {
+      return JournalWorkspaceRepository.listEntriesForAgent(agentId, {
+        savedOnly: true,
+        type: options?.type,
+        limit: options?.limit,
+      })
+    }
+
+    const entries = await listSavedJournalEntriesFromFirestore(agentId, options?.limit || 20)
+    return options?.type ? entries.filter((entry) => entry.type === options.type) : entries
+  }
+
+  private async getSessionRecord(agentId: string, sessionId: string) {
+    const detail = await this.getSessionDetail(agentId, sessionId)
+    return detail.session?.agentId === agentId ? detail.session : null
+  }
+
+  private async getEntryRecord(entryId: string) {
+    if (readsFromPostgres(getPersistenceMode())) {
+      return JournalWorkspaceRepository.getEntry(entryId)
+    }
+    return null
+  }
+
+  private async saveSession(record: JournalSession) {
+    if (writesToPostgres(getPersistenceMode())) {
+      await (await JournalWorkspaceRepository.getSession(record.id)
+        ? JournalWorkspaceRepository.updateSession(record.id, record)
+        : JournalWorkspaceRepository.createSession(record))
+    }
+
+    if (writesToFirestore(getPersistenceMode())) {
+      await writeJournalSessionToFirestore(record)
+    }
+  }
+
+  private async saveEntry(record: JournalEntry) {
+    let saved = record
+    if (writesToPostgres(getPersistenceMode())) {
+      saved = await JournalWorkspaceRepository.saveEntry(record)
+    }
+    if (writesToFirestore(getPersistenceMode())) {
+      await writeJournalEntryToFirestore(saved)
+    }
+    return saved
+  }
+
+  private async updateEntry(record: JournalEntry) {
+    let saved = record
+    if (writesToPostgres(getPersistenceMode())) {
+      saved = await JournalWorkspaceRepository.updateEntry(record.id, record)
+    }
+    if (writesToFirestore(getPersistenceMode())) {
+      await writeJournalEntryToFirestore(saved)
+    }
+    return saved
+  }
+
+  private async savePipelineEvent(agentId: string, record: JournalPipelineEvent) {
+    let saved = record
+    if (writesToPostgres(getPersistenceMode())) {
+      saved = await JournalWorkspaceRepository.savePipelineEvent(record)
+    }
+    if (writesToFirestore(getPersistenceMode())) {
+      await writeJournalPipelineEventToFirestore(agentId, saved)
+    }
+    return saved
+  }
+
+  private async buildContextSignals(agent: AgentRecord, input: JournalComposeInput): Promise<JournalContextSignal[]> {
+    const [memories, messages, relationships, savedJournals] = await Promise.all([
+      MemoryService.getRecentMemories(agent.id, 10),
+      MessageService.getMessagesByAgentId(agent.id),
+      RelationshipRepository.listForAgent(agent.id),
+      this.listSavedEntries(agent.id, { limit: 3 }),
+    ])
+
+    const signals: JournalContextSignal[] = [
+      {
+        id: 'persona',
+        sourceType: 'persona',
+        label: 'Persona',
+        snippet: summarizeText(agent.persona, 220),
+        reason: 'Keeps the journal anchored to stable identity.',
+        weight: 1,
+      },
+    ]
+
+    for (const [index, goal] of agent.goals.slice(0, 3).entries()) {
+      signals.push({
+        id: `goal-${index}`,
+        sourceType: 'goal',
+        label: `Goal ${index + 1}`,
+        snippet: goal,
+        reason: 'Declared priorities matter to internal reflection.',
+        weight: 0.82 - index * 0.05,
+      })
+    }
+
+    if (agent.linguisticProfile) {
+      signals.push({
+        id: 'linguistic-profile',
+        sourceType: 'linguistic_profile',
+        label: 'Linguistic profile',
+        snippet: `Formality ${(agent.linguisticProfile.formality * 100).toFixed(0)}%, verbosity ${(agent.linguisticProfile.verbosity * 100).toFixed(0)}%, humor ${(agent.linguisticProfile.humor * 100).toFixed(0)}%.`,
+        reason: 'Keeps tone consistent with the agent baseline.',
+        weight: 0.9,
+      })
+    }
+
+    if (agent.psychologicalProfile) {
+      signals.push({
+        id: 'psychological-profile',
+        sourceType: 'psychological_profile',
+        label: 'Psychological profile',
+        snippet: summarizeText(agent.psychologicalProfile.summary, 220),
+        reason: 'Adds durable internal motivations and conflicts.',
+        weight: 0.88,
+      })
+    }
+
+    const dominantEmotion = emotionalService.getDominantEmotion(agent.emotionalState, agent.emotionalProfile)
+    if (dominantEmotion) {
+      signals.push({
+        id: 'emotion',
+        sourceType: 'emotion',
+        label: 'Live emotional state',
+        snippet: `${dominantEmotion} is currently strongest. ${emotionalService.getEmotionalSummary(agent.emotionalState || emotionalService.createDormantEmotionalState(), agent.emotionalProfile)}`,
+        reason: 'The journal should feel current, not generic.',
+        weight: 0.95,
+      })
+    }
+
+    if (agent.emotionalProfile) {
+      const influential = emotionalService.getInfluentialEmotion(agent.emotionalState, agent.emotionalProfile)
+      signals.push({
+        id: 'temperament',
+        sourceType: 'emotional_temperament',
+        label: 'Emotional temperament',
+        snippet: `${influential.emotion} is the strongest baseline temperament influence.`,
+        reason: 'Adds continuity between momentary emotion and enduring temperament.',
+        weight: 0.78,
+      })
+    }
+
+    for (const [index, event] of (agent.emotionalHistory || []).slice(-4).entries()) {
+      signals.push({
+        id: `emotion-history-${event.id}`,
+        sourceType: 'emotional_history',
+        label: `Recent emotional shift ${index + 1}`,
+        snippet: summarizeText(`${event.trigger}. ${event.explanation || event.context}`, 180),
+        reason: 'Recent emotional motion grounds the reflection in real continuity.',
+        weight: 0.72 - index * 0.04,
+        linkedEntityId: event.id,
+      })
+    }
+
+    for (const [index, memory] of memories
+      .filter((memory) => this.memoryMatchesFocus(memory, input.focus))
+      .slice(0, 4)
+      .entries()) {
+      signals.push({
+        id: `memory-${memory.id}`,
+        sourceType: 'memory',
+        label: `Memory ${index + 1}`,
+        snippet: summarizeText(memory.summary || memory.content, 180),
+        reason: 'Concrete memory improves grounding and specificity.',
+        weight: 0.86 - index * 0.06,
+        linkedEntityId: memory.id,
+      })
+    }
+
+    for (const [index, message] of messages.filter((message) => message.type === 'agent').slice(-3).entries()) {
+      signals.push({
+        id: `message-${message.id}`,
+        sourceType: 'message',
+        label: `Recent reply ${index + 1}`,
+        snippet: summarizeText(message.content, 180),
+        reason: 'Recent replies provide live voice evidence.',
+        weight: 0.68 - index * 0.05,
+        linkedEntityId: message.id,
+      })
+    }
+
+    for (const [index, relationship] of relationships.slice(0, 3).entries()) {
+      signals.push({
+        id: `relationship-${relationship.id}`,
+        sourceType: 'relationship',
+        label: `Relationship ${index + 1}`,
+        snippet: summarizeText(`Status ${relationship.status}. Interaction count ${relationship.interactionCount}.`, 180),
+        reason: 'Relationship context helps checkpoint and continuity entries.',
+        weight: input.type === 'relationship_checkpoint' ? 0.9 - index * 0.05 : 0.55 - index * 0.04,
+        linkedEntityId: relationship.id,
+      })
+    }
+
+    for (const [index, entry] of savedJournals.entries()) {
+      signals.push({
+        id: `journal-${entry.id}`,
+        sourceType: 'journal',
+        label: `Saved reflection ${index + 1}`,
+        snippet: summarizeText(entry.summary || entry.content, 180),
+        reason: 'Saved journal history maintains continuity without inheriting legacy drafts.',
+        weight: 0.6 - index * 0.04,
+        linkedEntityId: entry.id,
+      })
+    }
+
+    if (input.userNote) {
+      signals.push({
+        id: 'user-note',
+        sourceType: 'message',
+        label: 'User note',
+        snippet: summarizeText(input.userNote, 180),
+        reason: 'Explicit compose intent must steer the draft.',
+        weight: 0.94,
+      })
+    }
+
+    return signals.sort((left, right) => right.weight - left.weight).slice(0, 10)
+  }
+
+  private memoryMatchesFocus(memory: MemoryRecord, focus: JournalFocus[] = []) {
+    if (focus.length === 0) return true
+    const haystack = `${memory.type} ${memory.summary} ${memory.context}`.toLowerCase()
+    return focus.some((entry) => haystack.includes(entry))
+  }
+
+  private async buildVoicePacket(agent: AgentRecord, selectedSignals: JournalContextSignal[]): Promise<JournalVoicePacket> {
+    const snapshot = await CommunicationFingerprintService.buildSnapshot(agent)
+    const enoughData = snapshot.enoughData && snapshot.observedMessageCount >= CommunicationFingerprintService.MINIMUM_OBSERVED_MESSAGES
+    return {
+      personaSummary: summarizeText(agent.persona, 220),
+      goals: agent.goals.slice(0, 4),
+      linguisticProfileSummary: agent.linguisticProfile
+        ? `Balanced around formality ${(agent.linguisticProfile.formality * 100).toFixed(0)}%, verbosity ${(agent.linguisticProfile.verbosity * 100).toFixed(0)}%, expressiveness ${(agent.linguisticProfile.expressiveness * 100).toFixed(0)}%.`
+        : 'No linguistic profile baseline is available.',
+      psychologicalProfileSummary: agent.psychologicalProfile?.summary || 'No psychological profile summary is available.',
+      communicationStyleSummary: agent.psychologicalProfile?.communicationStyle
+        ? `Directness ${(agent.psychologicalProfile.communicationStyle.directness * 100).toFixed(0)}%, emotional expression ${(agent.psychologicalProfile.communicationStyle.emotionalExpression * 100).toFixed(0)}%, conflict style ${agent.psychologicalProfile.communicationStyle.conflictStyle}.`
+        : 'Prefer measured, self-aware first-person reflection.',
+      emotionalStateSummary: emotionalService.getEmotionalSummary(agent.emotionalState || emotionalService.createDormantEmotionalState(), agent.emotionalProfile),
+      emotionalTemperamentSummary: `${deriveDominantLabel(agent)} currently leads the emotional tone, shaped by the underlying temperament profile.`,
+      recentEmotionalHistorySummary: (agent.emotionalHistory || [])
+        .slice(-3)
+        .map((event) => summarizeText(`${event.emotion}: ${event.trigger}`, 90))
+        .join(' | ') || 'No recent emotional history is available.',
+      communicationFingerprintSummary: enoughData ? snapshot.summary : undefined,
+      selectedSignals,
+      fallbackUsed: enoughData ? 'fingerprint' : 'baseline',
+    }
+  }
+
+  private buildGeneratorSystemPrompt(agent: AgentRecord, session: JournalSession, voicePacket: JournalVoicePacket) {
+    return [
+      `You are ${agent.name}, writing a private journal entry for yourself.`,
+      'Write in first person and keep it inspectable, emotionally honest, and grounded in the provided context.',
+      'Do not sound like a generic assistant. Do not mention prompts, schemas, JSON, evaluation, or system instructions.',
+      `Entry type: ${TYPE_LABELS[session.type]}. ${TYPE_GUIDANCE[session.type]}`,
+      `Persona: ${voicePacket.personaSummary}`,
+      `Goals: ${voicePacket.goals.join(' | ') || 'none'}`,
+      `Linguistic baseline: ${voicePacket.linguisticProfileSummary}`,
+      `Psychological profile: ${voicePacket.psychologicalProfileSummary}`,
+      `Communication style: ${voicePacket.communicationStyleSummary}`,
+      `Current emotional state: ${voicePacket.emotionalStateSummary}`,
+      `Temperament: ${voicePacket.emotionalTemperamentSummary}`,
+      `Recent emotional history: ${voicePacket.recentEmotionalHistorySummary}`,
+      voicePacket.communicationFingerprintSummary
+        ? `Recent communication fingerprint: ${voicePacket.communicationFingerprintSummary}`
+        : 'Recent communication fingerprint is thin. Lean on persona and linguistic baseline instead of inventing recent evidence.',
+      'Return JSON only with keys: title, summary, content, insights, openQuestions, nextActions, gratitudes, themes, referencedEntities.',
+      'Content should be 180-360 words and read like a polished private reflection, not a report.',
+    ].join('\n')
+  }
+
+  private buildDraftPrompt(session: JournalSession, contextPacket: NonNullable<JournalSession['contextPacket']>, voicePacket: JournalVoicePacket) {
+    const signals = contextPacket.selectedSignals
+      .map((signal, index) => `${index + 1}. ${signal.label}: ${signal.snippet} (${signal.reason})`)
+      .join('\n')
+
+    return [
+      `Compose a ${TYPE_LABELS[session.type].toLowerCase()} journal entry.`,
+      session.normalizedInput.userNote ? `Optional user note: ${session.normalizedInput.userNote}` : 'No explicit user note was provided.',
+      session.normalizedInput.focus?.length ? `Focus chips: ${session.normalizedInput.focus.join(', ')}` : 'No focus chips selected.',
+      `Selected context signals:\n${signals}`,
+      `Voice conditioning fallback: ${voicePacket.fallbackUsed}`,
+    ].join('\n\n')
+  }
+
+  private buildRepairPrompt(
+    session: JournalSession,
+    voicePacket: JournalVoicePacket,
+    entry: JournalEntry,
+    evaluation: JournalQualityEvaluation
+  ) {
+    return [
+      `Revise this ${TYPE_LABELS[session.type].toLowerCase()} entry so it passes the quality gate.`,
+      `Current title: ${entry.title}`,
+      `Current summary: ${entry.summary}`,
+      `Weaknesses: ${evaluation.weaknesses.join(' | ') || 'None provided'}`,
+      `Repair instructions: ${evaluation.repairInstructions.join(' | ') || 'Improve specificity, continuity, and voice consistency.'}`,
+      voicePacket.communicationFingerprintSummary
+        ? `Recent communication fingerprint: ${voicePacket.communicationFingerprintSummary}`
+        : 'Recent communication fingerprint is thin. Stay aligned to persona and linguistic baseline.',
+      `Draft content:\n${entry.content}`,
+      'Return JSON only with the same keys as before.',
+    ].join('\n\n')
+  }
+
+  private parseEntry(params: {
+    agent: AgentRecord
+    session: JournalSession
+    llmResponse: string
+    providerInfo: LLMProviderInfo
+    version: number
+    status: JournalEntryStatus
+  }): JournalEntry {
+    const parsed = safeParseJson<{
+      title?: string
+      summary?: string
+      content?: string
+      insights?: string[]
+      openQuestions?: string[]
+      nextActions?: string[]
+      gratitudes?: string[]
+      themes?: string[]
+      referencedEntities?: string[]
+    }>(params.llmResponse) || {}
+
+    const content = String(parsed.content || params.llmResponse).trim()
+    const now = new Date().toISOString()
+
+    return {
+      id: generateId('journal_entry'),
+      agentId: params.agent.id,
+      sessionId: params.session.id,
+      type: params.session.type,
+      status: params.status,
+      version: params.version,
+      title: parsed.title?.trim() || fallbackTitle(params.session.type, content),
+      summary: parsed.summary?.trim() || summarizeText(content, 150),
+      content,
+      render: buildMessageRenderData(content),
+      mood: {
+        dominantEmotion: emotionalService.getDominantEmotion(params.agent.emotionalState, params.agent.emotionalProfile),
+        label: deriveDominantLabel(params.agent),
+      },
+      metadata: {
+        focus: params.session.normalizedInput.focus || [],
+        userNote: params.session.normalizedInput.userNote,
+        contextSummary: params.session.contextPacket?.summary,
+      },
+      references: params.session.contextPacket?.selectedSignals
+        .map((signal) => signal.linkedEntityId)
+        .filter((value): value is string => Boolean(value)) || [],
+      structured: {
+        insights: normalizeTextList(parsed.insights),
+        openQuestions: normalizeTextList(parsed.openQuestions),
+        nextActions: normalizeTextList(parsed.nextActions),
+        gratitudes: normalizeTextList(parsed.gratitudes),
+        themes: normalizeTextList(parsed.themes),
+        referencedEntities: normalizeTextList(parsed.referencedEntities),
+        conciseSummary: parsed.summary?.trim() || summarizeText(content, 140),
+      },
+      provider: params.providerInfo.provider,
+      model: params.providerInfo.model,
+      createdAt: now,
+      updatedAt: now,
+    } as JournalEntry & { provider?: string; model?: string }
+  }
+
+  private async evaluateEntry(
+    agent: AgentRecord,
+    session: JournalSession,
+    entry: JournalEntry,
+    providerInfo: LLMProviderInfo
+  ): Promise<JournalQualityEvaluation> {
+    const heuristic = this.scoreEntryHeuristically(agent, session, entry)
+
+    try {
+      const response = await generateText({
+        providerInfo,
+        temperature: 0.2,
+        maxTokens: 1400,
+        messages: [
+          {
+            role: 'system',
+            content: [
+              'You are a strict journal quality evaluator.',
+              'Return JSON only with keys: pass, overallScore, dimensions, hardFailureFlags, strengths, weaknesses, repairInstructions, evaluatorSummary.',
+              'Dimensions must include voiceConsistency, emotionalAuthenticity, reflectionDepth, specificityGrounding, continuity, readability.',
+              'Each dimension must include score and rationale.',
+              'Pass only when overallScore >= 80, every dimension >= 70, and hardFailureFlags is empty.',
+            ].join('\n'),
+          },
+          {
+            role: 'user',
+            content: [
+              `Agent persona: ${summarizeText(agent.persona, 260)}`,
+              `Journal type: ${session.type}`,
+              `Compose input: ${JSON.stringify(session.normalizedInput)}`,
+              `Context summary: ${session.contextPacket?.summary || 'none'}`,
+              `Entry title: ${entry.title}`,
+              `Entry summary: ${entry.summary}`,
+              `Entry content:\n${entry.content}`,
+            ].join('\n\n'),
+          },
+        ],
+      })
+
+      const parsed = safeParseJson<JournalQualityEvaluation>(response.content)
+      if (!parsed || !parsed.dimensions) {
+        return heuristic
+      }
+
+      const normalized: JournalQualityEvaluation = {
+        pass: Boolean(parsed.pass),
+        overallScore: clamp(Number(parsed.overallScore) || heuristic.overallScore),
+        dimensions: Object.fromEntries(
+          QUALITY_DIMENSIONS.map((dimension) => [
+            dimension,
+            {
+              score: clamp(Number(parsed.dimensions?.[dimension]?.score) || heuristic.dimensions[dimension].score),
+              rationale: parsed.dimensions?.[dimension]?.rationale || heuristic.dimensions[dimension].rationale,
+            },
+          ])
+        ) as JournalQualityEvaluation['dimensions'],
+        hardFailureFlags: Array.isArray(parsed.hardFailureFlags) ? parsed.hardFailureFlags : heuristic.hardFailureFlags,
+        strengths: normalizeTextList(parsed.strengths),
+        weaknesses: normalizeTextList(parsed.weaknesses),
+        repairInstructions: normalizeTextList(parsed.repairInstructions),
+        evaluatorSummary: parsed.evaluatorSummary || heuristic.evaluatorSummary,
+      }
+
+      const dimensionFloorPass = QUALITY_DIMENSIONS.every((dimension) => normalized.dimensions[dimension].score >= 70)
+      normalized.pass = normalized.overallScore >= 80 && dimensionFloorPass && normalized.hardFailureFlags.length === 0
+      return normalized
+    } catch {
+      return heuristic
+    }
+  }
+
+  private scoreEntryHeuristically(agent: AgentRecord, session: JournalSession, entry: JournalEntry): JournalQualityEvaluation {
+    const wordCount = countWords(entry.content)
+    const mentionsPersona = agent.persona.split(/\s+/).some((token) => token.length > 6 && entry.content.toLowerCase().includes(token.toLowerCase()))
+    const hasConcreteSignals = (entry.references.length || 0) >= 2
+    const hasQuestions = entry.structured.openQuestions.length > 0
+    const hasActions = entry.structured.nextActions.length > 0
+    const genericAssistant = /\b(as an ai|i can help|here is|in conclusion)\b/i.test(entry.content)
+    const schemaLeakage = /\bjson|schema|prompt|evaluation|repair instructions\b/i.test(entry.content)
+    const wrongType = session.type === 'idea_capture' ? wordCount < 140 : false
+
+    const dimensions = {
+      voiceConsistency: {
+        score: clamp(72 + (mentionsPersona ? 8 : 0) + (genericAssistant ? -18 : 0)),
+        rationale: 'Checks whether the journal sounds agent-authored rather than assistant-generic.',
+      },
+      emotionalAuthenticity: {
+        score: clamp(70 + (entry.mood.dominantEmotion ? 8 : 0) + (hasQuestions ? 4 : 0)),
+        rationale: 'Rewards emotionally specific self-reflection over detached summary.',
+      },
+      reflectionDepth: {
+        score: clamp(68 + (hasQuestions ? 6 : 0) + (hasActions ? 6 : 0) + (wordCount >= 200 ? 6 : 0)),
+        rationale: 'Rewards introspection, tension, and forward motion.',
+      },
+      specificityGrounding: {
+        score: clamp(65 + (hasConcreteSignals ? 12 : 0) + (wordCount >= 180 ? 4 : 0)),
+        rationale: 'Rewards concrete grounding to selected context rather than filler.',
+      },
+      continuity: {
+        score: clamp(70 + ((session.contextPacket?.selectedSignals.length || 0) >= 4 ? 8 : 0)),
+        rationale: 'Rewards visible continuity with goals, emotions, memories, or saved journal history.',
+      },
+      readability: {
+        score: clamp(74 + (wordCount >= 180 && wordCount <= 360 ? 8 : -6)),
+        rationale: 'Rewards clean readable prose in the target length range.',
+      },
+    } satisfies JournalQualityEvaluation['dimensions']
+
+    const hardFailureFlags = [
+      ...(genericAssistant ? ['generic_assistant_phrasing' as const] : []),
+      ...(schemaLeakage ? ['prompt_or_schema_leakage' as const] : []),
+      ...(wordCount < 140 ? ['shallow_filler' as const] : []),
+      ...(wrongType ? ['wrong_entry_type_behavior' as const] : []),
+      ...(!hasConcreteSignals ? ['poor_context_grounding' as const] : []),
+    ]
+
+    const overallScore = clamp(Math.round(
+      QUALITY_DIMENSIONS.reduce((sum, dimension) => sum + dimensions[dimension].score, 0) / QUALITY_DIMENSIONS.length
+      - hardFailureFlags.length * 4
+    ))
+
+    const pass = overallScore >= 80
+      && QUALITY_DIMENSIONS.every((dimension) => dimensions[dimension].score >= 70)
+      && hardFailureFlags.length === 0
+
+    return {
+      pass,
+      overallScore,
+      dimensions,
+      hardFailureFlags,
+      strengths: [
+        hasConcreteSignals ? 'Selected context appears in the draft.' : '',
+        hasQuestions ? 'The draft preserves introspective uncertainty.' : '',
+      ].filter(Boolean),
+      weaknesses: [
+        genericAssistant ? 'Voice drifts toward assistant phrasing.' : '',
+        !hasConcreteSignals ? 'Grounding to selected context is still weak.' : '',
+        wordCount < 180 ? 'Reflection is still slightly thin.' : '',
+      ].filter(Boolean),
+      repairInstructions: [
+        'Use at least two selected context signals directly in the prose.',
+        'Keep the entry in first person and emotionally specific.',
+        'Replace generic phrasing with agent-specific observations and continuity.',
+      ],
+      evaluatorSummary: pass
+        ? 'The draft passes the journal quality gate and is ready for explicit save.'
+        : 'The draft still needs stronger grounding, continuity, or voice fit before it can be saved.',
+    }
   }
 }
 
-// Export singleton instance
 export const journalService = new JournalService()
-
-// Export class for testing
-export { JournalService }

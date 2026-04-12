@@ -455,8 +455,7 @@ export class AgentChain {
       return await PersonalityService.analyzeInteraction(
         this.config.agentId,
         input,
-        output,
-        `Agent persona: ${_agent.persona}`
+        output
       )
     } catch (error) {
       console.error('Error applying personality evolution:', error)

@@ -9,6 +9,7 @@ import {
   NarrativeThread,
   TimelineFilters,
   AgentRecord,
+  JournalEntry,
   MemoryRecord,
   MessageRecord,
   EmotionalEvent
@@ -50,6 +51,7 @@ export class TimelineService {
     agent: AgentRecord,
     memories: MemoryRecord[],
     messages: MessageRecord[],
+    journalEntries: JournalEntry[] = [],
     filters?: TimelineFilters
   ): Promise<TimelineEvent[]> {
     const events: TimelineEvent[] = []
@@ -67,6 +69,9 @@ export class TimelineService {
       const emotionalEvents = this.convertEmotionalEventsToTimeline(agent.id, agent.emotionalHistory)
       events.push(...emotionalEvents)
     }
+
+    const journalEvents = this.convertJournalEntriesToTimeline(agent.id, journalEntries)
+    events.push(...journalEvents)
 
     // Sort by timestamp
     events.sort((a, b) =>
@@ -172,6 +177,26 @@ export class TimelineService {
       importance: Math.ceil(event.intensity * 10),
       metadata: {
         topics: [event.emotion, event.trigger]
+      }
+    }))
+  }
+
+  private convertJournalEntriesToTimeline(agentId: string, entries: JournalEntry[]): TimelineEvent[] {
+    return entries.map((entry) => ({
+      id: `journal-${entry.id}`,
+      agentId,
+      type: 'journal' as TimelineEventType,
+      title: entry.title,
+      description: entry.summary,
+      timestamp: entry.savedAt || entry.updatedAt || entry.createdAt,
+      importance: Math.min(10, Math.max(5, Math.round((entry.evaluation?.overallScore || 80) / 10))),
+      metadata: {
+        topics: [entry.type, ...entry.structured.themes].slice(0, 6),
+        emotionalState: undefined,
+      },
+      contentRef: {
+        collection: 'journal_entries',
+        documentId: entry.id,
       }
     }))
   }

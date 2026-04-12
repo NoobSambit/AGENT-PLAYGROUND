@@ -22,6 +22,8 @@ import type {
   EmotionalProfile,
   EmotionalState,
   JournalEntry,
+  JournalPipelineEvent,
+  JournalSession,
   LinguisticProfile,
   MemoryGraph,
   MemoryRecord,
@@ -277,16 +279,62 @@ export const dreams = pgTable('dreams', {
   index('dreams_agent_type_created_idx').on(table.agentId, table.type, table.createdAt),
 ])
 
+export const journalSessions = pgTable('journal_sessions', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  status: text('status').notNull(),
+  latestStage: text('latest_stage').notNull(),
+  type: text('type').notNull(),
+  normalizedInput: jsonb('normalized_input').$type<JournalSession['normalizedInput']>().notNull(),
+  contextPacket: jsonb('context_packet').$type<JournalSession['contextPacket'] | null>(),
+  voicePacket: jsonb('voice_packet').$type<JournalSession['voicePacket'] | null>(),
+  latestEvaluation: jsonb('latest_evaluation').$type<JournalSession['latestEvaluation'] | null>(),
+  finalEntryId: text('final_entry_id'),
+  provider: text('provider'),
+  model: text('model'),
+  failureReason: text('failure_reason'),
+  createdAt,
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull(),
+  savedAt: timestamp('saved_at', { withTimezone: true, mode: 'string' }),
+  payload: jsonb('payload').$type<JournalSession>().notNull(),
+}, (table) => [
+  index('journal_sessions_agent_created_idx').on(table.agentId, table.createdAt),
+  index('journal_sessions_agent_status_created_idx').on(table.agentId, table.status, table.createdAt),
+  index('journal_sessions_agent_type_created_idx').on(table.agentId, table.type, table.createdAt),
+])
+
 export const journalEntries = pgTable('journal_entries', {
   id: text('id').primaryKey(),
   agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  sessionId: text('session_id').notNull().references(() => journalSessions.id, { onDelete: 'cascade' }),
   type: text('type').notNull(),
+  status: text('status').notNull(),
+  version: integer('version').notNull(),
+  title: text('title').notNull(),
+  summary: text('summary').notNull(),
+  saved: boolean('saved').notNull().default(false),
   createdAt,
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull(),
+  savedAt: timestamp('saved_at', { withTimezone: true, mode: 'string' }),
   payload: jsonb('payload').$type<JournalEntry>().notNull(),
 }, (table) => [
   index('journal_entries_agent_created_idx').on(table.agentId, table.createdAt),
   index('journal_entries_agent_type_created_idx').on(table.agentId, table.type, table.createdAt),
+  index('journal_entries_session_version_idx').on(table.sessionId, table.version),
+  index('journal_entries_agent_saved_created_idx').on(table.agentId, table.saved, table.createdAt),
+])
+
+export const journalPipelineEvents = pgTable('journal_pipeline_events', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull().references(() => journalSessions.id, { onDelete: 'cascade' }),
+  stage: text('stage').notNull(),
+  status: text('status').notNull(),
+  summary: text('summary').notNull(),
+  createdAt,
+  payload: jsonb('payload').$type<JournalPipelineEvent>().notNull(),
+}, (table) => [
+  index('journal_pipeline_events_session_created_idx').on(table.sessionId, table.createdAt),
+  index('journal_pipeline_events_stage_created_idx').on(table.stage, table.createdAt),
 ])
 
 export const learningPatterns = pgTable('learning_patterns', {
@@ -490,7 +538,9 @@ export const schema = {
   profileInterviewTurns,
   profilePipelineEvents,
   dreams,
+  journalSessions,
   journalEntries,
+  journalPipelineEvents,
   learningPatterns,
   learningGoals,
   learningAdaptations,

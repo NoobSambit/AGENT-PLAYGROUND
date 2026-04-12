@@ -540,7 +540,7 @@ export class ProfileAnalysisService {
             ...interviewHistory,
             { role: 'user', content: question },
             { role: 'assistant', content: answer },
-          ].slice(-10)
+          ].slice(-10) as Array<{ role: 'user' | 'assistant'; content: string }>
         }
 
         const finding = await this.extractStageFinding(stageConfig.title, stageConfig.stage, evidenceSignals, stageTurns, resolvedProvider)
@@ -855,7 +855,7 @@ export class ProfileAnalysisService {
     providerInfo: LLMProviderInfo
   ): Promise<string> {
     const emotionalState = agent.emotionalState
-      ? `Dominant emotion: ${agent.emotionalState.dominantEmotion || 'none'}, intensity: ${agent.emotionalState.intensity ?? 0}, status: ${agent.emotionalState.status}.`
+      ? `Dominant emotion: ${agent.emotionalState.dominantEmotion || 'none'}, level: ${agent.emotionalState.dominantEmotion ? agent.emotionalState.currentMood[agent.emotionalState.dominantEmotion] ?? 0 : 0}, status: ${agent.emotionalState.status}.`
       : 'No explicit emotional state is available.'
     const historyBlock = interviewHistory
       .slice(-4)

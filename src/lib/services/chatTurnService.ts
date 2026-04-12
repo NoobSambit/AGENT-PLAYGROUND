@@ -277,8 +277,8 @@ export class ChatTurnService {
     const metadata = {
       ...messageData.metadata,
       format: messageData.type === 'agent' || messageData.type === 'system'
-        ? 'markdown-v1'
-        : 'plain-text-v1',
+        ? 'markdown-v1' as const
+        : 'plain-text-v1' as const,
       render: messageData.type === 'agent' || messageData.type === 'system'
         ? buildMessageRenderData(messageData.content)
         : undefined,

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
-import { MemoryRecord, MessageRecord, AgentRecord, AgentRelationship, ScenarioAnalyticsSummary, ScenarioBranchPoint, ScenarioIntervention, ScenarioRunRecord, EMOTION_COLORS, EmotionType, MessageRenderBlock } from '@/types/database'
+import { MemoryRecord, MessageRecord, AgentRecord, AgentRelationship, ScenarioAnalyticsSummary, ScenarioBranchPoint, ScenarioIntervention, ScenarioRunRecord, EMOTION_COLORS, EmotionType, MessageRenderBlock, TimelineEvent, JournalEntry } from '@/types/database'
 import { ArrowLeft, Send, User, MessageCircle, Brain, TrendingUp, Heart, Clock, Palette, Moon, BookOpen, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles, LayoutDashboard } from 'lucide-react'
 import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { motion } from 'framer-motion'
@@ -149,7 +149,7 @@ export default function AgentDetail() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Phase 1: Timeline events (generated from memories and messages)
-  const [timelineEvents, setTimelineEvents] = useState<ReturnType<typeof timelineService.aggregateEvents> extends Promise<infer T> ? T : never>([])
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([])
 
   // Get agent stats with defaults
   const agentStats = currentAgent?.stats || agentStatsService.createDefaultStats()
@@ -400,10 +400,15 @@ export default function AgentDetail() {
     if (!currentAgent) return
     try {
       const loadedMemories = memories.length > 0 ? memories : await loadMemories()
+      const journalBootstrap = await fetch(`/api/agents/${currentAgent.id}/journal`, { cache: 'no-store' })
+      const journalPayload = journalBootstrap.ok
+        ? await journalBootstrap.json() as { recentSavedEntries?: JournalEntry[] }
+        : null
       const events = await timelineService.aggregateEvents(
         currentAgent as unknown as AgentRecord,
         loadedMemories,
-        messages as unknown as MessageRecord[]
+        messages as unknown as MessageRecord[],
+        journalPayload?.recentSavedEntries || []
       )
       setTimelineEvents(events)
     } catch (error) {
