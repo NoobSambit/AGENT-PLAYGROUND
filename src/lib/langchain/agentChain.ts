@@ -9,6 +9,7 @@ import { LearningService } from '@/lib/services/learningService'
 import { dreamService } from '@/lib/services/dreamService'
 import { AgentRecord, EmotionalProfile, EmotionalState } from '@/types/database'
 import { BaseMessage } from '@langchain/core/messages'
+import type { ChatTurnQualityReport } from '@/lib/services/outputQuality/chatTurnQuality'
 
 export interface AgentChainConfig {
   agentId: string
@@ -25,11 +26,42 @@ export interface AgentResponse {
   toolsUsed?: string[]
   memoryUsed?: number
   personalityAnalyses?: TraitAnalysis[]
+  qualityGate?: ChatTurnQualityReport
 }
 
 interface AgentRuntimeOverrides {
   emotionalProfile?: EmotionalProfile
   emotionalState?: EmotionalState
+}
+
+function deriveTurnStyleDirectives(userInput?: string): string[] {
+  const text = userInput?.toLowerCase() || ''
+  const directives: string[] = []
+
+  if (!text) {
+    return directives
+  }
+
+  if (
+    /\b(be|keep|stay|make it|answer)\s+(more\s+)?(direct|blunt|straight|to the point)\b/.test(text)
+    || /\bno fluff\b/.test(text)
+  ) {
+    directives.push('Be direct and lead with the answer. Skip warm-up filler.')
+  }
+
+  if (/\bbrief|concise|short|quick answer|tldr\b/.test(text)) {
+    directives.push('Keep the reply compact unless detail is explicitly requested.')
+  }
+
+  if (/\bjust the answer\b/.test(text)) {
+    directives.push('Give the answer first and avoid extra explanation.')
+  }
+
+  if (/\bstep by step\b/.test(text)) {
+    directives.push('Use a clear ordered sequence of steps.')
+  }
+
+  return directives
 }
 
 export class AgentChain {
@@ -226,6 +258,7 @@ export class AgentChain {
     // Get personality context
     const personalityContext = this.getPersonalityContext(_agent)
     const enhancementContext = await this.buildEnhancementContext(_agent, userInput)
+    const styleDirectives = deriveTurnStyleDirectives(userInput)
 
     return baseChain.createEnhancedSystemPrompt({
       agentName: _agent.name || 'Agent',
@@ -239,7 +272,12 @@ export class AgentChain {
       psychologicalContext: enhancementContext.psychologicalContext,
       dreamContext: enhancementContext.dreamContext,
       knowledgeContext: enhancementContext.knowledgeContext,
-      learningContext: enhancementContext.learningContext
+      learningContext: [
+        enhancementContext.learningContext,
+        styleDirectives.length > 0
+          ? `Explicit user style directives for this turn:\n${styleDirectives.map((directive, index) => `${index + 1}. ${directive}`).join('\n')}`
+          : undefined,
+      ].filter(Boolean).join('\n\n') || undefined,
     })
   }
 

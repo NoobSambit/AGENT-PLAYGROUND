@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, type SVGProps } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Brain,
@@ -15,8 +15,8 @@ import {
   WandSparkles,
   BookOpen,
   CheckCircle2,
-  Info,
   Archive,
+  ShieldAlert,
 } from 'lucide-react'
 import type {
   ScenarioBranchPoint,
@@ -25,7 +25,7 @@ import type {
   ScenarioRunRecord,
 } from '@/types/database'
 import { ScenarioGuideModal } from './ScenarioGuideModal'
-import { PipelineIcon, StageIcon, ArchiveLibraryIcon, ContextIcon, QualityIcon } from '@/components/journal/JournalIcons'
+import { PipelineIcon, StageIcon, ArchiveLibraryIcon, ContextIcon } from '@/components/journal/JournalIcons'
 
 interface ParallelRealityExplorerProps {
   agentName: string
@@ -47,6 +47,28 @@ interface ParallelRealityExplorerProps {
 const premiumPanel = 'rounded-md border border-border/40 bg-card/40 backdrop-blur-md shadow-sm'
 const subPanel = 'rounded-sm border border-border/30 bg-muted/20'
 const labelStyle = 'text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80'
+
+function getRunStateTone(run: ScenarioRunRecord) {
+  if (run.qualityStatus === 'failed' || run.status === 'failed') {
+    return {
+      label: 'Blocked',
+      icon: ShieldAlert,
+      className: 'text-pastel-red',
+      chip: 'bg-pastel-red/10 text-pastel-red border-pastel-red/20',
+    }
+  }
+
+  return {
+    label: 'Passed',
+    icon: CheckCircle2,
+    className: 'text-pastel-green',
+    chip: 'bg-pastel-green/10 text-pastel-green border-pastel-green/20',
+  }
+}
+
+function formatProbeFlags(flags: string[] | undefined): string[] {
+  return [...new Set((flags || []).filter(Boolean))].map((flag) => flag.replace(/_/g, ' '))
+}
 
 function formatBranchPoint(point: ScenarioBranchPoint): string {
   const label =
@@ -235,6 +257,8 @@ function InterventionEditor({
 
 function RunSummary({ run }: { run: ScenarioRunRecord }) {
   const [activeTab, setActiveTab] = useState<'overview' | 'comparison' | 'context'>('overview')
+  const runTone = getRunStateTone(run)
+  const RunToneIcon = runTone.icon
   const tabs: Array<{ id: 'overview' | 'comparison' | 'context'; label: string }> = [
     { id: 'overview', label: 'Analysis' },
     { id: 'comparison', label: 'Diff' },
@@ -249,14 +273,28 @@ function RunSummary({ run }: { run: ScenarioRunRecord }) {
     >
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-5 border-b border-border/20">
         <div>
-          <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-pastel-green mb-2 uppercase">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Scenario Completed
+          <div className={`flex items-center gap-1.5 text-[10px] font-bold tracking-widest mb-2 uppercase ${runTone.className}`}>
+            <RunToneIcon className="h-3.5 w-3.5" />
+            {runTone.label === 'Blocked' ? 'Scenario Blocked' : 'Scenario Completed'}
           </div>
           <h3 className="text-2xl font-black text-foreground tracking-tight mb-1">{run.intervention.label}</h3>
           <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-wider">
             Branch: {run.branchPoint.title} <span className="mx-1.5 opacity-50">•</span> Starts at: <span className="text-pastel-blue">{run.comparison.firstDivergence}</span>
           </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className={`inline-flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${runTone.chip}`}>
+              <RunToneIcon className="h-3 w-3" />
+              {runTone.label}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-sm border border-border/30 bg-muted/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-foreground">
+              Quality {run.qualityScore ?? 0}
+            </span>
+            {run.promptVersion && (
+              <span className="inline-flex items-center gap-1.5 rounded-sm border border-border/30 bg-muted/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                {run.promptVersion}
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-4 bg-muted/10 p-2.5 rounded-sm border border-border/30 shrink-0">
           <div className="text-right">
@@ -297,6 +335,27 @@ function RunSummary({ run }: { run: ScenarioRunRecord }) {
               exit={{ opacity: 0, y: -10 }}
               className="min-w-0 space-y-8"
             >
+              {(run.failureReason || run.validation?.hardFailureFlags?.length) && (
+                <div className="rounded-sm border border-pastel-red/20 bg-pastel-red/5 px-4 py-3">
+                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-pastel-red mb-2">
+                    <ShieldAlert className="h-3.5 w-3.5" />
+                    Quality Blockers
+                  </div>
+                  {run.failureReason && (
+                    <p className="text-[11px] font-medium leading-relaxed text-foreground">{run.failureReason}</p>
+                  )}
+                  {run.validation?.hardFailureFlags?.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {run.validation.hardFailureFlags.map((flag) => (
+                        <span key={flag} className="inline-flex items-center rounded-sm border border-pastel-red/20 bg-pastel-red/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-pastel-red">
+                          {flag.replace(/_/g, ' ')}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
               <div className="flex flex-col xl:flex-row gap-6 xl:gap-8">
                 <div className="xl:w-3/5">
                   <h4 className="text-[11px] font-bold text-pastel-purple uppercase tracking-widest mb-3 flex items-center gap-2">
@@ -339,6 +398,15 @@ function RunSummary({ run }: { run: ScenarioRunRecord }) {
                 </div>
               </div>
 
+              {run.comparison.nextActionRecommendation && (
+                <div className="rounded-sm border border-pastel-blue/20 bg-pastel-blue/5 px-4 py-3">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-pastel-blue mb-2">Next Action</div>
+                  <p className="text-[11px] font-medium leading-relaxed text-foreground">
+                    {run.comparison.nextActionRecommendation}
+                  </p>
+                </div>
+              )}
+
               <div className="h-px w-full bg-border/30" />
 
               <div className="grid xl:grid-cols-2 gap-6 relative">
@@ -379,6 +447,26 @@ function RunSummary({ run }: { run: ScenarioRunRecord }) {
                     <div className={`${subPanel} p-4`}>
                       <div className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider border-b border-border/20 pb-2 mb-3">Original Response</div>
                       <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-muted-foreground/80 font-medium">{turn.baselineResponse}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <span className="inline-flex rounded-sm border border-border/20 bg-muted/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-foreground">
+                          Score {turn.baselineQuality?.score ?? 0}
+                        </span>
+                        <span className="inline-flex rounded-sm border border-border/20 bg-muted/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-foreground">
+                          Actionability {turn.baselineQuality?.actionabilityScore ?? 0}
+                        </span>
+                        <span className="inline-flex rounded-sm border border-border/20 bg-muted/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-foreground">
+                          Genericness {turn.baselineQuality?.genericnessScore ?? 0}
+                        </span>
+                      </div>
+                      {formatProbeFlags(turn.baselineQuality?.flags).length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {formatProbeFlags(turn.baselineQuality?.flags).map((flag) => (
+                            <span key={flag} className="inline-flex rounded-sm border border-pastel-red/20 bg-pastel-red/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-pastel-red">
+                              {flag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground pt-3 mt-3 border-t border-border/10">
                         Emotion: <span className="text-foreground">{turn.baselineEmotion.dominantEmotion || 'dormant'}</span>
                       </div>
@@ -386,10 +474,48 @@ function RunSummary({ run }: { run: ScenarioRunRecord }) {
                     <div className={`${subPanel} p-4 border-pastel-blue/30 bg-pastel-blue/5`}>
                       <div className="text-[9px] uppercase font-bold text-pastel-blue tracking-wider border-b border-pastel-blue/20 pb-2 mb-3">Alternate Branch</div>
                       <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-foreground font-medium">{turn.alternateResponse}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <span className="inline-flex rounded-sm border border-pastel-blue/20 bg-pastel-blue/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-pastel-blue">
+                          Score {turn.alternateQuality?.score ?? 0}
+                        </span>
+                        <span className="inline-flex rounded-sm border border-pastel-blue/20 bg-pastel-blue/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-pastel-blue">
+                          Actionability {turn.alternateQuality?.actionabilityScore ?? 0}
+                        </span>
+                        <span className="inline-flex rounded-sm border border-pastel-blue/20 bg-pastel-blue/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-pastel-blue">
+                          Genericness {turn.alternateQuality?.genericnessScore ?? 0}
+                        </span>
+                      </div>
+                      {formatProbeFlags(turn.alternateQuality?.flags).length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {formatProbeFlags(turn.alternateQuality?.flags).map((flag) => (
+                            <span key={flag} className="inline-flex rounded-sm border border-pastel-red/20 bg-pastel-red/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-pastel-red">
+                              {flag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       <div className="text-[9px] font-bold uppercase tracking-widest text-pastel-blue/80 pt-3 mt-3 border-t border-pastel-blue/10">
                         Emotion: <span className="text-pastel-blue">{turn.alternateEmotion.dominantEmotion || 'dormant'}</span>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span className={`inline-flex rounded-sm border px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${
+                      turn.materiallyDifferent === false
+                        ? 'border-pastel-red/20 bg-pastel-red/10 text-pastel-red'
+                        : 'border-pastel-green/20 bg-pastel-green/10 text-pastel-green'
+                    }`}>
+                      {turn.materiallyDifferent === false ? 'Low divergence' : 'Materially different'}
+                    </span>
+                    <span className="inline-flex rounded-sm border border-border/20 bg-muted/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-foreground">
+                      Divergence {turn.divergenceScore ?? 0}
+                    </span>
+                    {turn.repair?.attempted ? (
+                      <span className="inline-flex rounded-sm border border-pastel-purple/20 bg-pastel-purple/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-pastel-purple">
+                        Regenerated {turn.repair.repairedResponses.join(' + ')}
+                      </span>
+                    ) : null}
                   </div>
 
                   {turn.divergenceNotes.length > 0 && (
@@ -429,6 +555,19 @@ function RunSummary({ run }: { run: ScenarioRunRecord }) {
                     <dt className={labelStyle + ' mb-1'}>Timestamp</dt>
                     <dd className="text-[11px] font-bold text-foreground">{formatBranchPoint(run.branchPoint)}</dd>
                   </div>
+                  {run.branchContext.semanticMemories?.length ? (
+                    <div>
+                      <dt className={labelStyle + ' mb-2'}>Semantic Memory</dt>
+                      <dd className="space-y-2">
+                        {run.branchContext.semanticMemories.map((memory) => (
+                          <div key={memory.id} className="rounded-sm border border-border/20 bg-muted/10 px-3 py-2">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-pastel-blue">{memory.type.replace(/_/g, ' ')}</div>
+                            <div className="mt-1 text-[11px] font-medium leading-relaxed text-foreground">{memory.canonicalValue || memory.summary}</div>
+                          </div>
+                        ))}
+                      </dd>
+                    </div>
+                  ) : null}
                 </dl>
               </div>
 
@@ -457,6 +596,18 @@ function RunSummary({ run }: { run: ScenarioRunRecord }) {
                       </dd>
                     </div>
                   )}
+                  {run.branchContext.learningAdaptations?.length ? (
+                    <div className="pt-2">
+                      <dt className={labelStyle + ' mb-2'}>Learning Signals</dt>
+                      <dd className="space-y-2">
+                        {run.branchContext.learningAdaptations.map((adaptation) => (
+                          <div key={adaptation.id} className="rounded-sm border border-border/20 bg-muted/10 px-3 py-2 text-[11px] font-medium leading-relaxed text-foreground">
+                            {adaptation.instruction || adaptation.description}
+                          </div>
+                        ))}
+                      </dd>
+                    </div>
+                  ) : null}
                 </dl>
               </div>
             </motion.div>
@@ -732,14 +883,31 @@ export function ParallelRealityExplorer({
                             : 'border-border/30 bg-muted/5 hover:border-pastel-purple/20'
                         }`}
                       >
+                         {(() => {
+                           const runTone = getRunStateTone(run)
+                           return (
+                             <>
                          <div className="flex justify-between items-start mb-1">
                            <div className="text-[11px] font-bold text-foreground leading-tight">{run.intervention.label}</div>
-                           <div className="text-[9px] font-bold px-1.5 py-0.5 rounded-sm bg-pastel-purple/20 text-pastel-purple leading-none uppercase tracking-wider">{run.comparison.outcomeScore.alternate}</div>
+                           <div className="flex items-center gap-2">
+                             <div className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm leading-none uppercase tracking-wider border ${runTone.chip}`}>
+                               {runTone.label}
+                             </div>
+                             <div className="text-[9px] font-bold px-1.5 py-0.5 rounded-sm bg-pastel-purple/20 text-pastel-purple leading-none uppercase tracking-wider">{run.qualityScore ?? run.comparison.outcomeScore.alternate}</div>
+                           </div>
                          </div>
                          <div className="text-[10px] text-muted-foreground leading-relaxed mb-1.5 line-clamp-2 font-medium">{run.branchPoint.summary}</div>
+                         {run.failureReason && (
+                           <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wider text-pastel-red line-clamp-2">
+                             {run.failureReason}
+                           </div>
+                         )}
                          <div className="text-[9px] font-bold text-muted-foreground tracking-widest uppercase">
                            {new Date(run.createdAt).toLocaleDateString()}
                          </div>
+                             </>
+                           )
+                         })()}
                       </button>
                    ))
                 )}

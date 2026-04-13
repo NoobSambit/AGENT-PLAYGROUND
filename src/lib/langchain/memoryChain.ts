@@ -24,7 +24,7 @@ export class MemoryChain {
   constructor(config: MemoryChainConfig) {
     this.config = {
       maxMemories: 10,
-      memoryTypes: ['conversation', 'fact', 'interaction'],
+      memoryTypes: ['conversation', 'conversation_episode', 'fact', 'interaction', 'preference', 'project', 'relationship', 'identity', 'operating_constraint', 'artifact_summary', 'tension_snapshot'],
       importanceThreshold: 3,
       ...config
     }
@@ -142,10 +142,13 @@ export class MemoryChain {
   private async getRelevantMemories(): Promise<MemoryRecord[]> {
     try {
       const maxMemories = this.config.maxMemories || 10
-      const factMemories = await MemoryService.getMemoriesByType(this.config.agentId, 'fact')
+      const semanticTypes: MemoryRecord['type'][] = ['fact', 'preference', 'project', 'relationship', 'identity', 'operating_constraint', 'artifact_summary', 'tension_snapshot']
+      const semanticMemories = (await Promise.all(
+        semanticTypes.map((type) => MemoryService.getMemoriesByType(this.config.agentId, type))
+      )).flat()
       const recentMemories = await MemoryService.getRecentMemories(this.config.agentId, maxMemories)
 
-      const filteredFacts = factMemories
+      const filteredFacts = semanticMemories
         .filter((memory) => memory.importance >= 6 && memory.isActive !== false)
         .sort((a, b) => (
           b.importance - a.importance
@@ -193,11 +196,20 @@ export class MemoryChain {
 
     switch (memory.type) {
       case 'conversation':
+      case 'conversation_episode':
         return new SystemMessage(`[CONVERSATION MEMORY]\n${detailBlock}`)
       case 'fact':
         return new SystemMessage(
           `[FACT MEMORY]\n${factHint}${detailBlock}\nUse factual memory details exactly when they answer the user's question.`
         )
+      case 'preference':
+      case 'project':
+      case 'relationship':
+      case 'identity':
+      case 'operating_constraint':
+      case 'artifact_summary':
+      case 'tension_snapshot':
+        return new SystemMessage(`[SEMANTIC MEMORY:${memory.type.toUpperCase()}]\n${detailBlock}`)
       case 'interaction':
         return new SystemMessage(`[INTERACTION MEMORY]\n${detailBlock}`)
       case 'personality_insight':

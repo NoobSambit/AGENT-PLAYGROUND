@@ -48,6 +48,10 @@ export class ProfileAnalysisRepository {
       id: record.id,
       agentId: record.agentId,
       status: record.status,
+      qualityStatus: record.qualityStatus ?? 'legacy_unvalidated',
+      qualityScore: record.qualityScore ?? record.latestEvaluation?.overallScore ?? null,
+      promptVersion: record.promptVersion ?? null,
+      profileVersion: record.profileVersion ?? null,
       latestStage: record.latestStage,
       sourceCount: record.sourceCount,
       transcriptCount: record.transcriptCount,
@@ -65,6 +69,10 @@ export class ProfileAnalysisRepository {
   static async updateRun(id: string, record: ProfileAnalysisRun): Promise<ProfileAnalysisRun> {
     const [row] = await getDb().update(profileAnalysisRuns).set({
       status: record.status,
+      qualityStatus: record.qualityStatus ?? 'legacy_unvalidated',
+      qualityScore: record.qualityScore ?? record.latestEvaluation?.overallScore ?? null,
+      promptVersion: record.promptVersion ?? null,
+      profileVersion: record.profileVersion ?? null,
       latestStage: record.latestStage,
       sourceCount: record.sourceCount,
       transcriptCount: record.transcriptCount,

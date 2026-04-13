@@ -22,7 +22,6 @@ import type {
   CreativeLibraryItem,
   CreativePipelineEvent,
   CreativeRubricDimension,
-  CreativeRubricEvaluation,
   CreativeSession,
   CreativeTone,
 } from '@/types/database'
@@ -66,6 +65,29 @@ interface CreativeSessionDetail {
   pipelineEvents: CreativePipelineEvent[]
 }
 
+interface CreativePublishBlockers {
+  code: 'creative_publish_blocked'
+  sessionId: string
+  artifactId?: string
+  blockerReasons: string[]
+  qualityStatus?: CreativeSession['qualityStatus']
+  normalizationStatus?: CreativeArtifact['normalizationStatus']
+  validation?: CreativeArtifact['validation']
+  evaluation?: CreativeArtifact['evaluation']
+}
+
+class ApiResponseError extends Error {
+  status: number
+  payload: Record<string, unknown>
+
+  constructor(message: string, status: number, payload: Record<string, unknown>) {
+    super(message)
+    this.name = 'ApiResponseError'
+    this.status = status
+    this.payload = payload
+  }
+}
+
 const premiumPanel = 'rounded-md border border-border/40 bg-card/40 backdrop-blur-md shadow-sm'
 const subPanel = 'rounded-sm border border-border/30 bg-muted/20'
 const labelStyle = 'text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80'
@@ -105,17 +127,6 @@ const dimensionLabels: Record<CreativeRubricDimension, string> = {
   readability: 'Readability',
 }
 
-function toLines(value: string[]) {
-  return value.join('\n')
-}
-
-function fromLines(value: string): string[] {
-  return value
-    .split('\n')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-}
-
 async function parseResponse<T>(response: Response): Promise<T> {
   const raw = await response.text()
   let payload: Record<string, unknown> = {}
@@ -132,7 +143,11 @@ async function parseResponse<T>(response: Response): Promise<T> {
   }
 
   if (!response.ok) {
-    throw new Error(typeof payload.error === 'string' ? payload.error : `Request failed with status ${response.status}`)
+    throw new ApiResponseError(
+      typeof payload.error === 'string' ? payload.error : `Request failed with status ${response.status}`,
+      response.status,
+      payload
+    )
   }
 
   return payload as T
@@ -153,19 +168,13 @@ function artifactBadgeTone(score?: number) {
   return 'text-pastel-red'
 }
 
-function getDisplayTitle(title: string | undefined, format?: CreativeFormat) {
-  const cleaned = (title || '')
-    .replace(/^[{[\s]+/, '')
-    .replace(/[}\]]+$/g, '')
-    .replace(/^title[:\s-]*/i, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-  if (!cleaned || cleaned.length < 3 || /^[^a-zA-Z0-9]+$/.test(cleaned)) {
+function getArtifactTitle(title: string | undefined, format?: CreativeFormat) {
+  const trimmed = (title || '').trim()
+  if (!trimmed || trimmed.length < 3) {
     return format ? `Untitled ${format}` : 'Untitled piece'
   }
 
-  return cleaned
+  return trimmed
 }
 
 function SegmentPicker<T extends string>({
@@ -242,24 +251,28 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
   const [detail, setDetail] = useState<CreativeSessionDetail | null>(null)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [selectedLibraryArtifactId, setSelectedLibraryArtifactId] = useState<string | null>(null)
+  const [selectedStudioArtifactId, setSelectedStudioArtifactId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [publishBlockers, setPublishBlockers] = useState<CreativePublishBlockers | null>(null)
 
   const loadSessionDetail = useCallback(async (sessionId: string) => {
     const response = await fetch(`/api/agents/${agentId}/creative/sessions/${sessionId}`)
     const payload = await parseResponse<CreativeSessionDetail>(response)
     setDetail(payload)
     setActiveSessionId(payload.session.id)
+    setSelectedStudioArtifactId(payload.session.finalArtifactId || null)
     return payload
   }, [agentId])
 
   const loadBootstrap = useCallback(async (showRefreshState = false) => {
     try {
       setError(null)
+      setPublishBlockers(null)
       if (showRefreshState) setRefreshing(true)
       else setLoading(true)
 
@@ -328,8 +341,36 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
       }
       return selectedLibraryItem?.artifact || detail.artifacts[0] || null
     }
-    return detail.artifacts[0] || null
-  }, [detail, mode, selectedLibraryItem])
+    return (selectedStudioArtifactId ? detail.artifacts.find((artifact) => artifact.id === selectedStudioArtifactId) : null)
+      || detail.artifacts.find((artifact) => artifact.id === detail.session.finalArtifactId)
+      || detail.artifacts.find((artifact) => artifact.artifactRole === 'final')
+      || detail.artifacts.find((artifact) => artifact.artifactRole === 'repair')
+      || detail.artifacts.find((artifact) => artifact.artifactRole === 'draft')
+      || detail.artifacts[0]
+      || null
+  }, [detail, mode, selectedLibraryItem, selectedStudioArtifactId])
+
+  const artifactLineage = useMemo(() => {
+    if (!detail) return []
+    const orderedRoles: Array<NonNullable<CreativeArtifact['artifactRole']>> = ['draft', 'repair', 'final', 'published']
+    return orderedRoles
+      .map((role) => detail.artifacts.find((artifact) => artifact.artifactRole === role))
+      .filter((artifact): artifact is CreativeArtifact => Boolean(artifact))
+  }, [detail])
+
+  const finalArtifact = useMemo(() => {
+    if (!detail) return null
+    return detail.artifacts.find((artifact) => artifact.id === detail.session.finalArtifactId)
+      || detail.artifacts.find((artifact) => artifact.artifactRole === 'final')
+      || null
+  }, [detail])
+
+  const canPublish = Boolean(
+    detail?.session.qualityStatus === 'passed'
+      && detail.session.finalArtifactId
+      && finalArtifact?.validation?.pass
+      && finalArtifact.evaluation?.pass
+  )
 
   const handleBriefChange = <K extends keyof CreativeBrief>(key: K, value: CreativeBrief[K]) => {
     setBrief((current) => current ? { ...current, [key]: value } : current)
@@ -340,6 +381,7 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
     try {
       setSaving(true)
       setError(null)
+      setPublishBlockers(null)
       const response = await fetch(`/api/agents/${agentId}/creative`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -347,6 +389,7 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
       })
       const payload = await parseResponse<{ session: CreativeSession }>(response)
       setActiveSessionId(payload.session.id)
+      setSelectedStudioArtifactId(null)
       setDetail({ session: payload.session, artifacts: [], pipelineEvents: [] })
       setMode('studio')
       await loadBootstrap(true)
@@ -365,6 +408,7 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
     try {
       setGenerating(true)
       setError(null)
+      setPublishBlockers(null)
       const headers = new Headers(buildLLMPreferenceHeaders(selectedProvider, activeModel))
       const response = await fetch(`/api/agents/${agentId}/creative/sessions/${activeSessionId}/generate`, {
         method: 'POST',
@@ -372,6 +416,7 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
       })
       const payload = await parseResponse<CreativeSessionDetail>(response)
       setDetail(payload)
+      setSelectedStudioArtifactId(payload.session.finalArtifactId || payload.artifacts.find((artifact) => artifact.artifactRole === 'final')?.id || null)
       await loadBootstrap(true)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to generate')
@@ -385,17 +430,22 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
     try {
       setPublishing(true)
       setError(null)
+      setPublishBlockers(null)
       const response = await fetch(`/api/agents/${agentId}/creative/sessions/${detail.session.id}/publish`, {
         method: 'POST',
       })
       const payload = await parseResponse<CreativeSessionDetail>(response)
       setDetail(payload)
+      setSelectedStudioArtifactId(payload.session.finalArtifactId || null)
       setMode('library')
       await loadBootstrap(true)
       if (payload.session.publishedArtifactId) {
         setSelectedLibraryArtifactId(payload.session.publishedArtifactId)
       }
     } catch (nextError) {
+      if (nextError instanceof ApiResponseError && nextError.status === 409 && nextError.payload.publishBlockers) {
+        setPublishBlockers(nextError.payload.publishBlockers as CreativePublishBlockers)
+      }
       setError(nextError instanceof Error ? nextError.message : 'Failed to publish')
     } finally {
       setPublishing(false)
@@ -405,6 +455,8 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
   const handleOpenLibraryItem = async (item: CreativeLibraryItem) => {
     try {
       setMode('library')
+      setError(null)
+      setPublishBlockers(null)
       setSelectedLibraryArtifactId(item.artifact.id)
       if (detail?.session.id !== item.session.id) {
         await loadSessionDetail(item.session.id)
@@ -418,6 +470,7 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
     try {
       setMode('studio')
       setError(null)
+      setPublishBlockers(null)
       await loadSessionDetail(sessionId)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to open session')
@@ -508,6 +561,15 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
         </div>
       )}
 
+      {publishBlockers && (
+        <div className="rounded-md border border-pastel-yellow/30 bg-pastel-yellow/5 px-4 py-3 text-[13px] text-pastel-yellow">
+          <div className="font-semibold">Publish blocked</div>
+          <div className="mt-1 text-[12px] opacity-90">
+            {publishBlockers.blockerReasons.join(' | ')}
+          </div>
+        </div>
+      )}
+
       {/* Metrics Bento - Hidden on XL to save space for the 3-column layout */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0 xl:hidden">
         <MetricTile icon={LibraryIcon} label="Library" value={mergedLibrary.length} hint="Published pieces" />
@@ -578,7 +640,13 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
                     {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <GenerateIcon className="h-3 w-3" />}
                     Draft
                   </Button>
-                  <Button variant="outline" size="icon" onClick={() => void handlePublish()} disabled={publishing || !detail?.session.finalArtifactId} className="h-8 w-8 shrink-0 border-border/40">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => void handlePublish()}
+                    disabled={publishing || !canPublish}
+                    className="h-8 w-8 shrink-0 border-border/40"
+                  >
                     <PublishIcon className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -604,7 +672,7 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold text-foreground truncate">{getDisplayTitle(item.artifact.title, item.artifact.format)}</span>
+                        <span className="text-[11px] font-bold text-foreground truncate">{getArtifactTitle(item.artifact.title, item.artifact.format)}</span>
                         <span className={`text-[10px] font-bold ${artifactBadgeTone(item.artifact.evaluation?.overallScore)}`}>{item.artifact.evaluation?.overallScore || '–'}</span>
                       </div>
                       <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider mt-0.5">{formatLabels[item.artifact.format]} • {toneLabels[item.artifact.tone]}</div>
@@ -632,7 +700,9 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
                 >
                   <div className="flex items-center justify-between text-[10px] font-bold">
                     <span className="text-foreground">{formatLabels[session.normalizedBrief.format]}</span>
-                    <span className="text-muted-foreground uppercase text-[8px]">{session.status}</span>
+                    <span className={session.qualityStatus === 'passed' ? 'text-pastel-green uppercase text-[8px]' : session.qualityStatus === 'failed' ? 'text-pastel-red uppercase text-[8px]' : 'text-muted-foreground uppercase text-[8px]'}>
+                      {session.status}
+                    </span>
                   </div>
                   <div className="text-[9px] text-muted-foreground truncate">{formatDateTime(session.updatedAt)}</div>
                 </button>
@@ -659,7 +729,7 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
               <article className="w-full space-y-8">
                 <header className="space-y-4 pb-8 border-b border-border/20">
                   <h1 className="text-4xl font-black text-foreground tracking-tight uppercase">
-                    {getDisplayTitle(selectedArtifact.title, selectedArtifact.format)}
+                    {getArtifactTitle(selectedArtifact.title, selectedArtifact.format)}
                   </h1>
                   <p className="text-sm text-muted-foreground leading-relaxed italic opacity-80">
                     {selectedArtifact.summary}
@@ -678,9 +748,9 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
           {mode === 'studio' && (
             <div className="border-t border-border/40 bg-muted/5 p-2 shrink-0">
               <div className="flex items-center gap-3 overflow-x-auto scrollbar-none no-scrollbar">
-                {(detail?.pipelineEvents || []).slice(-3).map((event) => (
+                {(detail?.pipelineEvents || []).slice(0, 6).map((event) => (
                   <div key={event.id} className="flex items-center gap-1.5 whitespace-nowrap px-2 py-0.5 bg-muted/20 rounded-full text-[9px] font-bold">
-                    <CheckCircle2 className="h-2.5 w-2.5 text-pastel-green" />
+                    <CheckCircle2 className={`h-2.5 w-2.5 ${event.status === 'failed' ? 'text-pastel-red' : 'text-pastel-green'}`} />
                     <span className="text-foreground uppercase">{event.stage.replace('_', ' ')}</span>
                   </div>
                 ))}
@@ -698,6 +768,45 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
             </div>
             
             <div className="flex-1 overflow-y-auto scrollbar-thin p-5 space-y-6">
+              {detail?.session && (
+                <div className={`${subPanel} p-3.5 space-y-2 border-border/20`}>
+                  <div className={labelStyle}>Session Gate</div>
+                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider">
+                    <span>{detail.session.status}</span>
+                    <span className={detail.session.qualityStatus === 'passed' ? 'text-pastel-green' : detail.session.qualityStatus === 'failed' ? 'text-pastel-red' : 'text-muted-foreground'}>
+                      {detail.session.qualityStatus || 'legacy'}
+                    </span>
+                  </div>
+                  {detail.session.failureReason && (
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">{detail.session.failureReason}</p>
+                  )}
+                </div>
+              )}
+
+              {selectedArtifact?.validation && !selectedArtifact.validation.pass && (
+                <div className="rounded-sm border border-pastel-red/20 bg-pastel-red/5 p-3.5 space-y-2">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-pastel-red">Validation Blockers</div>
+                  <ListPanelSidebar
+                    title="Hard Failures"
+                    items={selectedArtifact.validation.hardFailureFlags}
+                    color="text-pastel-red"
+                    dotColor="bg-pastel-red"
+                  />
+                </div>
+              )}
+
+              {selectedArtifact?.evaluation?.hardFailureFlags?.length ? (
+                <div className="rounded-sm border border-pastel-yellow/20 bg-pastel-yellow/5 p-3.5 space-y-2">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-pastel-yellow">Evaluation Hard Fails</div>
+                  <ListPanelSidebar
+                    title="Evaluator Flags"
+                    items={selectedArtifact.evaluation.hardFailureFlags}
+                    color="text-pastel-yellow"
+                    dotColor="bg-pastel-yellow"
+                  />
+                </div>
+              ) : null}
+
               {!selectedArtifact?.evaluation ? (
                 <EmptyState title="Evaluation Pending" copy="Generate or select a piece to see rubric results." />
               ) : (
@@ -739,6 +848,64 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
                   </div>
                 </>
               )}
+
+              <div className="space-y-3">
+                <div className={labelStyle}>Artifact Lineage</div>
+                {artifactLineage.length === 0 ? (
+                  <EmptyState title="No lineage yet" copy="Generate a draft to inspect draft, repair, final, and publish stages." />
+                ) : (
+                  <div className="space-y-2">
+                    {artifactLineage.map((artifact) => (
+                      <button
+                        key={artifact.id}
+                        type="button"
+                        onClick={() => {
+                          if (artifact.artifactRole === 'published') {
+                            setMode('library')
+                            setSelectedLibraryArtifactId(artifact.id)
+                          } else {
+                            setMode('studio')
+                            setSelectedStudioArtifactId(artifact.id)
+                          }
+                        }}
+                        className={`w-full rounded-sm border p-3 text-left transition-colors ${
+                          selectedArtifact?.id === artifact.id ? 'border-pastel-purple/40 bg-pastel-purple/5' : 'border-border/20 bg-muted/10 hover:border-border/40'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground">{artifact.artifactRole || 'legacy'}</span>
+                          <span className={`text-[10px] font-bold ${artifactBadgeTone(artifact.qualityScore)}`}>{artifact.qualityScore ?? '–'}</span>
+                        </div>
+                        <div className="mt-1 text-[12px] font-semibold text-foreground truncate">{getArtifactTitle(artifact.title, artifact.format)}</div>
+                        <div className="mt-1 text-[10px] text-muted-foreground uppercase tracking-wider">
+                          {artifact.normalizationStatus || 'legacy'} • {artifact.validation?.pass ? 'validated' : 'blocked'}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <div className={labelStyle}>Pipeline Trace</div>
+                <div className="space-y-2">
+                  {(detail?.pipelineEvents || []).length === 0 ? (
+                    <EmptyState title="No pipeline events" copy="Save a brief or generate a draft to populate the trace." />
+                  ) : (
+                    detail?.pipelineEvents.map((event) => (
+                      <div key={event.id} className={`${subPanel} p-3 space-y-1.5`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground">{event.stage.replaceAll('_', ' ')}</span>
+                          <span className={event.status === 'failed' ? 'text-[10px] font-bold uppercase tracking-wider text-pastel-red' : 'text-[10px] font-bold uppercase tracking-wider text-pastel-green'}>
+                            {event.status}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">{event.summary}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           </section>
 
@@ -785,65 +952,3 @@ function ListPanelSidebar({ title, items, color, dotColor }: { title: string; it
     </div>
   )
 }
-
-function RubricPanel({ evaluation }: { evaluation?: CreativeRubricEvaluation }) {
-  if (!evaluation) return null
-
-  return (
-    <div className="space-y-4 pt-4 border-t border-border/20">
-      <div className="flex items-center gap-2">
-        <QualityIcon className="h-4 w-4" />
-        <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Quality Evaluation</span>
-      </div>
-
-      <div className="grid gap-2 grid-cols-2 lg:grid-cols-3">
-        {Object.entries(evaluation.dimensions).map(([dimension, score]) => (
-          <div key={dimension} className={`${subPanel} p-2.5 space-y-1`}>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase">{dimensionLabels[dimension as CreativeRubricDimension]}</span>
-              <span className={`text-[11px] font-bold ${artifactBadgeTone(score.score)}`}>{score.score}</span>
-            </div>
-            <p className="text-[10px] text-muted-foreground leading-tight line-clamp-2">{score.rationale}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-3">
-        <div className="space-y-1.5">
-          <div className="text-[9px] font-bold text-pastel-green uppercase tracking-wider">Strengths</div>
-          <ul className="space-y-1">
-            {evaluation.strengths.slice(0, 3).map((s, i) => (
-              <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-1.5">
-                <span className="mt-1 h-1 w-1 rounded-full bg-pastel-green shrink-0" />
-                {s}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="space-y-1.5">
-          <div className="text-[9px] font-bold text-pastel-red uppercase tracking-wider">Weaknesses</div>
-          <ul className="space-y-1">
-            {evaluation.weaknesses.slice(0, 3).map((w, i) => (
-              <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-1.5">
-                <span className="mt-1 h-1 w-1 rounded-full bg-pastel-red shrink-0" />
-                {w}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="space-y-1.5">
-          <div className="text-[9px] font-bold text-pastel-blue uppercase tracking-wider">Repair</div>
-          <ul className="space-y-1">
-            {evaluation.repairInstructions.slice(0, 3).map((r, i) => (
-              <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-1.5">
-                <span className="mt-1 h-1 w-1 rounded-full bg-pastel-blue shrink-0" />
-                {r}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </div>
-  )
-}
-

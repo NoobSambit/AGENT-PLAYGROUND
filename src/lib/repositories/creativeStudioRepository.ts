@@ -48,6 +48,10 @@ export class CreativeStudioRepository {
       id: record.id,
       agentId: record.agentId,
       status: record.status,
+      qualityStatus: record.qualityStatus ?? 'legacy_unvalidated',
+      repairCount: record.repairCount ?? 0,
+      promptVersion: record.promptVersion ?? null,
+      failureReason: record.failureReason ?? null,
       format: record.normalizedBrief.format,
       brief: record.brief,
       normalizedBrief: record.normalizedBrief,
@@ -70,6 +74,10 @@ export class CreativeStudioRepository {
   static async updateSession(id: string, record: CreativeSession): Promise<CreativeSession> {
     const [row] = await getDb().update(creativeSessions).set({
       status: record.status,
+      qualityStatus: record.qualityStatus ?? 'legacy_unvalidated',
+      repairCount: record.repairCount ?? 0,
+      promptVersion: record.promptVersion ?? null,
+      failureReason: record.failureReason ?? null,
       format: record.normalizedBrief.format,
       brief: record.brief,
       normalizedBrief: record.normalizedBrief,
@@ -124,12 +132,16 @@ export class CreativeStudioRepository {
   }
 
   static async saveArtifact(record: CreativeArtifact): Promise<CreativeArtifact> {
-    const [row] = await getDb().insert(creativeArtifacts).values({
+    const values = {
       id: record.id,
       agentId: record.agentId,
       sessionId: record.sessionId,
       format: record.format,
       status: record.status,
+      artifactRole: record.artifactRole ?? null,
+      normalizationStatus: record.normalizationStatus ?? 'legacy_unvalidated',
+      qualityScore: record.qualityScore ?? record.evaluation?.overallScore ?? null,
+      sourceArtifactId: record.sourceArtifactId ?? null,
       version: record.version,
       title: record.title,
       summary: record.summary,
@@ -141,6 +153,31 @@ export class CreativeStudioRepository {
       updatedAt: asIsoString(record.updatedAt),
       publishedAt: record.publishedAt ? asIsoString(record.publishedAt) : null,
       payload: record,
+    }
+
+    const [row] = await getDb().insert(creativeArtifacts).values(values).onConflictDoUpdate({
+      target: creativeArtifacts.id,
+      set: {
+        agentId: values.agentId,
+        sessionId: values.sessionId,
+        format: values.format,
+        status: values.status,
+        artifactRole: values.artifactRole,
+        normalizationStatus: values.normalizationStatus,
+        qualityScore: values.qualityScore,
+        sourceArtifactId: values.sourceArtifactId,
+        version: values.version,
+        title: values.title,
+        summary: values.summary,
+        wordCount: values.wordCount,
+        published: values.published,
+        provider: values.provider,
+        model: values.model,
+        createdAt: values.createdAt,
+        updatedAt: values.updatedAt,
+        publishedAt: values.publishedAt,
+        payload: values.payload,
+      },
     }).returning()
 
     return mapArtifactRow(row)
@@ -150,6 +187,10 @@ export class CreativeStudioRepository {
     const [row] = await getDb().update(creativeArtifacts).set({
       format: record.format,
       status: record.status,
+      artifactRole: record.artifactRole ?? null,
+      normalizationStatus: record.normalizationStatus ?? 'legacy_unvalidated',
+      qualityScore: record.qualityScore ?? record.evaluation?.overallScore ?? null,
+      sourceArtifactId: record.sourceArtifactId ?? null,
       version: record.version,
       title: record.title,
       summary: record.summary,

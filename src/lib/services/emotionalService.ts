@@ -39,6 +39,13 @@ interface InternalEmotionUpdateParams {
   linkedActionId?: string
 }
 
+interface EmotionReasonDetail {
+  rationale: string
+  triggers?: string[]
+  counterSignals?: string[]
+  linkedMemoryIds?: string[]
+}
+
 const EMOTIONS: EmotionType[] = [
   'joy',
   'sadness',
@@ -160,6 +167,19 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
     return JSON.parse(match[0]) as Record<string, unknown>
   } catch {
     return null
+  }
+}
+
+function toReasonDetail(value: string | EmotionReasonDetail): EmotionReasonDetail {
+  if (typeof value === 'string') {
+    return { rationale: value }
+  }
+
+  return {
+    rationale: value.rationale,
+    triggers: value.triggers?.filter(Boolean).slice(0, 4),
+    counterSignals: value.counterSignals?.filter(Boolean).slice(0, 3),
+    linkedMemoryIds: value.linkedMemoryIds?.filter(Boolean).slice(0, 4),
   }
 }
 
@@ -454,7 +474,7 @@ export class EmotionalService {
     const decayedState = this.decayEmotionalState(agent.emotionalState, profile)
     const text = userMessage.toLowerCase()
     const deltas = createZeroMood()
-    const reasons = new Map<EmotionType, string>()
+    const reasons = new Map<EmotionType, EmotionReasonDetail>()
     let confidence = 0.42
 
     const positivity = countMatches(text, POSITIVE_MARKERS)
@@ -473,17 +493,29 @@ export class EmotionalService {
     if (positivity > 0 || praise > 0) {
       deltas.trust += 0.05 + positivity * 0.02 + praise * 0.03 + profile.temperament.trust * 0.03
       deltas.joy += 0.03 + positivity * 0.02 + praise * 0.025 + profile.optimism * 0.02
-      reasons.set('trust', 'The message signaled appreciation or goodwill, which made the agent more open.')
-      reasons.set('joy', 'The message carried positive reinforcement, which lifted the agent\'s tone.')
+      reasons.set('trust', {
+        rationale: 'The message signaled appreciation or goodwill, which made the agent more open.',
+        triggers: ['appreciation', 'goodwill'],
+      })
+      reasons.set('joy', {
+        rationale: 'The message carried positive reinforcement, which lifted the agent\'s tone.',
+        triggers: ['positive reinforcement'],
+      })
       confidence += 0.08
     }
 
     if (curiosity > 0) {
       deltas.anticipation += 0.06 + curiosity * 0.02 + profile.temperament.anticipation * 0.03
       deltas.surprise += novelty > 0 ? 0.03 + novelty * 0.02 : 0
-      reasons.set('anticipation', 'The request opened a problem to solve, which energized the agent.')
+      reasons.set('anticipation', {
+        rationale: 'The request opened a problem to solve, which energized the agent.',
+        triggers: ['problem to solve', 'active curiosity'],
+      })
       if (novelty > 0) {
-        reasons.set('surprise', 'The request introduced novelty, which sharpened the agent\'s attention.')
+        reasons.set('surprise', {
+          rationale: 'The request introduced novelty, which sharpened the agent\'s attention.',
+          triggers: ['novelty'],
+        })
       }
       confidence += 0.08
     }
@@ -492,16 +524,28 @@ export class EmotionalService {
       deltas.sadness += 0.02 + distress * 0.015 + vulnerability * 0.015 + profile.sensitivity * 0.02
       deltas.trust += 0.04 + helpSeeking * 0.02 + profile.temperament.trust * 0.02
       deltas.anticipation += 0.03 + helpSeeking * 0.015
-      reasons.set('sadness', 'The message described strain or emotional load, which the agent registered as weight.')
-      reasons.set('trust', 'The user shared something vulnerable or asked for help, which increased relational openness.')
-      reasons.set('anticipation', 'The request invited supportive action, which focused the agent on helping.')
+      reasons.set('sadness', {
+        rationale: 'The message described strain or emotional load, which the agent registered as weight.',
+        triggers: ['distress', 'emotional load'],
+      })
+      reasons.set('trust', {
+        rationale: 'The user shared something vulnerable or asked for help, which increased relational openness.',
+        triggers: ['vulnerability', 'help-seeking'],
+      })
+      reasons.set('anticipation', {
+        rationale: 'The request invited supportive action, which focused the agent on helping.',
+        triggers: ['support request'],
+      })
       confidence += 0.06
     }
 
     if (uncertainty > 0) {
       deltas.fear += 0.02 + uncertainty * 0.015 + profile.sensitivity * 0.02
       deltas.anticipation += 0.02 + profile.temperament.anticipation * 0.02
-      reasons.set('fear', 'The situation sounded uncertain or risky, which raised caution.')
+      reasons.set('fear', {
+        rationale: 'The situation sounded uncertain or risky, which raised caution.',
+        triggers: ['uncertainty', 'risk'],
+      })
       confidence += 0.06
     }
 
@@ -509,10 +553,17 @@ export class EmotionalService {
       deltas.sadness += 0.02 + frustration * 0.015
       deltas.anticipation += 0.015 + frustration * 0.01
       if (!reasons.has('sadness')) {
-        reasons.set('sadness', 'The message described a setback, which the agent read as strain rather than aggression.')
+        reasons.set('sadness', {
+          rationale: 'The message described a setback, which the agent read as strain rather than aggression.',
+          triggers: ['setback'],
+          counterSignals: ['no directed hostility'],
+        })
       }
       if (!reasons.has('anticipation')) {
-        reasons.set('anticipation', 'A setback created pressure to help with the next step.')
+        reasons.set('anticipation', {
+          rationale: 'A setback created pressure to help with the next step.',
+          triggers: ['problem-solving pressure'],
+        })
       }
       confidence += 0.05
     }
@@ -520,21 +571,33 @@ export class EmotionalService {
     if (hostility > 0) {
       deltas.anger += 0.04 + hostility * 0.025 + profile.sensitivity * 0.02
       deltas.trust -= 0.05 + hostility * 0.02
-      reasons.set('anger', 'The message carried friction or hostility, which made the agent more defensive.')
-      reasons.set('trust', 'The interaction reduced relational comfort for the moment.')
+      reasons.set('anger', {
+        rationale: 'The message carried friction or hostility, which made the agent more defensive.',
+        triggers: ['directed hostility'],
+      })
+      reasons.set('trust', {
+        rationale: 'The interaction reduced relational comfort for the moment.',
+        triggers: ['relational friction'],
+      })
       confidence += 0.08
     }
 
     if (disgust > 0) {
       deltas.disgust += 0.05 + disgust * 0.03
-      reasons.set('disgust', 'The topic or wording triggered a stronger skeptical reaction.')
+      reasons.set('disgust', {
+        rationale: 'The topic or wording triggered a stronger skeptical reaction.',
+        triggers: ['disgust marker'],
+      })
       confidence += 0.06
     }
 
     if (continuity > 0) {
       deltas.trust += Math.min(continuity * 0.008, 0.03)
       if (!reasons.has('trust')) {
-        reasons.set('trust', 'Repeated back-and-forth interaction made the exchange feel more grounded.')
+        reasons.set('trust', {
+          rationale: 'Repeated back-and-forth interaction made the exchange feel more grounded.',
+          triggers: ['continuity'],
+        })
       }
     }
 
@@ -639,25 +702,25 @@ export class EmotionalService {
     const profile = this.normalizeEmotionalProfile(agent.emotionalProfile, agent.coreTraits)
     const decayedState = this.decayEmotionalState(agent.emotionalState, profile)
     const deltas = createZeroMood()
-    const reasons = new Map<EmotionType, string>()
+    const reasons = new Map<EmotionType, EmotionReasonDetail>()
     const text = content.toLowerCase()
 
     if (source === 'creative_generation') {
       deltas.joy += 0.06 + profile.optimism * 0.03
       deltas.anticipation += 0.08 + profile.temperament.anticipation * 0.03
       deltas.surprise += 0.04 + countMatches(text, NOVELTY_MARKERS) * 0.02
-      reasons.set('joy', 'Creating something original gave the agent a modest uplift.')
-      reasons.set('anticipation', 'Creative output increased forward-looking energy.')
-      reasons.set('surprise', 'The act of generating new material kept the agent mentally flexible.')
+      reasons.set('joy', { rationale: 'Creating something original gave the agent a modest uplift.', triggers: ['creative completion'] })
+      reasons.set('anticipation', { rationale: 'Creative output increased forward-looking energy.', triggers: ['new output'] })
+      reasons.set('surprise', { rationale: 'The act of generating new material kept the agent mentally flexible.', triggers: ['novel material'] })
     }
 
     if (source === 'journal_entry') {
       deltas.trust += 0.05 + profile.temperament.trust * 0.03
       deltas.sadness += countMatches(text, DISTRESS_MARKERS) > 0 ? 0.04 : 0.02
       deltas.anticipation += 0.03
-      reasons.set('trust', 'Reflection reinforced internal coherence and self-trust.')
-      reasons.set('sadness', 'Reflection can surface emotionally weighty material.')
-      reasons.set('anticipation', 'Writing clarified what the agent wants to do next.')
+      reasons.set('trust', { rationale: 'Reflection reinforced internal coherence and self-trust.', triggers: ['self-reflection'] })
+      reasons.set('sadness', { rationale: 'Reflection can surface emotionally weighty material.', triggers: ['emotional processing'] })
+      reasons.set('anticipation', { rationale: 'Writing clarified what the agent wants to do next.', triggers: ['next-step clarity'] })
     }
 
     if (source === 'dream_generation') {
@@ -668,17 +731,17 @@ export class EmotionalService {
       deltas.fear += nightmareMarkers > 0 ? 0.06 : recurringMarkers > 0 ? 0.03 : 0.02
       deltas.anticipation += propheticMarkers > 0 ? 0.05 : 0.02
       deltas.sadness += recurringMarkers > 0 ? 0.03 : 0
-      reasons.set('surprise', 'Dream generation surfaced unusual symbolic combinations.')
+      reasons.set('surprise', { rationale: 'Dream generation surfaced unusual symbolic combinations.', triggers: ['symbolic novelty'] })
       reasons.set('fear', nightmareMarkers > 0
-        ? 'Nightmare imagery left a stronger residual caution signal.'
+        ? { rationale: 'Nightmare imagery left a stronger residual caution signal.', triggers: ['nightmare imagery'] }
         : recurringMarkers > 0
-          ? 'Recurring dream loops left behind a guarded emotional residue.'
-          : 'Dream imagery can trigger a small residual caution signal.')
+          ? { rationale: 'Recurring dream loops left behind a guarded emotional residue.', triggers: ['recurring loop'] }
+          : { rationale: 'Dream imagery can trigger a small residual caution signal.', triggers: ['dream residue'] })
       reasons.set('anticipation', propheticMarkers > 0
-        ? 'Prophetic dream signals increased forward-looking vigilance.'
-        : 'The dream left unresolved threads to think about.')
+        ? { rationale: 'Prophetic dream signals increased forward-looking vigilance.', triggers: ['future-facing symbolism'] }
+        : { rationale: 'The dream left unresolved threads to think about.', triggers: ['open loops'] })
       if (recurringMarkers > 0) {
-        reasons.set('sadness', 'Recurring motifs can deepen a sense of unresolved emotional weight.')
+        reasons.set('sadness', { rationale: 'Recurring motifs can deepen a sense of unresolved emotional weight.', triggers: ['recurring motifs'] })
       }
     }
 
@@ -770,26 +833,52 @@ export class EmotionalService {
     linkedMessageId?: string
     linkedActionId?: string
     confidence: number
-    reasons: Map<EmotionType, string>
+    reasons: Map<EmotionType, EmotionReasonDetail>
   }): EmotionalEvent[] {
     const timestamp = new Date().toISOString()
     return EMOTIONS
       .filter((emotion) => Math.abs(params.deltas[emotion]) >= EVENT_THRESHOLD)
-      .map((emotion) => ({
-        id: buildEventId(`${params.source}-${emotion}`),
-        emotion,
-        intensity: params.state.currentMood[emotion],
-        delta: params.deltas[emotion],
-        phase: params.phase,
-        source: params.source,
-        trigger: params.source,
-        explanation: params.reasons.get(emotion) || `The agent shifted toward ${emotion}.`,
-        confidence: clamp(params.confidence),
-        context: params.context,
-        timestamp,
-        linkedMessageId: params.linkedMessageId,
-        linkedActionId: params.linkedActionId,
-      }))
+      .map((emotion) => {
+        const detail = toReasonDetail(
+          params.reasons.get(emotion) || `The agent shifted toward ${emotion}.`
+        )
+        const topEmotions = [...EMOTIONS]
+          .sort((left, right) => params.state.currentMood[right] - params.state.currentMood[left])
+          .slice(0, 3)
+          .map((name) => ({ emotion: name, intensity: params.state.currentMood[name] }))
+        const evidenceRefs = [
+          params.linkedMessageId,
+          params.linkedActionId,
+          ...(detail.linkedMemoryIds || []),
+        ].filter((value): value is string => Boolean(value))
+
+        return {
+          id: buildEventId(`${params.source}-${emotion}`),
+          emotion,
+          dominantEmotion: params.state.dominantEmotion || emotion,
+          topEmotions,
+          intensity: params.state.currentMood[emotion],
+          delta: params.deltas[emotion],
+          phase: params.phase,
+          source: params.source,
+          trigger: (detail.triggers || [params.source])[0] || params.source,
+          explanation: detail.rationale,
+          confidence: clamp(params.confidence),
+          rationale: [detail.rationale],
+          triggers: detail.triggers || [params.source.replace(/_/g, ' ')],
+          counterSignals: detail.counterSignals || [],
+          context: params.context,
+          timestamp,
+          linkedMessageId: params.linkedMessageId,
+          linkedActionId: params.linkedActionId,
+          linkedMemoryIds: detail.linkedMemoryIds || [],
+          evidenceRefs,
+          downstreamHints: this.buildDownstreamHints(emotion, detail),
+          metadata: {
+            ...this.buildInspectabilityMetadata(emotion, detail),
+          },
+        }
+      })
   }
 
   private evaluateResponseOutcome(
@@ -800,7 +889,7 @@ export class EmotionalService {
   ): { emotionalState: EmotionalState; events: EmotionalEvent[] } {
     const text = agentResponse.toLowerCase()
     const deltas = createZeroMood()
-    const reasons = new Map<EmotionType, string>()
+    const reasons = new Map<EmotionType, EmotionReasonDetail>()
     const helpfulSignals = countMatches(text, HELPFUL_RESPONSE_MARKERS)
     const hedgingSignals = countMatches(text, HEDGING_MARKERS)
     const failureSignals = countMatches(text, FAILURE_MARKERS)
@@ -811,25 +900,25 @@ export class EmotionalService {
     if (helpfulSignals > 0 || longResponse) {
       deltas.trust += 0.03 + helpfulSignals * 0.015
       deltas.joy += 0.02 + (longResponse ? 0.015 : 0)
-      reasons.set('trust', 'The agent produced a concrete response, which reinforced confidence in the exchange.')
-      reasons.set('joy', 'A productive reply gave the agent a small internal lift.')
+      reasons.set('trust', { rationale: 'The agent produced a concrete response, which reinforced confidence in the exchange.', triggers: ['concrete reply'] })
+      reasons.set('joy', { rationale: 'A productive reply gave the agent a small internal lift.', triggers: ['productive response'] })
     }
 
     if (hedgingSignals > 0) {
       deltas.fear += 0.02 + hedgingSignals * 0.01
-      reasons.set('fear', 'Uncertainty in the reply left some residual caution.')
+      reasons.set('fear', { rationale: 'Uncertainty in the reply left some residual caution.', triggers: ['hedging'] })
     }
 
     if (failureSignals > 0) {
       deltas.sadness += 0.04 + failureSignals * 0.02
       deltas.fear += 0.03
-      reasons.set('sadness', 'The reply could not fully satisfy the request, which registered as a setback.')
-      reasons.set('fear', 'The failure made the agent more cautious about the next turn.')
+      reasons.set('sadness', { rationale: 'The reply could not fully satisfy the request, which registered as a setback.', triggers: ['response failure'] })
+      reasons.set('fear', { rationale: 'The failure made the agent more cautious about the next turn.', triggers: ['response failure'] })
     }
 
     if (directRepair) {
       deltas.trust += 0.02
-      reasons.set('trust', 'Attempting a repair preserved some relational steadiness.')
+      reasons.set('trust', { rationale: 'Attempting a repair preserved some relational steadiness.', triggers: ['repair attempt'] })
     }
 
     const boundedDeltas = this.boundDeltas(deltas)
@@ -905,7 +994,7 @@ export class EmotionalService {
         : 'The turn slightly changed the agent\'s internal emotional balance.'
 
       const deltas = createZeroMood()
-      const reasons = new Map<EmotionType, string>()
+      const reasons = new Map<EmotionType, EmotionReasonDetail>()
 
       for (const entry of rawAdjustments.slice(0, 3)) {
         if (!entry || typeof entry !== 'object') continue
@@ -921,10 +1010,10 @@ export class EmotionalService {
         }
 
         deltas[emotion as EmotionType] = clampSignedDelta(delta, MAX_REFLECTION_DELTA)
-        reasons.set(
-          emotion as EmotionType,
-          typeof reason === 'string' && reason.trim() ? reason : explanation
-        )
+        reasons.set(emotion as EmotionType, {
+          rationale: typeof reason === 'string' && reason.trim() ? reason : explanation,
+          triggers: ['reflection pass'],
+        })
       }
 
       const boundedDeltas = this.boundDeltas(deltas)
@@ -989,6 +1078,41 @@ export class EmotionalService {
 
   private capitalize(value: string): string {
     return value.charAt(0).toUpperCase() + value.slice(1)
+  }
+
+  private buildDownstreamHints(
+    emotion: EmotionType,
+    detail: EmotionReasonDetail
+  ): NonNullable<EmotionalEvent['downstreamHints']> {
+    const baseReason = detail.rationale
+
+    return [
+      {
+        feature: 'journal',
+        hint: `Let ${emotion} shape what the journal names directly and what it avoids.`,
+        reason: baseReason,
+      },
+      {
+        feature: 'dream',
+        hint: `Use ${emotion} as symbolic weather rather than literal narration.`,
+        reason: baseReason,
+      },
+      {
+        feature: 'scenario',
+        hint: `Check whether ${emotion} should bias caution, directness, or openness in alternate branches.`,
+        reason: baseReason,
+      },
+    ]
+  }
+
+  private buildInspectabilityMetadata(emotion: EmotionType, detail: EmotionReasonDetail): Record<string, unknown> {
+    return {
+      emotionContractVersion: 'phase4-emotion-evidence-v1',
+      triggers: detail.triggers || [],
+      counterSignals: detail.counterSignals || [],
+      downstreamFeatureBias: ['journal', 'dream', 'scenario'],
+      semanticThemes: [emotion, ...(detail.triggers || [])].slice(0, 4),
+    }
   }
 }
 

@@ -1,12 +1,13 @@
 'use client'
 
 import React, { useMemo } from 'react'
-import { EmotionalProfile, EmotionalState, EmotionType, EMOTION_COLORS } from '@/types/database'
+import { EmotionalEvent, EmotionalProfile, EmotionalState, EmotionType, EMOTION_COLORS } from '@/types/database'
 import { emotionalService } from '@/lib/services/emotionalService'
 
 interface EmotionRadarProps {
   emotionalState?: EmotionalState
   emotionalProfile?: EmotionalProfile
+  recentEvents?: EmotionalEvent[]
   mode?: 'live' | 'temperament'
   size?: number
   showLabels?: boolean
@@ -54,6 +55,7 @@ function resolveDominantEmotion(
 export function EmotionRadar({
   emotionalState,
   emotionalProfile,
+  recentEvents = [],
   mode = 'live',
   size = 300,
   showLabels = true,
@@ -104,6 +106,7 @@ export function EmotionRadar({
   })
 
   const color = EMOTION_COLORS[dominantEmotion]
+  const latestEvent = recentEvents[0]
 
   return (
     <div className={`relative flex flex-col items-center select-none ${className}`}>
@@ -181,8 +184,6 @@ export function EmotionRadar({
           const isTop = index === 0
           const isBottom = index === 4
           const isRight = index > 0 && index < 4
-          const isLeft = index > 4
-
           return (
             <text
               key={index}
@@ -208,6 +209,19 @@ export function EmotionRadar({
           {mode === 'temperament' ? 'Temperament lead:' : 'Current lead:'} {EMOTION_LABELS[dominantEmotion]}
         </span>
       </div>
+
+      {latestEvent?.topEmotions?.length ? (
+        <div className="mt-3 flex flex-wrap justify-center gap-2">
+          {latestEvent.topEmotions.slice(0, 3).map((entry) => (
+            <span
+              key={`${entry.emotion}-${entry.intensity}`}
+              className="rounded-full border border-border/40 bg-background/60 px-2.5 py-1 text-[10px] font-medium text-muted-foreground"
+            >
+              {EMOTION_LABELS[entry.emotion]} {(entry.intensity * 100).toFixed(0)}%
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }

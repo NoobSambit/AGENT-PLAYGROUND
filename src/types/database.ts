@@ -1,3 +1,15 @@
+import type {
+  OutputArtifactRole,
+  OutputQualityEvaluationReport,
+  OutputNormalizationStatus,
+  OutputQualityRawModelOutput,
+  OutputQualitySourceRef,
+  OutputQualityStatus,
+  OutputQualityTrackedFields,
+  OutputQualityValidationReport,
+  SemanticMemoryFields,
+} from './outputQuality'
+
 // Database schema types and interfaces
 // These represent the structure for Firebase Firestore implementation
 
@@ -66,6 +78,8 @@ export interface EmotionalState {
 export interface EmotionalEvent {
   id: string
   emotion: EmotionType
+  dominantEmotion?: EmotionType
+  topEmotions?: Array<{ emotion: EmotionType; intensity: number }>
   intensity: number // 0-1 resulting level after the shift
   delta: number // Signed change applied to the live state
   phase: EmotionalEventPhase
@@ -73,10 +87,20 @@ export interface EmotionalEvent {
   trigger: string // Human-readable trigger label
   explanation: string // Why the agent changed
   confidence: number // 0-1 confidence in the appraisal
+  rationale?: string[]
+  triggers?: string[]
+  counterSignals?: string[]
   context: string // Conversation snippet or description
   timestamp: string // ISO timestamp
   linkedMessageId?: string
   linkedActionId?: string
+  linkedMemoryIds?: string[]
+  evidenceRefs?: string[]
+  downstreamHints?: Array<{
+    feature: 'journal' | 'dream' | 'scenario'
+    hint: string
+    reason: string
+  }>
   metadata?: Record<string, unknown>
 }
 
@@ -225,10 +249,22 @@ export interface AgentRecord {
   }
 }
 
-export type MemoryType = 'conversation' | 'fact' | 'interaction' | 'personality_insight'
+export type MemoryType =
+  | 'conversation'
+  | 'conversation_episode'
+  | 'fact'
+  | 'interaction'
+  | 'personality_insight'
+  | 'preference'
+  | 'project'
+  | 'relationship'
+  | 'identity'
+  | 'operating_constraint'
+  | 'artifact_summary'
+  | 'tension_snapshot'
 export type MemoryOrigin = 'conversation' | 'tool' | 'manual' | 'system' | 'imported'
 
-export interface MemoryRecord {
+export interface MemoryRecord extends OutputQualityTrackedFields, SemanticMemoryFields {
   id: string
   agentId: string
   type: MemoryType
@@ -295,6 +331,26 @@ export interface MemoryRecallResult {
   memory: MemoryRecord
   score: number
   reasons: string[]
+  hitType: 'semantic' | 'episode'
+  matchedConcepts?: string[]
+}
+
+export interface MemoryGraphConsoleSummary {
+  totalConcepts: number
+  totalLinks: number
+  lastUpdated?: string
+  topConcepts: Array<{
+    id: string
+    name: string
+    category: ConceptCategory
+    importance: number
+    memoryCount: number
+  }>
+  conceptClusters: Array<{
+    name: string
+    centralConcept: string
+    conceptIds: string[]
+  }>
 }
 
 export type MessageRenderBlock =
@@ -428,15 +484,46 @@ export interface ScenarioIntervention {
   rationale?: string
 }
 
+export interface ScenarioProbeQualityReport {
+  pass: boolean
+  score: number
+  actionabilityScore: number
+  genericnessScore: number
+  directnessScore: number
+  responseLength: number
+  flags: string[]
+  blockerReasons: string[]
+  softWarnings: string[]
+  evaluatorSummary: string
+  repairAttempted?: boolean
+  repairSucceeded?: boolean
+  similarityToCounterpart?: number
+}
+
+export interface ScenarioProbeSetEntry {
+  label: string
+  prompt: string
+}
+
 export interface ScenarioTurnResult {
   id: string
   probeLabel: string
   probePrompt: string
   baselineResponse: string
   alternateResponse: string
+  baselineQuality?: ScenarioProbeQualityReport
+  alternateQuality?: ScenarioProbeQualityReport
+  qualityFlags?: string[]
   baselineEmotion: EmotionalState
   alternateEmotion: EmotionalState
   divergenceNotes: string[]
+  divergenceScore?: number
+  materiallyDifferent?: boolean
+  repair?: {
+    attempted: boolean
+    repairedResponses: Array<'baseline' | 'alternate'>
+    notes: string[]
+  }
 }
 
 export interface ScenarioComparison {
@@ -478,6 +565,7 @@ export interface ScenarioComparison {
     baseline: string
     alternate: string
   }>
+  nextActionRecommendation?: string
 }
 
 export interface ScenarioAnalyticsSummary {
@@ -497,8 +585,17 @@ export interface ScenarioRunRecord {
   agentId: string
   agentName: string
   status: 'draft' | 'running' | 'complete' | 'failed'
+  qualityStatus?: OutputQualityStatus
+  qualityScore?: number
+  failureReason?: string
+  promptVersion?: string
+  rawModelOutput?: OutputQualityRawModelOutput
+  validation?: OutputQualityValidationReport
+  evaluation?: OutputQualityEvaluationReport
+  sourceRefs?: OutputQualitySourceRef[]
   branchPoint: ScenarioBranchPoint
   intervention: ScenarioIntervention
+  probeSet?: ScenarioProbeSetEntry[]
   branchContext: {
     recentMessages: Array<{
       id: string
@@ -511,8 +608,27 @@ export interface ScenarioRunRecord {
       summary: string
       importance: number
       timestamp: string
+      type?: MemoryRecord['type']
+      hitType?: 'semantic' | 'episode'
+      canonicalValue?: string
+    }>
+    semanticMemories?: Array<{
+      id: string
+      type: MemoryRecord['type']
+      summary: string
+      canonicalValue?: string
+      confidence?: number
+      reason: string
+    }>
+    learningAdaptations?: Array<{
+      id: string
+      description: string
+      instruction?: string
+      confidence?: number
+      impactScore: number
     }>
     relationshipSummary?: string
+    learningPromptContext?: string
   }
   baselineState: {
     emotionalState: EmotionalState
@@ -614,6 +730,12 @@ export interface CreateMemoryData {
   context: string
   origin?: MemoryOrigin
   linkedMessageIds?: string[]
+  canonicalKey?: string
+  canonicalValue?: string
+  confidence?: number
+  evidenceRefs?: string[]
+  supersedes?: string[]
+  lastConfirmedAt?: string
   metadata?: Record<string, unknown>
   userId?: string
 }
@@ -626,6 +748,12 @@ export interface UpdateMemoryData {
   context?: string
   origin?: MemoryOrigin
   linkedMessageIds?: string[]
+  canonicalKey?: string
+  canonicalValue?: string
+  confidence?: number
+  evidenceRefs?: string[]
+  supersedes?: string[]
+  lastConfirmedAt?: string
   metadata?: Record<string, unknown>
   isActive?: boolean
 }
@@ -748,6 +876,7 @@ export type CreativePipelineStage =
   | 'draft_generated'
   | 'draft_evaluated'
   | 'revision_generated'
+  | 'ready'
   | 'published'
   | 'failed'
 
@@ -760,6 +889,7 @@ export type CreativeContextSourceType =
   | 'emotional_history'
   | 'message'
   | 'memory'
+  | 'learning'
   | 'journal'
   | 'dream'
   | 'motif'
@@ -813,6 +943,7 @@ export interface CreativeRubricEvaluation {
   pass: boolean
   overallScore: number
   dimensions: Record<CreativeRubricDimension, CreativeRubricScore>
+  hardFailureFlags?: string[]
   strengths: string[]
   weaknesses: string[]
   repairInstructions: string[]
@@ -825,6 +956,17 @@ export interface CreativeArtifact {
   sessionId: string
   format: CreativeFormat
   status: CreativeArtifactStatus
+  artifactRole?: OutputArtifactRole
+  normalizationStatus?: OutputNormalizationStatus
+  qualityStatus?: OutputQualityStatus
+  qualityScore?: number
+  promptVersion?: string
+  repairCount?: number
+  rawModelOutput?: OutputQualityRawModelOutput
+  normalization?: OutputQualityTrackedFields['normalization']
+  validation?: OutputQualityValidationReport
+  sourceRefs?: OutputQualitySourceRef[]
+  sourceArtifactId?: string
   version: number
   title: string
   summary: string
@@ -857,6 +999,13 @@ export interface CreativeSession {
   id: string
   agentId: string
   status: CreativeSessionStatus
+  qualityStatus?: OutputQualityStatus
+  repairCount?: number
+  promptVersion?: string
+  rawModelOutput?: OutputQualityRawModelOutput
+  validation?: OutputQualityValidationReport
+  sourceRefs?: OutputQualitySourceRef[]
+  failureReason?: string
   brief: CreativeBrief
   normalizedBrief: CreativeBrief
   contextPacket?: CreativeContextPacket
@@ -1043,6 +1192,12 @@ export interface DreamSession {
   id: string
   agentId: string
   status: DreamSessionStatus
+  qualityStatus?: OutputQualityStatus
+  repairCount?: number
+  promptVersion?: string
+  rawModelOutput?: OutputQualityRawModelOutput
+  validation?: OutputQualityValidationReport
+  sourceRefs?: OutputQualitySourceRef[]
   latestStage: DreamPipelineStage
   type: DreamType
   normalizedInput: DreamComposeInput
@@ -1070,6 +1225,17 @@ export interface Dream {
   sessionId: string
   type: DreamType
   status: DreamStatus
+  artifactRole?: OutputArtifactRole
+  normalizationStatus?: OutputNormalizationStatus
+  qualityStatus?: OutputQualityStatus
+  qualityScore?: number
+  promptVersion?: string
+  repairCount?: number
+  rawModelOutput?: OutputQualityRawModelOutput
+  normalization?: OutputQualityTrackedFields['normalization']
+  validation?: OutputQualityValidationReport
+  sourceRefs?: OutputQualitySourceRef[]
+  sourceDreamId?: string
   version: number
   title: string
   summary: string
@@ -1264,6 +1430,12 @@ export interface JournalSession {
   id: string
   agentId: string
   status: JournalSessionStatus
+  qualityStatus?: OutputQualityStatus
+  repairCount?: number
+  promptVersion?: string
+  rawModelOutput?: OutputQualityRawModelOutput
+  validation?: OutputQualityValidationReport
+  sourceRefs?: OutputQualitySourceRef[]
   latestStage: JournalPipelineStage
   type: JournalEntryType
   normalizedInput: JournalComposeInput
@@ -1289,6 +1461,17 @@ export interface JournalEntry {
   sessionId: string
   type: JournalEntryType
   status: JournalEntryStatus
+  artifactRole?: OutputArtifactRole
+  normalizationStatus?: OutputNormalizationStatus
+  qualityStatus?: OutputQualityStatus
+  qualityScore?: number
+  promptVersion?: string
+  repairCount?: number
+  rawModelOutput?: OutputQualityRawModelOutput
+  normalization?: OutputQualityTrackedFields['normalization']
+  validation?: OutputQualityValidationReport
+  sourceRefs?: OutputQualitySourceRef[]
+  sourceEntryId?: string
   version: number
   title: string
   summary: string
@@ -1443,6 +1626,12 @@ export interface ProfileEvidenceSignal {
 export interface ProfileStageFinding {
   stage: ProfileAnalysisStage
   summary: string
+  evidenceRefs?: string[]
+  claims?: Array<{
+    claim: string
+    evidenceRefs: string[]
+    categories?: string[]
+  }>
   bigFiveSignals: Partial<Record<keyof BigFiveProfile, string[]>>
   mbtiHints: string[]
   enneagramHints: string[]
@@ -1470,6 +1659,34 @@ export interface ProfileQualityEvaluation {
   weaknesses: string[]
   repairInstructions: string[]
   evaluatorSummary: string
+  hardFailureFlags?: string[]
+}
+
+export interface ProfileClaimRef {
+  claim: string
+  evidenceRefs: string[]
+}
+
+export interface ProfileClaimEvidenceMap {
+  summary?: string[]
+  communicationStyle?: string[]
+  motivationalProfile?: string[]
+  bigFive?: Partial<Record<keyof BigFiveProfile, string[]>>
+  mbti?: string[]
+  enneagram?: string[]
+  strengths?: ProfileClaimRef[]
+  challenges?: ProfileClaimRef[]
+  triggers?: ProfileClaimRef[]
+  growthEdges?: ProfileClaimRef[]
+}
+
+export interface ProfileEvidenceCoverageSummary {
+  claimGroupsWithEvidence: number
+  totalClaimGroups: number
+  coveragePercent: number
+  thresholdPercent: number
+  pass: boolean
+  blockedGroups: string[]
 }
 
 export interface ProfileInterviewTurn {
@@ -1480,6 +1697,7 @@ export interface ProfileInterviewTurn {
   question: string
   answer: string
   createdAt: string
+  promptVersion?: string
   provider?: string
   model?: string
   evidenceRefs?: string[]
@@ -1525,11 +1743,17 @@ export interface PsychologicalProfile {
   summary: string
   strengths: string[]
   challenges: string[]
+  triggers?: string[]
+  growthEdges?: string[]
+  claimEvidence?: ProfileClaimEvidenceMap
   source?: 'deterministic_scaffold' | 'analysis_run'
   runId?: string
+  sourceRunId?: string
   provider?: string
   model?: string
   confidence?: number
+  qualityStatus?: OutputQualityStatus
+  profileVersion?: string
   rationales?: {
     bigFive?: string
     mbti?: string
@@ -1547,11 +1771,20 @@ export interface ProfileAnalysisRun {
   id: string
   agentId: string
   status: ProfileAnalysisRunStatus
+  qualityStatus?: OutputQualityStatus
+  qualityScore?: number
+  promptVersion?: string
+  profileVersion?: string
+  rawModelOutput?: OutputQualityRawModelOutput
+  validation?: OutputQualityValidationReport
+  sourceRefs?: OutputQualitySourceRef[]
+  repairCount?: number
   latestStage: ProfileAnalysisStage
   sourceCount: number
   transcriptCount: number
   evidenceSignals: ProfileEvidenceSignal[]
   stageFindings: ProfileStageFinding[]
+  evidenceCoverage?: ProfileEvidenceCoverageSummary
   latestProfile?: PsychologicalProfile
   latestEvaluation?: ProfileQualityEvaluation
   failureReason?: string

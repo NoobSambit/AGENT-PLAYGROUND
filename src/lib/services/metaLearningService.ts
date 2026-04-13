@@ -411,6 +411,9 @@ export class MetaLearningService {
       agentId: params.agentId,
       taskType,
       category,
+      observationType: 'conversation',
+      feature: 'chat',
+      severity: outcome === 'negative' ? 'medium' : 'low',
       strategies: uniqueStrategies,
       summary: this.summarizeObservation(taskType, uniqueStrategies, outcome),
       promptExcerpt: params.prompt.slice(0, 160),
@@ -418,9 +421,13 @@ export class MetaLearningService {
       provisionalScore: clampedScore,
       finalScore: clampedScore,
       outcome,
+      resolvedStatus: resolvedImmediately ? 'resolved' : 'pending',
       followUpStatus: resolvedImmediately ? 'resolved' : 'pending',
       feedbackSignal: resolvedImmediately ? 'negative' : 'unseen',
       evidence,
+      evidenceRefs: [params.userMessageId, params.agentMessageId],
+      candidateAdaptations: [],
+      qualityImpact: Number((clampedScore - 0.5).toFixed(2)),
       linkedMessageIds: [params.userMessageId, params.agentMessageId],
       createdAt: new Date().toISOString(),
       evaluatedAt: resolvedImmediately ? new Date().toISOString() : undefined,
@@ -469,9 +476,73 @@ export class MetaLearningService {
       finalScore: clampedScore,
       outcome: this.scoreToOutcome(clampedScore),
       summary: this.summarizeObservation(observation.taskType, observation.strategies, this.scoreToOutcome(clampedScore)),
+      severity: this.scoreToOutcome(clampedScore) === 'negative' ? 'medium' : observation.severity,
+      resolvedStatus: 'resolved',
       followUpStatus: 'resolved',
       feedbackSignal,
       evidence: [...observation.evidence, ...feedbackEvidence].slice(-10),
+      qualityImpact: Number((clampedScore - 0.5).toFixed(2)),
+      evaluatedAt: new Date().toISOString(),
+    }
+  }
+
+  createQualityFailureObservation(params: {
+    agentId: string
+    feature: 'journal' | 'creative' | 'dream' | 'profile' | 'scenario'
+    category?: LearningPatternType
+    description: string
+    blockerReasons: string[]
+    evidenceRefs?: string[]
+    candidateAdaptations?: string[]
+    rawExcerpt?: string
+    outputExcerpt?: string
+    qualityScore?: number
+  }): LearningObservation {
+    const severity = params.blockerReasons.length >= 3 || (params.qualityScore ?? 100) < 70
+      ? 'high'
+      : 'medium'
+    const finalScore = severity === 'high' ? 0.08 : 0.22
+
+    return {
+      id: `observation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      agentId: params.agentId,
+      taskType: params.feature === 'dream'
+        ? 'dream'
+        : params.feature === 'creative'
+          ? 'creative'
+          : 'quality_review',
+      category: params.category || 'communication_style',
+      observationType: 'output_quality',
+      feature: params.feature,
+      severity,
+      strategies: ['direct_answer'],
+      summary: params.description,
+      promptExcerpt: (params.rawExcerpt || `${params.feature} quality failure`).slice(0, 160),
+      responseExcerpt: (params.outputExcerpt || params.blockerReasons.join(', ')).slice(0, 200),
+      provisionalScore: finalScore,
+      finalScore,
+      outcome: 'negative',
+      resolvedStatus: 'resolved',
+      followUpStatus: 'resolved',
+      feedbackSignal: 'negative',
+      evidence: [
+        {
+          code: 'quality_gate_failure',
+          label: `${params.feature} quality gate blocked the output`,
+          impact: severity === 'high' ? -0.35 : -0.24,
+          detail: params.blockerReasons.join(', '),
+        },
+        ...params.blockerReasons.slice(0, 5).map((reason) => ({
+          code: reason,
+          label: reason.replace(/_/g, ' '),
+          impact: -0.08,
+        })),
+      ],
+      evidenceRefs: params.evidenceRefs || [],
+      candidateAdaptations: params.candidateAdaptations || [],
+      qualityImpact: Number((((params.qualityScore ?? 55) / 100) - 0.5).toFixed(2)),
+      linkedMessageIds: [],
+      createdAt: new Date().toISOString(),
       evaluatedAt: new Date().toISOString(),
     }
   }
@@ -612,6 +683,8 @@ export class MetaLearningService {
         affectedAreas: ['communication_style'],
         confidence: this.clamp01(0.58 + brevityMisses.length * 0.08),
         evidenceCount: brevityMisses.length,
+        isQualityRelated: brevityMisses.some((item) => item.observationType === 'output_quality'),
+        sourceObservationIds: brevityMisses.map((item) => item.id).slice(0, 6),
         evaluation: {
           observations: brevityMisses.length,
           positive: 0,
@@ -642,6 +715,8 @@ export class MetaLearningService {
         affectedAreas: ['relationship_building'],
         confidence: this.clamp01(0.56 + acknowledgementMisses.length * 0.08),
         evidenceCount: acknowledgementMisses.length,
+        isQualityRelated: acknowledgementMisses.some((item) => item.observationType === 'output_quality'),
+        sourceObservationIds: acknowledgementMisses.map((item) => item.id).slice(0, 6),
         evaluation: {
           observations: acknowledgementMisses.length,
           positive: 0,
@@ -672,11 +747,43 @@ export class MetaLearningService {
         affectedAreas: ['emotional_response'],
         confidence: this.clamp01(0.56 + empathyMisses.length * 0.08),
         evidenceCount: empathyMisses.length,
+        isQualityRelated: empathyMisses.some((item) => item.observationType === 'output_quality'),
+        sourceObservationIds: empathyMisses.map((item) => item.id).slice(0, 6),
         evaluation: {
           observations: empathyMisses.length,
           positive: 0,
           negative: empathyMisses.length,
           lastEvaluatedAt: empathyMisses[0]?.evaluatedAt || empathyMisses[0]?.createdAt,
+        },
+        isActive: true,
+        canRevert: true,
+        timestamp: now,
+      })
+    }
+
+    const qualityFailures = recent.filter((observation) => observation.observationType === 'output_quality')
+    if (qualityFailures.length > 0) {
+      candidates.push({
+        id: '',
+        agentId,
+        adaptationType: 'style',
+        description: 'Preserve structural validity before promoting feature outputs.',
+        instruction: 'When generating workspace artifacts, prefer direct valid outputs over decorative filler, and repair immediately if validation or evaluation flags wrapper leakage, low specificity, or weak actionability.',
+        previousState: 'Feature outputs could fail quality gates without creating a persistent adaptation.',
+        currentState: 'Recent quality blockers now bias future generations toward stricter structure and higher evidence density.',
+        triggeringPatterns: [],
+        triggeringEvents: qualityFailures.map((item) => item.summary).slice(0, 4),
+        impactScore: 0.28,
+        affectedAreas: ['communication_style', 'problem_solving'],
+        confidence: this.clamp01(0.58 + qualityFailures.length * 0.07),
+        evidenceCount: qualityFailures.length,
+        isQualityRelated: true,
+        sourceObservationIds: qualityFailures.map((item) => item.id).slice(0, 6),
+        evaluation: {
+          observations: qualityFailures.length,
+          positive: 0,
+          negative: qualityFailures.length,
+          lastEvaluatedAt: qualityFailures[0]?.evaluatedAt || qualityFailures[0]?.createdAt,
         },
         isActive: true,
         canRevert: true,

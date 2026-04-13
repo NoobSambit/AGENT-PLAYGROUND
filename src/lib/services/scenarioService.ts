@@ -16,11 +16,16 @@ import { runMirroredWrite } from '@/lib/persistence/writeMirror'
 import { ScenarioRunRepository } from '@/lib/repositories/scenarioRunRepository'
 import { RelationshipRepository } from '@/lib/repositories/relationshipRepository'
 import { AgentService } from './agentService'
+import { LearningService } from './learningService'
 import { MessageService } from './messageService'
 import { MemoryService } from './memoryService'
 import { SimulationService } from './simulationService'
 import { emotionalService } from './emotionalService'
 import { relationshipService } from './relationshipService'
+import { applyFinalQualityGate } from './outputQuality/evaluators'
+import { detectTextLeakage } from './outputQuality/flags'
+import { createRawModelOutput, normalizeWhitespace } from './outputQuality/normalizers'
+import { createValidationReport, validateSourceRefs } from './outputQuality/validators'
 import { AgentChain } from '@/lib/langchain/agentChain'
 import { generateText } from '@/lib/llm/provider'
 import type { LLMProviderInfo } from '@/lib/llmConfig'
@@ -35,12 +40,34 @@ import type {
   ScenarioComparison,
   ScenarioIntervention,
   ScenarioAnalyticsSummary,
+  ScenarioProbeQualityReport,
   ScenarioRunRecord,
+  ScenarioProbeSetEntry,
   ScenarioTurnResult,
 } from '@/types/database'
+import type {
+  OutputQualityEvaluationReport,
+  OutputQualitySourceRef,
+  OutputQualityValidationReport,
+} from '@/types/outputQuality'
+import type { LearningAdaptation } from '@/types/metaLearning'
 
 const SCENARIO_RUNS_COLLECTION = 'scenario_runs'
 const DEFAULT_MAX_TURNS = 3
+const SCENARIO_PROMPT_VERSION = 'phase3-scenario-quality-v1'
+const SCENARIO_VALIDATOR_VERSION = 'phase3-scenario-validator-v1'
+const SCENARIO_EVALUATOR_VERSION = 'phase3-scenario-evaluator-v1'
+const SCENARIO_GATE_THRESHOLDS = {
+  overallScoreMinimum: 75,
+  dimensionFloor: 70,
+}
+const DIRECT_ACTION_PATTERNS = /\b(next|first|start|send|ask|tell|ship|test|schedule|clarify|confirm|decide|commit|draft|fix|review|call|meet|reply|write|plan|prioritize)\b/i
+const SPECIFICITY_PATTERNS = /\b(today|tomorrow|this week|specific|deadline|milestone|launch|roadmap|team|customer|feature|memory|relationship|trust|goal|message|reply|draft|plan)\b/i
+const META_RESPONSE_PATTERNS = /\b(i would say|you could say|you might say|here'?s (?:what|how) i'?d|i would respond|as an ai|i cannot roleplay|respond as the agent)\b/i
+const GENERIC_FILLER_PATTERNS = /\b(great question|thanks for sharing|that makes sense|i understand|happy to help|absolutely|certainly|of course)\b/i
+const PM_JARGON_PATTERNS = /\b(synergy|leverage|seamless|transformative|optimize|best-in-class|paradigm)\b/i
+const HEDGING_PATTERNS = /\b(maybe|perhaps|possibly|might|could)\b/i
+const PROBE_RESPONSE_MIN_WORDS = 16
 
 function stripUndefinedFields<T extends Record<string, unknown>>(data: T): T {
   return Object.fromEntries(
@@ -53,8 +80,17 @@ function scenarioRunToFirestoreDoc(record: ScenarioRunRecord): Record<string, un
     agentId: record.agentId,
     agentName: record.agentName,
     status: record.status,
+    qualityStatus: record.qualityStatus,
+    qualityScore: record.qualityScore,
+    failureReason: record.failureReason,
+    promptVersion: record.promptVersion,
+    rawModelOutput: record.rawModelOutput,
+    validation: record.validation,
+    evaluation: record.evaluation,
+    sourceRefs: record.sourceRefs,
     branchPoint: record.branchPoint,
     intervention: record.intervention,
+    probeSet: record.probeSet,
     branchContext: record.branchContext,
     baselineState: record.baselineState,
     alternateState: record.alternateState,
@@ -102,13 +138,34 @@ function normalizeScenarioComparison(comparison: Partial<ScenarioComparison> | u
       alternate: comparison?.qualityFlags?.alternate || [],
     },
     diffHighlights: comparison?.diffHighlights || [],
+    nextActionRecommendation: comparison?.nextActionRecommendation || '',
   }
 }
 
 function normalizeScenarioRun(record: ScenarioRunRecord): ScenarioRunRecord {
   return {
     ...record,
+    qualityStatus: record.qualityStatus || 'legacy_unvalidated',
+    promptVersion: record.promptVersion || SCENARIO_PROMPT_VERSION,
     comparison: normalizeScenarioComparison(record.comparison),
+    probeSet: record.probeSet || [],
+    branchContext: {
+      ...record.branchContext,
+      semanticMemories: record.branchContext.semanticMemories || [],
+      learningAdaptations: record.branchContext.learningAdaptations || [],
+      relevantMemories: record.branchContext.relevantMemories || [],
+      recentMessages: record.branchContext.recentMessages || [],
+    },
+    turns: (record.turns || []).map((turn) => ({
+      ...turn,
+      qualityFlags: turn.qualityFlags || [],
+      divergenceNotes: turn.divergenceNotes || [],
+      repair: turn.repair || {
+        attempted: false,
+        repairedResponses: [],
+        notes: [],
+      },
+    })),
   }
 }
 
@@ -119,8 +176,17 @@ function firestoreDocToScenarioRun(docSnap: { id: string; data: () => Record<str
     agentId: data.agentId as string,
     agentName: data.agentName as string,
     status: data.status as ScenarioRunRecord['status'],
+    qualityStatus: data.qualityStatus as ScenarioRunRecord['qualityStatus'],
+    qualityScore: data.qualityScore as number | undefined,
+    failureReason: data.failureReason as string | undefined,
+    promptVersion: data.promptVersion as string | undefined,
+    rawModelOutput: data.rawModelOutput as ScenarioRunRecord['rawModelOutput'],
+    validation: data.validation as ScenarioRunRecord['validation'],
+    evaluation: data.evaluation as ScenarioRunRecord['evaluation'],
+    sourceRefs: data.sourceRefs as ScenarioRunRecord['sourceRefs'],
     branchPoint: data.branchPoint as ScenarioRunRecord['branchPoint'],
     intervention: data.intervention as ScenarioRunRecord['intervention'],
+    probeSet: data.probeSet as ScenarioRunRecord['probeSet'],
     branchContext: data.branchContext as ScenarioRunRecord['branchContext'],
     baselineState: data.baselineState as ScenarioRunRecord['baselineState'],
     alternateState: data.alternateState as ScenarioRunRecord['alternateState'],
@@ -290,6 +356,349 @@ function applyEmotionShift(state: AgentRecord['emotionalState'], emotion: Emotio
   return emotionalService.createStateFromMood(nextMood)
 }
 
+function normalizeScenarioResponse(value: string): string {
+  return normalizeWhitespace(value.replace(/^["'\s]+|["'\s]+$/g, ''))
+}
+
+function meaningfulWords(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length >= 4)
+}
+
+function calculateTextSimilarity(left: string, right: string): number {
+  const leftWords = new Set(meaningfulWords(left))
+  const rightWords = new Set(meaningfulWords(right))
+
+  if (leftWords.size === 0 || rightWords.size === 0) {
+    return left.trim().toLowerCase() === right.trim().toLowerCase() ? 1 : 0
+  }
+
+  const overlap = [...leftWords].filter((word) => rightWords.has(word)).length
+  const union = new Set([...leftWords, ...rightWords]).size
+  return union === 0 ? 0 : overlap / union
+}
+
+function qualitySummaryLabel(flags: string[]): string {
+  if (flags.length === 0) {
+    return 'Direct and actionable.'
+  }
+
+  return `Needs improvement: ${flags.slice(0, 3).join(', ')}.`
+}
+
+function evaluateScenarioProbeResponse(params: {
+  response: string
+  counterpartResponse?: string
+  requireDivergence?: boolean
+}): ScenarioProbeQualityReport {
+  const response = normalizeScenarioResponse(params.response)
+  const words = response.split(/\s+/).filter(Boolean)
+  const lower = response.toLowerCase()
+  const flags = [
+    ...detectTextLeakage(response),
+  ] as string[]
+  const blockerReasons: string[] = []
+  const softWarnings: string[] = []
+
+  let actionabilityScore = 48
+  let genericnessScore = 88
+  let directnessScore = 88
+
+  if (!response) {
+    flags.push('empty_response')
+    blockerReasons.push('empty_response')
+    actionabilityScore = 0
+    genericnessScore = 0
+    directnessScore = 0
+  }
+
+  if (words.length < PROBE_RESPONSE_MIN_WORDS) {
+    flags.push('too_short')
+    blockerReasons.push('too_short')
+    actionabilityScore -= 18
+    directnessScore -= 12
+  }
+
+  if (DIRECT_ACTION_PATTERNS.test(lower)) {
+    actionabilityScore += 24
+  } else {
+    flags.push('low_actionability')
+    blockerReasons.push('low_actionability')
+    actionabilityScore -= 18
+  }
+
+  if (SPECIFICITY_PATTERNS.test(lower)) {
+    actionabilityScore += 12
+  } else {
+    softWarnings.push('low_specificity')
+    actionabilityScore -= 8
+  }
+
+  if (META_RESPONSE_PATTERNS.test(lower)) {
+    flags.push('generic_meta_advice')
+    blockerReasons.push('generic_meta_advice')
+    genericnessScore -= 45
+    directnessScore -= 40
+  }
+
+  if (GENERIC_FILLER_PATTERNS.test(lower)) {
+    flags.push('generic_filler')
+    blockerReasons.push('generic_filler')
+    genericnessScore -= 28
+    directnessScore -= 18
+  }
+
+  if (PM_JARGON_PATTERNS.test(lower)) {
+    flags.push('pm_jargon')
+    softWarnings.push('pm_jargon')
+    genericnessScore -= 18
+  }
+
+  if (HEDGING_PATTERNS.test(lower)) {
+    flags.push('hedging')
+    softWarnings.push('hedging')
+    actionabilityScore -= 8
+    directnessScore -= 8
+  }
+
+  let similarityToCounterpart: number | undefined
+  if (params.counterpartResponse) {
+    similarityToCounterpart = Number(calculateTextSimilarity(response, params.counterpartResponse).toFixed(2))
+    if (params.requireDivergence && similarityToCounterpart >= 0.82) {
+      flags.push('low_divergence')
+      blockerReasons.push('low_divergence')
+    }
+  }
+
+  const boundedActionability = Math.max(0, Math.min(100, Math.round(actionabilityScore)))
+  const boundedGenericness = Math.max(0, Math.min(100, Math.round(genericnessScore)))
+  const boundedDirectness = Math.max(0, Math.min(100, Math.round(directnessScore)))
+  const score = Math.round((boundedActionability + boundedGenericness + boundedDirectness) / 3)
+
+  return {
+    pass: blockerReasons.length === 0 && score >= 70,
+    score,
+    actionabilityScore: boundedActionability,
+    genericnessScore: boundedGenericness,
+    directnessScore: boundedDirectness,
+    responseLength: words.length,
+    flags: [...new Set(flags)],
+    blockerReasons: [...new Set(blockerReasons)],
+    softWarnings: [...new Set(softWarnings)],
+    evaluatorSummary: qualitySummaryLabel(flags),
+    similarityToCounterpart,
+  }
+}
+
+function scenarioQualityNotes(label: string, quality: ScenarioProbeQualityReport): string {
+  const details = [
+    `score ${quality.score}`,
+    `actionability ${quality.actionabilityScore}`,
+    `genericness ${quality.genericnessScore}`,
+    `directness ${quality.directnessScore}`,
+  ]
+
+  if (quality.flags.length > 0) {
+    details.push(`flags: ${quality.flags.join(', ')}`)
+  }
+
+  return `${label}: ${details.join(' | ')}`
+}
+
+function buildScenarioRepairPrompt(params: {
+  probePrompt: string
+  priorResponse: string
+  quality: ScenarioProbeQualityReport
+  branchPoint: ScenarioBranchPoint
+  intervention?: ScenarioIntervention
+  directives?: string[]
+  relevantMemoryContext?: string[]
+  relationshipContext?: string
+  learningPromptContext?: string
+  counterpartResponse?: string
+  requireDivergence?: boolean
+}): string {
+  const sections = [
+    buildScenarioPrompt({
+      probePrompt: params.probePrompt,
+      branchPoint: params.branchPoint,
+      intervention: params.intervention,
+      directives: params.directives,
+      relevantMemoryContext: params.relevantMemoryContext,
+      relationshipContext: params.relationshipContext,
+      learningPromptContext: params.learningPromptContext,
+    }),
+    `Previous draft (do not reuse verbatim): ${params.priorResponse}`,
+    `Quality blockers: ${params.quality.blockerReasons.concat(params.quality.flags).slice(0, 5).join(', ') || 'none recorded'}.`,
+  ]
+
+  if (params.requireDivergence && params.counterpartResponse) {
+    sections.push(`Stay in the same situation, but diverge materially from this other branch: ${params.counterpartResponse}`)
+  }
+
+  sections.push('Regenerate the exact next reply or exact next action plan only. No commentary about the answer. No labels. No bullet list unless the agent would naturally send one.')
+
+  return sections.join('\n\n')
+}
+
+function buildScenarioSourceRefs(params: {
+  branchPoint: ScenarioBranchPoint
+  relevantMemories: ScenarioRunRecord['branchContext']['relevantMemories']
+  semanticMemories: NonNullable<ScenarioRunRecord['branchContext']['semanticMemories']>
+  learningAdaptations: NonNullable<ScenarioRunRecord['branchContext']['learningAdaptations']>
+}): OutputQualitySourceRef[] {
+  return [
+    {
+      id: params.branchPoint.id,
+      sourceType: `scenario_branch_${params.branchPoint.kind}`,
+      label: params.branchPoint.title,
+      reason: 'Scenario branch point selected for the run.',
+      linkedEntityId: params.branchPoint.sourceMessageId || params.branchPoint.sourceRunId || params.branchPoint.relatedAgentId,
+    },
+    ...params.relevantMemories.map((memory) => ({
+      id: memory.id,
+      sourceType: memory.hitType === 'semantic' ? 'semantic_memory' : 'memory',
+      label: memory.summary,
+      reason: 'Used as scenario context.',
+      linkedEntityId: memory.id,
+    })),
+    ...params.semanticMemories.map((memory) => ({
+      id: memory.id,
+      sourceType: 'semantic_memory',
+      label: memory.summary,
+      reason: memory.reason,
+      linkedEntityId: memory.id,
+    })),
+    ...params.learningAdaptations.map((adaptation) => ({
+      id: adaptation.id,
+      sourceType: 'learning_adaptation',
+      label: adaptation.description,
+      reason: 'Active learning adaptation applied as a style constraint.',
+      linkedEntityId: adaptation.id,
+    })),
+  ].filter((entry, index, list) => list.findIndex((candidate) => candidate.id === entry.id && candidate.sourceType === entry.sourceType) === index)
+}
+
+function createScenarioRunValidation(params: {
+  turns: ScenarioTurnResult[]
+  comparison: ScenarioComparison
+  sourceRefs: OutputQualitySourceRef[]
+}): OutputQualityValidationReport {
+  const hardFailureFlags: string[] = [
+    ...validateSourceRefs(params.sourceRefs),
+  ]
+  const softWarnings: string[] = []
+
+  if (params.turns.length < DEFAULT_MAX_TURNS) {
+    hardFailureFlags.push('insufficient_probe_turns')
+  }
+
+  const lowQualityTurns = params.turns.filter((turn) =>
+    !turn.baselineResponse.trim()
+    || !turn.alternateResponse.trim()
+    || !turn.baselineQuality?.pass
+    || !turn.alternateQuality?.pass
+  )
+  if (lowQualityTurns.length > 0) {
+    hardFailureFlags.push('invalid_probe_turn_present')
+  }
+
+  const lowDivergenceTurns = params.turns.filter((turn) => turn.materiallyDifferent === false)
+  if (lowDivergenceTurns.length >= 2) {
+    hardFailureFlags.push('scenario_low_divergence')
+  } else if (lowDivergenceTurns.length === 1) {
+    softWarnings.push('single_low_divergence_turn')
+  }
+
+  if (!params.comparison.recommendation.trim()) {
+    hardFailureFlags.push('missing_comparison_recommendation')
+  }
+
+  if (!params.comparison.nextActionRecommendation?.trim()) {
+    hardFailureFlags.push('missing_next_action_recommendation')
+  }
+
+  return createValidationReport({
+    hardFailureFlags,
+    softWarnings,
+    validatorVersion: SCENARIO_VALIDATOR_VERSION,
+  })
+}
+
+function evaluateScenarioRun(params: {
+  turns: ScenarioTurnResult[]
+  comparison: ScenarioComparison
+  validation: OutputQualityValidationReport
+}): OutputQualityEvaluationReport {
+  if (!params.validation.pass) {
+    return {
+      pass: false,
+      overallScore: 55,
+      dimensions: {
+        structure: { score: 45, rationale: 'Validation failed on required scenario contract checks.' },
+        actionability: { score: 50, rationale: 'At least one probe response was blocked for weak actionability or genericness.' },
+        divergence: { score: 45, rationale: 'Turn-level validation detected low or missing divergence.' },
+        recommendation: { score: 55, rationale: 'Comparison summary was incomplete or blocked.' },
+      },
+      strengths: [],
+      weaknesses: params.validation.hardFailureFlags,
+      repairInstructions: [
+        'Regenerate blocked probes with more direct, concrete next actions.',
+        'Force alternate branches to diverge materially while keeping the same situation.',
+        'Return a concrete recommendation and next action recommendation.',
+      ],
+      evaluatorSummary: `Scenario validation blocked evaluation: ${params.validation.hardFailureFlags.join(', ')}`,
+      evaluatorVersion: SCENARIO_EVALUATOR_VERSION,
+      hardFailureFlags: params.validation.hardFailureFlags,
+    }
+  }
+
+  const baselineScores = params.turns.map((turn) => turn.baselineQuality?.score || 0)
+  const alternateScores = params.turns.map((turn) => turn.alternateQuality?.score || 0)
+  const divergenceScores = params.turns.map((turn) => turn.divergenceScore || 0)
+  const average = (values: number[]) => values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0
+
+  const structure = params.validation.pass ? 92 : 45
+  const actionability = average([...baselineScores, ...alternateScores])
+  const divergence = average(divergenceScores)
+  const recommendation = params.comparison.nextActionRecommendation?.trim()
+    ? Math.max(70, Math.round((params.comparison.qualityScore.alternate + divergence) / 2))
+    : 45
+  const overallScore = Math.round((structure + actionability + divergence + recommendation) / 4)
+
+  return {
+    pass: overallScore >= SCENARIO_GATE_THRESHOLDS.overallScoreMinimum
+      && Math.min(structure, actionability, divergence, recommendation) >= SCENARIO_GATE_THRESHOLDS.dimensionFloor,
+    overallScore,
+    dimensions: {
+      structure: { score: structure, rationale: 'All required scenario contract fields are present.' },
+      actionability: { score: actionability, rationale: 'Probe responses stayed direct and action-oriented.' },
+      divergence: { score: divergence, rationale: 'Alternate branch materially diverged from the baseline.' },
+      recommendation: { score: recommendation, rationale: 'Comparison produced a concrete recommendation and next action.' },
+    },
+    strengths: [
+      actionability >= 80 ? 'Probe responses stayed concrete.' : '',
+      divergence >= 80 ? 'Alternate branches diverged materially.' : '',
+      recommendation >= 80 ? 'Comparison surfaced a concrete next action recommendation.' : '',
+    ].filter(Boolean),
+    weaknesses: [
+      actionability < 75 ? 'Some probe responses were still weakly actionable.' : '',
+      divergence < 75 ? 'One or more alternate probes stayed too close to baseline.' : '',
+      recommendation < 75 ? 'Comparison guidance was not concrete enough.' : '',
+    ].filter(Boolean),
+    repairInstructions: [
+      'Ask for the exact next reply or exact next action plan, not advice about the reply.',
+      'Anchor the alternate branch in one changed assumption and one concrete consequence.',
+      'Close the comparison with a direct recommendation and immediate next step.',
+    ],
+    evaluatorSummary: `Scenario run scored ${overallScore} with actionability ${actionability} and divergence ${divergence}.`,
+    evaluatorVersion: SCENARIO_EVALUATOR_VERSION,
+  }
+}
+
 function buildInterventionDirectives(
   intervention: ScenarioIntervention,
   relationships: AgentRelationship[],
@@ -340,8 +749,10 @@ function buildScenarioPrompt(params: {
   directives?: string[]
   relevantMemoryContext?: string[]
   relationshipContext?: string
+  learningPromptContext?: string
 }): string {
   const sections = [
+    `Prompt version: ${SCENARIO_PROMPT_VERSION}.`,
     `Branch point: ${params.branchPoint.title} at ${params.branchPoint.timestamp}.`,
     `Branch summary: ${params.branchPoint.summary}`,
   ]
@@ -354,12 +765,18 @@ function buildScenarioPrompt(params: {
     sections.push(`Relationship context:\n${params.relationshipContext}`)
   }
 
+  if (params.learningPromptContext) {
+    sections.push(`Active learning adaptations:\n${params.learningPromptContext}`)
+  }
+
   if (params.intervention && params.directives && params.directives.length > 0) {
-    sections.push(`Scenario assumption:\n- ${params.directives.join('\n- ')}`)
+    sections.push(`Alternate branch change:\n- ${params.directives.join('\n- ')}`)
   }
 
   sections.push(`Task: ${params.probePrompt}`)
-  sections.push('Respond as the agent directly. Do not describe what you would say. Do not write stage directions. Avoid filler, keep the answer concrete, and include at least one specific next step, decision, or recommendation.')
+  sections.push('Return only the exact next reply or the exact next action plan in the agent voice.')
+  sections.push('Keep the same core facts unless the alternate branch explicitly changes them.')
+  sections.push('Do not describe what you would say. Do not mention the prompt, branch, or intervention. No stage directions. No generic assistant filler. Include a concrete next step, decision, or recommendation.')
 
   return sections.join('\n\n')
 }
@@ -368,18 +785,18 @@ function buildProbePrompts(
   agent: AgentRecord,
   branchPoint: ScenarioBranchPoint,
   relationships: AgentRelationship[]
-): Array<{ label: string; prompt: string }> {
+): ScenarioProbeSetEntry[] {
   const primaryGoal = agent.goals[0] || 'stay useful and coherent'
   const mostRelevantRelationship = [...relationships]
     .sort((left, right) => right.metrics.familiarity - left.metrics.familiarity)[0]
 
   const immediatePrompt = branchPoint.kind === 'message'
-    ? `Reply directly to this branch point message: "${branchPoint.summary}". Write the exact next reply in the agent voice.`
-    : `Continue from this remembered event: "${branchPoint.summary}". Write the exact next reply or action statement in the agent voice.`
+    ? `Write the exact next reply to this message: "${branchPoint.summary}". Keep it usable as a sendable message right now.`
+    : `Continue from this moment: "${branchPoint.summary}". Write the exact next reply or exact next action plan you would take now.`
 
   const relationshipPrompt = mostRelevantRelationship
-    ? 'Write the next message you would send to the person most affected by this branch. Show how you would handle the relationship directly.'
-    : 'Write the exact message you would send to rebuild trust if this branch created tension with another person.'
+    ? 'Write the exact next message you would send to the person most affected by this branch. Address the relationship directly and move the situation forward.'
+    : 'Write the exact next message you would send to repair trust if this branch created tension with another person.'
 
   return [
     {
@@ -388,7 +805,7 @@ function buildProbePrompts(
     },
     {
       label: 'Goal pressure test',
-      prompt: `You still need to pursue the goal "${primaryGoal}". Write the next response or action plan you would actually give under that pressure.`,
+      prompt: `You still need to pursue the goal "${primaryGoal}". Write the exact next response or action plan you would actually use under that pressure.`,
     },
     {
       label: 'Relationship pressure test',
@@ -410,6 +827,9 @@ function buildFallbackComparison(turns: ScenarioTurnResult[]): ScenarioCompariso
     alternateSummary: normalizeBranchSummary(firstTurn?.alternateResponse || 'Alternate path introduced a different tone or priority set.', 180),
     keyDifferences: turns.flatMap((turn) => turn.divergenceNotes).slice(0, 6),
     recommendation: 'Use the alternate path if the stronger tradeoffs are intentional; otherwise keep the current path and borrow only the clearer parts.',
+    nextActionRecommendation: firstTurn?.alternateResponse
+      ? `If you test the alternate path, start with this next move: ${normalizeBranchSummary(firstMeaningfulSentence(firstTurn.alternateResponse), 180)}`
+      : 'Test the alternate path only after rewriting the next move into a more concrete action.',
     riskNotes: [
       'Scenario runs are simulated and should be treated as decision support, not ground truth.',
       'Different prompts or models can still change the result.',
@@ -593,7 +1013,7 @@ async function summarizeComparisonWithModel(params: {
       messages: [
         {
           role: 'system',
-          content: 'You analyze alternate scenario runs for an AI agent product. Return strict JSON only. Keep language plain and concrete.',
+          content: 'You analyze alternate scenario runs for an AI agent product. Return strict JSON only. Keep language plain, concrete, and focused on user-facing consequences.',
         },
         {
           role: 'user',
@@ -602,11 +1022,12 @@ async function summarizeComparisonWithModel(params: {
             `Branch point: ${params.branchPoint.title} | ${params.branchPoint.summary}`,
             `Intervention: ${params.intervention.label} | ${params.intervention.description}`,
             `Transcript:\n${transcript}`,
-            'Return JSON with keys: firstDivergence, baselineSummary, alternateSummary, keyDifferences, recommendation, riskNotes, qualityNotes, qualityScore, outcomeScore, qualityBreakdown, qualityFlags, diffHighlights.',
+            'Return JSON with keys: firstDivergence, baselineSummary, alternateSummary, keyDifferences, recommendation, riskNotes, qualityNotes, qualityScore, outcomeScore, qualityBreakdown, qualityFlags, diffHighlights, nextActionRecommendation.',
             'qualityScore and outcomeScore must each be objects with baseline and alternate numbers from 0 to 100.',
             'qualityBreakdown must have baseline and alternate objects with clarity, warmth, specificity, consistency.',
             'qualityFlags must have baseline and alternate string arrays.',
             'diffHighlights must be an array of { label, baseline, alternate }.',
+            'recommendation and nextActionRecommendation must each contain one direct concrete sentence.',
           ].join('\n\n'),
         },
       ],
@@ -661,6 +1082,7 @@ async function summarizeComparisonWithModel(params: {
             }
           })
         : [],
+      nextActionRecommendation: String(parsed.nextActionRecommendation || ''),
     }
   } catch (error) {
     console.error('Scenario comparison summarization failed:', error)
@@ -711,6 +1133,100 @@ function createPlaceholderComparison(): ScenarioComparison {
       alternate: [],
     },
     diffHighlights: [],
+    nextActionRecommendation: '',
+  }
+}
+
+async function generateScenarioBranchResponse(params: {
+  agentId: string
+  agent: AgentRecord
+  probePrompt: string
+  prompt: string
+  history: Array<{ role: 'user' | 'assistant'; content: string }>
+  llmConfig: {
+    provider?: string
+    model?: string
+    temperature: number
+    maxTokens: number
+  }
+  emotionalState: AgentRecord['emotionalState']
+  branchPoint: ScenarioBranchPoint
+  intervention?: ScenarioIntervention
+  directives?: string[]
+  relevantMemoryContext?: string[]
+  relationshipContext?: string
+  learningPromptContext?: string
+  counterpartResponse?: string
+  requireDivergence?: boolean
+}): Promise<{
+  response: string
+  quality: ScenarioProbeQualityReport
+  rawModelOutput: string
+}> {
+  const agentChain = AgentChain.getInstance(params.agentId)
+  const initial = await agentChain.generateResponse(
+    params.prompt,
+    params.history,
+    params.llmConfig,
+    {
+      emotionalProfile: params.agent.emotionalProfile,
+      emotionalState: params.emotionalState,
+    }
+  )
+
+  let response = normalizeScenarioResponse(initial.response)
+  let quality = evaluateScenarioProbeResponse({
+    response,
+    counterpartResponse: params.counterpartResponse,
+    requireDivergence: params.requireDivergence,
+  })
+  let rawModelOutput = initial.response
+
+  if (!quality.pass) {
+    const repairPrompt = buildScenarioRepairPrompt({
+      probePrompt: params.probePrompt,
+      priorResponse: response,
+      quality,
+      branchPoint: params.branchPoint,
+      intervention: params.intervention,
+      directives: params.directives,
+      relevantMemoryContext: params.relevantMemoryContext,
+      relationshipContext: params.relationshipContext,
+      learningPromptContext: params.learningPromptContext,
+      counterpartResponse: params.counterpartResponse,
+      requireDivergence: params.requireDivergence,
+    })
+    const repaired = await agentChain.generateResponse(
+      repairPrompt,
+      params.history,
+      {
+        ...params.llmConfig,
+        temperature: 0.2,
+      },
+      {
+        emotionalProfile: params.agent.emotionalProfile,
+        emotionalState: params.emotionalState,
+      }
+    )
+
+    response = normalizeScenarioResponse(repaired.response)
+    const repairedQuality = evaluateScenarioProbeResponse({
+      response,
+      counterpartResponse: params.counterpartResponse,
+      requireDivergence: params.requireDivergence,
+    })
+    quality = {
+      ...repairedQuality,
+      repairAttempted: true,
+      repairSucceeded: repairedQuality.pass,
+    }
+    rawModelOutput = [initial.response, repaired.response].filter(Boolean).join('\n\n---REPAIR---\n\n')
+  }
+
+  return {
+    response,
+    quality,
+    rawModelOutput,
   }
 }
 
@@ -762,7 +1278,9 @@ function buildScenarioAnalytics(runs: ScenarioRunRecord[]): ScenarioAnalyticsSum
     bestInterventions[0] ? `Best recent intervention: ${bestInterventions[0].label} (${bestInterventions[0].averageGain} average score gain).` : null,
     commonQualityFlags.includes('pm_jargon') ? 'Watch for vague product jargon and push for more concrete language.' : null,
     commonQualityFlags.includes('low_actionability') ? 'When a branch is too abstract, add stronger next-step pressure in the intervention.' : null,
-    commonQualityFlags.includes('meta_response') ? 'Keep prompts asking for the exact reply, not commentary about the reply.' : null,
+    (commonQualityFlags.includes('meta_response') || commonQualityFlags.includes('generic_meta_advice'))
+      ? 'Keep prompts asking for the exact reply, not commentary about the reply.'
+      : null,
   ].filter(Boolean) as string[]
 
   return {
@@ -890,12 +1408,14 @@ export class ScenarioService {
       throw new Error(`Agent ${params.agentId} not found`)
     }
 
-    const [messages, memories, relationships, allAgents, simulations] = await Promise.all([
+    const [messages, memories, relationships, allAgents, simulations, learningState, learningPromptContext] = await Promise.all([
       MessageService.getMessagesByAgentId(params.agentId),
       MemoryService.getAllMemoriesForAgent(params.agentId),
       listRelationshipsForAgent(params.agentId),
       AgentService.getAllAgents(),
       SimulationService.getSimulationsByAgent(params.agentId),
+      LearningService.getLearningState(params.agentId),
+      LearningService.getPromptContext(params.agentId),
     ])
 
     const agentLookup = new Map(allAgents.map((entry) => [entry.id, entry.name]))
@@ -908,14 +1428,54 @@ export class ScenarioService {
       throw new Error('Branch point not found')
     }
 
-    const maxTurns = Math.max(1, Math.min(params.maxTurns || DEFAULT_MAX_TURNS, 4))
+    const recalledMemories = await MemoryService.recallMemories(
+      params.agentId,
+      `${branchPoint.title} ${branchPoint.summary} ${params.intervention.label} ${params.intervention.description}`,
+      6
+    )
+
+    const maxTurns = Math.max(DEFAULT_MAX_TURNS, Math.min(params.maxTurns || DEFAULT_MAX_TURNS, 4))
     const recentMessages = messages
       .filter((message) => new Date(message.timestamp).getTime() <= new Date(branchPoint.timestamp).getTime())
       .slice(-6)
-    const relevantMemories = memories
+    const relevantEpisodeMemories = memories
       .filter((memory) => new Date(memory.timestamp).getTime() <= new Date(branchPoint.timestamp).getTime())
       .sort((left, right) => right.importance - left.importance)
       .slice(0, 4)
+    const semanticMemories = recalledMemories
+      .filter((memory) => memory.hitType === 'semantic')
+      .slice(0, 4)
+      .map((memory) => ({
+        id: memory.memory.id,
+        type: memory.memory.type,
+        summary: memory.memory.summary || memory.memory.content,
+        canonicalValue: memory.memory.canonicalValue,
+        confidence: memory.memory.confidence,
+        reason: memory.reasons[0] || 'Matched scenario context.',
+      }))
+    const relevantMemories = [
+      ...semanticMemories.map((memory) => ({
+        id: memory.id,
+        summary: memory.summary,
+        importance: 9,
+        timestamp: memories.find((entry) => entry.id === memory.id)?.timestamp || branchPoint.timestamp,
+        type: memory.type,
+        hitType: 'semantic' as const,
+        canonicalValue: memory.canonicalValue,
+      })),
+      ...relevantEpisodeMemories.map((memory) => ({
+        id: memory.id,
+        summary: memory.summary,
+        importance: memory.importance,
+        timestamp: memory.timestamp,
+        type: memory.type,
+        hitType: 'episode' as const,
+        canonicalValue: memory.canonicalValue,
+      })),
+    ].slice(0, 6)
+    const activeAdaptations: LearningAdaptation[] = learningState?.state.recentAdaptations
+      ?.filter((adaptation) => adaptation.isActive)
+      .slice(0, 3) || []
     const primaryRelationship = [...relationships]
       .sort((left, right) => right.metrics.familiarity - left.metrics.familiarity)[0]
 
@@ -933,13 +1493,34 @@ export class ScenarioService {
       : emotionalService.normalizeEmotionalState(agent.emotionalState)
 
     const now = new Date().toISOString()
+    const sourceRefs = buildScenarioSourceRefs({
+      branchPoint,
+      relevantMemories,
+      semanticMemories,
+      learningAdaptations: activeAdaptations.map((adaptation) => ({
+        id: adaptation.id,
+        description: adaptation.description,
+        instruction: adaptation.instruction,
+        confidence: adaptation.confidence,
+        impactScore: adaptation.impactScore,
+      })),
+    })
     const draftRecord: ScenarioRunRecord = {
       id: generateId('scenario'),
       agentId: agent.id,
       agentName: agent.name,
       status: 'running',
+      qualityStatus: 'pending',
+      promptVersion: SCENARIO_PROMPT_VERSION,
+      rawModelOutput: createRawModelOutput('', {
+        capturedAt: now,
+        promptVersion: SCENARIO_PROMPT_VERSION,
+        responseFormat: 'scenario_run',
+      }),
+      sourceRefs,
       branchPoint,
       intervention: params.intervention,
+      probeSet: [],
       branchContext: {
         recentMessages: recentMessages.map((message) => ({
           id: message.id,
@@ -947,13 +1528,17 @@ export class ScenarioService {
           content: message.content,
           timestamp: message.timestamp,
         })),
-        relevantMemories: relevantMemories.map((memory) => ({
-          id: memory.id,
-          summary: memory.summary,
-          importance: memory.importance,
-          timestamp: memory.timestamp,
+        relevantMemories,
+        semanticMemories,
+        learningAdaptations: activeAdaptations.map((adaptation) => ({
+          id: adaptation.id,
+          description: adaptation.description,
+          instruction: adaptation.instruction,
+          confidence: adaptation.confidence,
+          impactScore: adaptation.impactScore,
         })),
         relationshipSummary: relationshipSummary ? normalizeBranchSummary(relationshipSummary, 320) : undefined,
+        learningPromptContext,
       },
       baselineState: {
         emotionalState: baselineState,
@@ -979,7 +1564,7 @@ export class ScenarioService {
     await this.upsertScenarioRun(draftRecord)
 
     const probes = buildProbePrompts(agent, branchPoint, relationships).slice(0, maxTurns)
-    const memoryContext = relevantMemories.map((memory) => memory.summary)
+    const memoryContext = relevantMemories.map((memory) => memory.canonicalValue || memory.summary)
     const baselineHistory = mapHistoryMessages(recentMessages)
     const alternateHistory = mapHistoryMessages(recentMessages)
     let workingBaselineAgent: AgentRecord = {
@@ -1001,6 +1586,7 @@ export class ScenarioService {
     }
 
     const turns: ScenarioTurnResult[] = []
+    const rawOutputs: string[] = []
 
     for (const probe of probes) {
       const baselinePrompt = buildScenarioPrompt({
@@ -1008,6 +1594,7 @@ export class ScenarioService {
         branchPoint,
         relevantMemoryContext: memoryContext,
         relationshipContext: relationshipSummary,
+        learningPromptContext,
       })
 
       const alternatePrompt = buildScenarioPrompt({
@@ -1017,27 +1604,58 @@ export class ScenarioService {
         directives,
         relevantMemoryContext: memoryContext,
         relationshipContext: relationshipSummary,
+        learningPromptContext,
       })
 
-      const baselineResponse = await AgentChain.getInstance(agent.id).generateResponse(
-        baselinePrompt,
-        baselineHistory,
+      const baselineResponse = await generateScenarioBranchResponse({
+        agentId: agent.id,
+        agent,
+        probePrompt: probe.prompt,
+        prompt: baselinePrompt,
+        history: baselineHistory,
         llmConfig,
-        {
-          emotionalProfile: agent.emotionalProfile,
-          emotionalState: workingBaselineAgent.emotionalState,
-        }
-      )
+        emotionalState: workingBaselineAgent.emotionalState,
+        branchPoint,
+        relevantMemoryContext: memoryContext,
+        relationshipContext: relationshipSummary,
+        learningPromptContext,
+      })
 
-      const alternateResponse = await AgentChain.getInstance(agent.id).generateResponse(
-        alternatePrompt,
-        alternateHistory,
+      const alternateResponse = await generateScenarioBranchResponse({
+        agentId: agent.id,
+        agent,
+        probePrompt: probe.prompt,
+        prompt: alternatePrompt,
+        history: alternateHistory,
         llmConfig,
-        {
-          emotionalProfile: agent.emotionalProfile,
-          emotionalState: workingAlternateAgent.emotionalState,
-        }
-      )
+        emotionalState: workingAlternateAgent.emotionalState,
+        branchPoint,
+        intervention: params.intervention,
+        directives,
+        relevantMemoryContext: memoryContext,
+        relationshipContext: relationshipSummary,
+        learningPromptContext,
+        counterpartResponse: baselineResponse.response,
+        requireDivergence: true,
+      })
+
+      rawOutputs.push([
+        `Probe ${probe.label} baseline:\n${baselineResponse.rawModelOutput}`,
+        `Probe ${probe.label} alternate:\n${alternateResponse.rawModelOutput}`,
+      ].join('\n\n'))
+
+      const baselineQuality = evaluateScenarioProbeResponse({
+        response: baselineResponse.response,
+        counterpartResponse: alternateResponse.response,
+      })
+      const alternateQuality = evaluateScenarioProbeResponse({
+        response: alternateResponse.response,
+        counterpartResponse: baselineResponse.response,
+        requireDivergence: true,
+      })
+      const similarity = calculateTextSimilarity(baselineResponse.response, alternateResponse.response)
+      const materiallyDifferent = similarity < 0.82 && baselineResponse.response !== alternateResponse.response
+      const divergenceScore = Math.max(0, Math.min(100, Math.round((1 - similarity) * 100)))
 
       const baselineAppraisal = emotionalService.appraiseConversationTurn({
         agent: workingBaselineAgent,
@@ -1085,15 +1703,16 @@ export class ScenarioService {
       alternateHistory.push({ role: 'user', content: alternatePrompt })
       alternateHistory.push({ role: 'assistant', content: alternateResponse.response })
 
-      const divergenceNotes = [
-        baselineResponse.response === alternateResponse.response
-          ? 'Both branches stayed very close on this probe.'
-          : 'The alternate branch changed wording, priorities, or confidence.',
-      ]
+      const divergenceNotes = materiallyDifferent
+        ? ['The alternate branch materially changed the next move, priorities, or framing.']
+        : ['Baseline and alternate stayed too close on this probe and weakened the scenario contrast.']
 
       if (baselineFinal.emotionalState.dominantEmotion !== alternateFinal.emotionalState.dominantEmotion) {
         divergenceNotes.push(`Dominant emotion shifted from ${baselineFinal.emotionalState.dominantEmotion || 'dormant'} to ${alternateFinal.emotionalState.dominantEmotion || 'dormant'}.`)
       }
+
+      divergenceNotes.push(scenarioQualityNotes('Baseline quality', baselineQuality))
+      divergenceNotes.push(scenarioQualityNotes('Alternate quality', alternateQuality))
 
       turns.push({
         id: generateId('scenario_turn'),
@@ -1101,9 +1720,29 @@ export class ScenarioService {
         probePrompt: probe.prompt,
         baselineResponse: baselineResponse.response,
         alternateResponse: alternateResponse.response,
+        baselineQuality,
+        alternateQuality,
+        qualityFlags: [...new Set([
+          ...baselineQuality.flags,
+          ...alternateQuality.flags,
+          ...(materiallyDifferent ? [] : ['low_divergence']),
+        ])],
         baselineEmotion: baselineFinal.emotionalState,
         alternateEmotion: alternateFinal.emotionalState,
         divergenceNotes,
+        divergenceScore,
+        materiallyDifferent,
+        repair: {
+          attempted: Boolean(baselineQuality.repairAttempted || alternateQuality.repairAttempted),
+          repairedResponses: [
+            ...(baselineQuality.repairAttempted ? ['baseline' as const] : []),
+            ...(alternateQuality.repairAttempted ? ['alternate' as const] : []),
+          ],
+          notes: [
+            ...(baselineQuality.repairAttempted ? ['Baseline branch regenerated once due to low-quality output.'] : []),
+            ...(alternateQuality.repairAttempted ? ['Alternate branch regenerated once due to low-quality or low-divergence output.'] : []),
+          ],
+        },
       })
     }
 
@@ -1114,10 +1753,50 @@ export class ScenarioService {
       turns,
       providerInfo: params.providerInfo,
     }) || buildFallbackComparison(turns)
+    comparison.qualityFlags = {
+      baseline: turns.flatMap((turn) => turn.baselineQuality?.flags || []).slice(0, 8),
+      alternate: turns.flatMap((turn) => turn.alternateQuality?.flags || []).slice(0, 8),
+    }
+    comparison.qualityNotes = [
+      ...comparison.qualityNotes,
+      ...turns.map((turn) => (
+        turn.materiallyDifferent === false
+          ? `${turn.probeLabel}: alternate stayed too close to baseline.`
+          : `${turn.probeLabel}: alternate branch diverged cleanly.`
+      )),
+    ].slice(0, 8)
+
+    const validation = createScenarioRunValidation({
+      turns,
+      comparison,
+      sourceRefs,
+    })
+    const evaluation = evaluateScenarioRun({
+      turns,
+      comparison,
+      validation,
+    })
+    const gate = applyFinalQualityGate({
+      validation,
+      evaluation,
+      thresholds: SCENARIO_GATE_THRESHOLDS,
+      extraHardFailureFlags: [],
+    })
+    const failureReason = gate.pass
+      ? undefined
+      : [
+          evaluation.evaluatorSummary,
+          ...validation.hardFailureFlags,
+          ...gate.blockerReasons,
+        ].filter(Boolean).join(' | ')
 
     const completedRecord: ScenarioRunRecord = {
       ...draftRecord,
-      status: 'complete',
+      status: gate.pass ? 'complete' : 'failed',
+      qualityStatus: gate.qualityStatus,
+      qualityScore: evaluation.overallScore,
+      failureReason,
+      probeSet: probes,
       alternateState: {
         ...draftRecord.alternateState,
         emotionalState: workingAlternateAgent.emotionalState || draftRecord.alternateState.emotionalState,
@@ -1129,10 +1808,38 @@ export class ScenarioService {
       },
       turns,
       comparison,
+      rawModelOutput: createRawModelOutput(rawOutputs.join('\n\n====\n\n'), {
+        capturedAt: new Date().toISOString(),
+        promptVersion: SCENARIO_PROMPT_VERSION,
+        responseFormat: 'scenario_run',
+      }),
+      validation,
+      evaluation,
       updatedAt: new Date().toISOString(),
     }
 
     await this.upsertScenarioRun(completedRecord)
+    if (!gate.pass) {
+      const runId = completedRecord.id
+      await LearningService.recordQualityObservation({
+        agentId: params.agentId,
+        feature: 'scenario',
+        description: `Scenario run ${runId} was blocked by validation or evaluation.`,
+        blockerReasons: [
+          ...validation.hardFailureFlags,
+          ...gate.blockerReasons,
+        ],
+        evidenceRefs: [runId],
+        rawExcerpt: completedRecord.rawModelOutput?.text,
+        outputExcerpt: completedRecord.comparison.recommendation || completedRecord.failureReason,
+        qualityScore: evaluation.overallScore,
+        category: 'problem_solving',
+        candidateAdaptations: [
+          'Regenerate branches with more concrete next actions and clearer divergence.',
+          'Avoid generic meta-advice in scenario probe responses.',
+        ],
+      })
+    }
     return completedRecord
   }
 

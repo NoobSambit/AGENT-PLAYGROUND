@@ -335,7 +335,7 @@ function ObservationCard({ observation }: { observation: MetaLearningState['rece
           observation.outcome === 'negative' ? 'bg-red-500/20 text-red-400' :
           'bg-muted text-muted-foreground'
         }`}>
-          {observation.outcome}
+          {observation.severity || observation.outcome}
         </span>
       </div>
       <div className="mt-2 flex items-center gap-3 text-[11px] text-muted-foreground">
@@ -343,6 +343,15 @@ function ObservationCard({ observation }: { observation: MetaLearningState['rece
         <span>{observation.followUpStatus}</span>
         <span>{observation.feedbackSignal}</span>
       </div>
+      {(observation.evidenceRefs || []).length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {(observation.evidenceRefs || []).slice(0, 3).map((ref) => (
+            <span key={`${observation.id}_${ref}`} className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] text-sky-300">
+              {ref}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -385,6 +394,7 @@ export function MetaLearningDashboard({
   className = ''
 }: MetaLearningDashboardProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'patterns' | 'goals' | 'skills'>('overview')
+  const [observationFilter, setObservationFilter] = useState<'all' | 'quality'>('all')
 
   const {
     profile,
@@ -396,6 +406,12 @@ export function MetaLearningDashboard({
     recentObservations,
     currentSession
   } = state
+  const filteredObservations = observationFilter === 'quality'
+    ? (state.outputQuality?.recentObservations || [])
+    : recentObservations
+  const filteredAdaptations = observationFilter === 'quality'
+    ? (state.outputQuality?.recentAdaptations || [])
+    : recentAdaptations
   const hasLearningEvidence = (
     stats.totalPatterns > 0
     || stats.resolvedObservations > 0
@@ -442,6 +458,21 @@ export function MetaLearningDashboard({
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
+        </div>
+
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => setObservationFilter('all')}
+            className={`rounded-full px-3 py-1 text-xs font-medium ${observationFilter === 'all' ? 'bg-cyan-500/15 text-cyan-300' : 'bg-background/50 text-muted-foreground'}`}
+          >
+            All signals
+          </button>
+          <button
+            onClick={() => setObservationFilter('quality')}
+            className={`rounded-full px-3 py-1 text-xs font-medium ${observationFilter === 'quality' ? 'bg-amber-500/15 text-amber-300' : 'bg-background/50 text-muted-foreground'}`}
+          >
+            Output quality
+          </button>
         </div>
       </div>
 
@@ -525,21 +556,25 @@ export function MetaLearningDashboard({
                 </div>
               )}
 
-              {recentAdaptations.length > 0 && (
+              {filteredAdaptations.length > 0 && (
                 <div>
-                  <h3 className="mb-3 text-sm font-medium text-foreground">Active Behavior Changes</h3>
+                  <h3 className="mb-3 text-sm font-medium text-foreground">
+                    {observationFilter === 'quality' ? 'Quality-Linked Adaptations' : 'Active Behavior Changes'}
+                  </h3>
                   <div className="space-y-2">
-                    {recentAdaptations.slice(0, 3).map((adaptation) => (
+                    {filteredAdaptations.slice(0, 3).map((adaptation) => (
                       <AdaptationCard key={adaptation.id} adaptation={adaptation} />
                     ))}
                   </div>
                 </div>
               )}
 
-              {recentObservations.length > 0 && (
+              {filteredObservations.length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-medium text-foreground">Recent Evidence</h3>
+                    <h3 className="text-sm font-medium text-foreground">
+                      {observationFilter === 'quality' ? 'Recent Output-Quality Evidence' : 'Recent Evidence'}
+                    </h3>
                     {currentSession && (
                       <span className="text-xs text-muted-foreground">
                         Session score {Math.round(currentSession.effectivenessScore * 100)}%
@@ -547,9 +582,22 @@ export function MetaLearningDashboard({
                     )}
                   </div>
                   <div className="grid gap-2">
-                    {recentObservations.slice(0, 3).map((observation) => (
+                    {filteredObservations.slice(0, 3).map((observation) => (
                       <ObservationCard key={observation.id} observation={observation} />
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {state.outputQuality && observationFilter === 'quality' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-sm border border-amber-500/20 bg-amber-500/8 p-4">
+                    <div className="text-2xl font-bold text-amber-300">{state.outputQuality.blockedObservationCount}</div>
+                    <div className="text-xs text-muted-foreground">Blocked quality observations</div>
+                  </div>
+                  <div className="rounded-sm border border-red-500/20 bg-red-500/8 p-4">
+                    <div className="text-2xl font-bold text-red-300">{state.outputQuality.highSeverityCount}</div>
+                    <div className="text-xs text-muted-foreground">High severity blockers</div>
                   </div>
                 </div>
               )}

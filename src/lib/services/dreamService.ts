@@ -12,6 +12,22 @@ import {
   writeDreamToFirestore,
 } from '@/lib/dream/firestoreStore'
 import { DreamWorkspaceRepository } from '@/lib/repositories/dreamWorkspaceRepository'
+import {
+  createPendingTrackedFields,
+  syncTrackedQualityState,
+} from '@/lib/services/outputQuality/contracts'
+import { applyFinalQualityGate } from '@/lib/services/outputQuality/evaluators'
+import {
+  createRawModelOutput,
+  normalizeWhitespace,
+  safeParseJsonWithExtraction,
+} from '@/lib/services/outputQuality/normalizers'
+import {
+  createValidationReport,
+  validateRequiredTextFields,
+  validateSharedArtifactText,
+  validateSourceRefs,
+} from '@/lib/services/outputQuality/validators'
 import type {
   AgentRecord,
   Dream,
@@ -29,21 +45,28 @@ import type {
   DreamScene,
   DreamSession,
   DreamSessionDetail,
-  DreamStatus,
   DreamType,
   EmotionType,
   MemoryRecord,
   MessageRecord,
 } from '@/types/database'
+import type { OutputArtifactRole, OutputQualityValidationReport } from '@/types/outputQuality'
 import { AgentService } from './agentService'
 import { agentProgressService } from './agentProgressService'
 import { emotionalService } from './emotionalService'
 import { journalService } from './journalService'
+import { LearningService } from './learningService'
 import { MemoryService } from './memoryService'
 import { MessageService } from './messageService'
 
 const DAILY_LIMIT = 12
 const RATE_WINDOW_MS = 24 * 60 * 60 * 1000
+const DREAM_PROMPT_VERSION = 'phase4-dream-quality-v1'
+const DREAM_VALIDATOR_VERSION = 'phase4-dream-validator-v1'
+const DREAM_GATE_THRESHOLDS = {
+  overallScoreMinimum: 80,
+  dimensionFloor: 70,
+}
 
 const DREAM_TYPES: DreamType[] = [
   'symbolic',
@@ -101,20 +124,6 @@ function summarizeText(value: string, maxLength = 180) {
 
 function clamp(value: number, min = 0, max = 100) {
   return Math.max(min, Math.min(max, value))
-}
-
-function safeParseJson<T>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T
-  } catch {
-    const match = value.match(/\{[\s\S]*\}/)
-    if (!match) return null
-    try {
-      return JSON.parse(match[0]) as T
-    } catch {
-      return null
-    }
-  }
 }
 
 function normalizeStringList(value: unknown, limit = 8) {
@@ -208,6 +217,32 @@ interface DreamDraftPayload {
     openLoops?: string[]
   }
   emotionalProcessing?: string
+}
+
+interface DreamBuildResult {
+  dream: Dream
+  validation: OutputQualityValidationReport
+}
+
+interface DreamSaveBlockedPayload {
+  code: 'dream_save_blocked'
+  sessionId: string
+  dreamId?: string
+  blockerReasons: string[]
+  qualityStatus: DreamSession['qualityStatus']
+  normalizationStatus?: Dream['normalizationStatus']
+  validation?: OutputQualityValidationReport
+  evaluation?: DreamQualityEvaluation
+}
+
+export class DreamSaveBlockedError extends Error {
+  readonly payload: DreamSaveBlockedPayload
+
+  constructor(payload: DreamSaveBlockedPayload, message = 'Dream is blocked from save until quality preconditions pass.') {
+    super(message)
+    this.name = 'DreamSaveBlockedError'
+    this.payload = payload
+  }
 }
 
 class DreamService {
@@ -340,6 +375,7 @@ class DreamService {
       id: generateId('dream_session'),
       agentId,
       status: 'draft',
+      ...createPendingTrackedFields({ promptVersion: DREAM_PROMPT_VERSION }),
       latestStage: 'prepare_context',
       type: normalizedInput.type,
       normalizedInput,
@@ -412,8 +448,17 @@ class DreamService {
       status: 'generating',
       latestStage: 'condition_subconscious',
       contextPacket,
+      sourceRefs: contextPacket.selectedSignals.slice(0, 8).map((signal) => ({
+        id: signal.id,
+        sourceType: signal.sourceType,
+        label: signal.label,
+        reason: signal.reason,
+        linkedEntityId: signal.linkedEntityId,
+      })),
       provider: providerInfo.provider,
       model: providerInfo.model,
+      promptVersion: DREAM_PROMPT_VERSION,
+      qualityStatus: 'pending',
       failureReason: undefined,
       updatedAt: new Date().toISOString(),
     }
@@ -452,24 +497,27 @@ class DreamService {
       ],
     })
 
-    let finalDream = await this.saveDream(this.parseDream({
+    const draftBuild = this.parseDream({
       agent,
       session,
       llmResponse: draftResponse.content,
       providerInfo,
       version: 1,
-      status: 'draft',
-    }))
+      artifactRole: 'draft',
+    })
+    let candidateDream = await this.saveDream(draftBuild.dream)
 
     await this.savePipelineEvent(agentId, {
       id: generateId('dream_event'),
       sessionId,
       stage: 'draft_dream',
       status: 'completed',
-      summary: `Generated draft "${finalDream.title}".`,
+      summary: `Generated draft "${candidateDream.title}".`,
       payload: {
-        dreamId: finalDream.id,
-        sceneCount: finalDream.scenes.length,
+        dreamId: candidateDream.id,
+        sceneCount: candidateDream.scenes.length,
+        normalization: candidateDream.normalization,
+        validation: candidateDream.validation,
       },
       createdAt: new Date().toISOString(),
     })
@@ -479,21 +527,27 @@ class DreamService {
       sessionId,
       stage: 'extract_symbols',
       status: 'completed',
-      summary: `Extracted ${finalDream.symbols.length} symbols and ${finalDream.latentTensions.length} latent tensions.`,
+      summary: `Extracted ${candidateDream.symbols.length} symbols and ${candidateDream.latentTensions.length} latent tensions.`,
       payload: {
-        dreamId: finalDream.id,
-        symbols: finalDream.symbols,
-        latentTensions: finalDream.latentTensions,
+        dreamId: candidateDream.id,
+        symbols: candidateDream.symbols,
+        latentTensions: candidateDream.latentTensions,
       },
       createdAt: new Date().toISOString(),
     })
 
-    let evaluation = await this.evaluateDream(agent, session, finalDream, providerInfo)
-    finalDream = await this.updateDream({
-      ...finalDream,
+    let evaluation = candidateDream.validation?.pass
+      ? await this.evaluateDream(agent, session, candidateDream, providerInfo)
+      : this.createBlockedEvaluation(candidateDream.validation || createValidationReport({ validatorVersion: DREAM_VALIDATOR_VERSION }))
+    candidateDream = await this.updateDream({
+      ...candidateDream,
       evaluation,
       displayMetrics: deriveDisplayMetrics(evaluation),
-      impressionPreview: this.deriveImpressionPreview(finalDream),
+      impressionPreview: evaluation.pass ? this.deriveImpressionPreview(candidateDream) : undefined,
+      qualityScore: evaluation.overallScore,
+      ...syncTrackedQualityState({
+        ...candidateDream,
+      }, { evaluationPass: evaluation.pass }),
       updatedAt: new Date().toISOString(),
     })
 
@@ -504,38 +558,55 @@ class DreamService {
       status: 'completed',
       summary: evaluation.evaluatorSummary,
       payload: {
-        dreamId: finalDream.id,
+        dreamId: candidateDream.id,
         evaluation,
+        validation: candidateDream.validation,
       },
       createdAt: new Date().toISOString(),
     })
 
-    if (!evaluation.pass) {
+    const draftGate = applyFinalQualityGate({
+      validation: candidateDream.validation,
+      evaluation,
+      thresholds: DREAM_GATE_THRESHOLDS,
+    })
+
+    if (!draftGate.pass) {
       const repairResponse = await generateText({
         providerInfo,
         temperature: 0.7,
         maxTokens: 2600,
         messages: [
           { role: 'system', content: this.buildGeneratorSystemPrompt(agent, session) },
-          { role: 'user', content: this.buildRepairPrompt(session, finalDream, evaluation) },
+          { role: 'user', content: this.buildRepairPrompt(session, candidateDream, evaluation) },
         ],
       })
 
-      finalDream = await this.saveDream(this.parseDream({
+      const repairBuild = this.parseDream({
         agent,
         session,
         llmResponse: repairResponse.content,
         providerInfo,
         version: 2,
-        status: 'repaired',
-      }))
+        artifactRole: 'repair',
+        sourceDreamId: candidateDream.id,
+      })
+      candidateDream = await this.saveDream(repairBuild.dream)
 
-      evaluation = await this.evaluateDream(agent, session, finalDream, providerInfo)
-      finalDream = await this.updateDream({
-        ...finalDream,
+      evaluation = candidateDream.validation?.pass
+        ? await this.evaluateDream(agent, session, candidateDream, providerInfo)
+        : this.createBlockedEvaluation(candidateDream.validation || createValidationReport({ validatorVersion: DREAM_VALIDATOR_VERSION }))
+      candidateDream = await this.updateDream({
+        ...candidateDream,
         evaluation,
         displayMetrics: deriveDisplayMetrics(evaluation),
-        impressionPreview: this.deriveImpressionPreview(finalDream),
+        impressionPreview: evaluation.pass ? this.deriveImpressionPreview(candidateDream) : undefined,
+        qualityScore: evaluation.overallScore,
+        repairCount: 1,
+        ...syncTrackedQualityState({
+          ...candidateDream,
+          repairCount: 1,
+        }, { evaluationPass: evaluation.pass }),
         updatedAt: new Date().toISOString(),
       })
 
@@ -543,30 +614,34 @@ class DreamService {
         id: generateId('dream_event'),
         sessionId,
         stage: 'repair_dream',
-        status: evaluation.pass ? 'completed' : 'failed',
+        status: applyFinalQualityGate({
+          validation: candidateDream.validation,
+          evaluation,
+          thresholds: DREAM_GATE_THRESHOLDS,
+        }).pass ? 'completed' : 'failed',
         summary: evaluation.pass ? 'Repair pass improved symbolism and grounding enough for review.' : 'Repair pass still failed the dream quality gate.',
         payload: {
-          dreamId: finalDream.id,
+          dreamId: candidateDream.id,
           evaluation,
+          validation: candidateDream.validation,
         },
         createdAt: new Date().toISOString(),
       })
     }
 
-    const impressionPreview = this.deriveImpressionPreview(finalDream)
-    finalDream = await this.updateDream({
-      ...finalDream,
-      impressionPreview,
-      displayMetrics: deriveDisplayMetrics(evaluation),
-      updatedAt: new Date().toISOString(),
+    const { dream: finalDream, gate } = await this.finalizeDreamCandidate({
+      session,
+      sourceDream: candidateDream,
+      evaluation,
     })
+    const impressionPreview = finalDream.impressionPreview
 
     await this.savePipelineEvent(agentId, {
       id: generateId('dream_event'),
       sessionId,
       stage: 'derive_impression',
-      status: evaluation.pass ? 'completed' : 'skipped',
-      summary: evaluation.pass ? 'Derived a bounded behavioral residue preview for review.' : 'Skipped impression preview because the draft failed the quality gate.',
+      status: gate.pass ? 'completed' : 'skipped',
+      summary: gate.pass ? 'Derived a bounded behavioral residue preview for review.' : 'Skipped impression preview because the draft failed the quality gate.',
       payload: {
         dreamId: finalDream.id,
         impressionPreview,
@@ -576,26 +651,45 @@ class DreamService {
 
     session = {
       ...session,
-      status: evaluation.pass ? 'ready' : 'failed',
-      latestStage: evaluation.pass ? 'ready' : 'failed',
+      status: gate.pass ? 'ready' : 'failed',
+      latestStage: gate.pass ? 'ready' : 'failed',
+      qualityStatus: gate.qualityStatus,
       latestEvaluation: evaluation,
       finalDreamId: finalDream.id,
-      failureReason: evaluation.pass ? undefined : evaluation.evaluatorSummary,
+      repairCount: candidateDream.repairCount ?? 0,
+      rawModelOutput: candidateDream.rawModelOutput,
+      validation: candidateDream.validation,
+      failureReason: gate.pass ? undefined : [evaluation.evaluatorSummary, ...gate.blockerReasons].filter(Boolean).join(' | '),
       updatedAt: new Date().toISOString(),
     }
     await this.saveSession(session)
     await this.savePipelineEvent(agentId, {
       id: generateId('dream_event'),
       sessionId,
-      stage: evaluation.pass ? 'ready' : 'failed',
-      status: evaluation.pass ? 'completed' : 'failed',
-      summary: evaluation.pass ? 'Dream draft is ready for review and explicit save.' : 'Dream draft failed the quality gate and requires regeneration.',
+      stage: gate.pass ? 'ready' : 'failed',
+      status: gate.pass ? 'completed' : 'failed',
+      summary: gate.pass ? 'Dream draft is ready for review and explicit save.' : 'Dream draft failed the quality gate and requires regeneration.',
       payload: {
         dreamId: finalDream.id,
         evaluation,
+        validation: finalDream.validation,
+        blockerReasons: gate.blockerReasons,
       },
       createdAt: new Date().toISOString(),
     })
+
+    if (!gate.pass) {
+      await this.recordQualityFailureObservation({
+        agentId,
+        feature: 'dream',
+        description: `Dream session ${sessionId} was blocked by the final quality gate.`,
+        blockerReasons: gate.blockerReasons,
+        evidenceRefs: [sessionId, candidateDream.id, finalDream.id],
+        rawExcerpt: candidateDream.rawModelOutput?.text,
+        outputExcerpt: finalDream.summary,
+        qualityScore: evaluation.overallScore,
+      })
+    }
 
     return this.getSessionDetail(agentId, sessionId)
   }
@@ -607,16 +701,41 @@ class DreamService {
     const session = await this.getSessionRecord(agentId, sessionId)
     if (!session) throw new Error('Dream session not found')
     if (session.status !== 'ready' || !session.finalDreamId || !session.latestEvaluation?.pass) {
-      throw new Error('Only passing ready dream sessions can be saved.')
+      throw new DreamSaveBlockedError({
+        code: 'dream_save_blocked',
+        sessionId,
+        dreamId: session.finalDreamId,
+        blockerReasons: ['dream_session_not_ready'],
+        qualityStatus: session.qualityStatus,
+        validation: session.validation,
+        evaluation: session.latestEvaluation,
+      })
     }
 
     const draft = await this.getDreamRecord(session.finalDreamId)
     if (!draft) throw new Error('Final dream not found')
+    if (!draft.validation?.pass || !draft.evaluation?.pass || !draft.sourceRefs?.length) {
+      throw new DreamSaveBlockedError({
+        code: 'dream_save_blocked',
+        sessionId,
+        dreamId: draft.id,
+        blockerReasons: [
+          ...(!draft.validation?.pass ? ['validation_failed'] : []),
+          ...(!draft.evaluation?.pass ? ['evaluation_failed'] : []),
+          ...(!draft.sourceRefs?.length ? ['missing_source_ref'] : []),
+        ],
+        qualityStatus: session.qualityStatus,
+        normalizationStatus: draft.normalizationStatus,
+        validation: draft.validation,
+        evaluation: draft.evaluation,
+      })
+    }
 
     const now = new Date().toISOString()
     const savedDream = await this.updateDream({
       ...draft,
       status: 'saved',
+      qualityStatus: 'passed',
       impression: this.deriveSavedImpression(draft, now),
       savedAt: now,
       updatedAt: now,
@@ -625,6 +744,7 @@ class DreamService {
     const savedSession: DreamSession = {
       ...session,
       status: 'saved',
+      qualityStatus: 'passed',
       latestStage: 'saved',
       finalDreamId: savedDream.id,
       savedAt: now,
@@ -736,11 +856,12 @@ class DreamService {
   }
 
   private async buildContextSignals(agent: AgentRecord, input: DreamComposeInput): Promise<DreamContextSignal[]> {
-    const [messages, memories, savedJournals, savedDreams] = await Promise.all([
+    const [messages, memories, savedJournals, savedDreams, learningPromptContext] = await Promise.all([
       this.listRecentMessages(agent.id),
       this.listRecentMemories(agent.id),
       journalService.listSavedEntries(agent.id, { limit: 3 }),
       this.listSavedDreams(agent.id, { limit: 3 }),
+      LearningService.getPromptContext(agent.id),
     ])
 
     const signals: DreamContextSignal[] = [
@@ -807,6 +928,17 @@ class DreamService {
         reason: 'Temperament shapes how the dream absorbs stress or possibility.',
         weight: 0.76,
       })
+    }
+
+    if (learningPromptContext) {
+      signals.push({
+        id: 'learning-adaptations',
+        sourceType: 'learning',
+        label: 'Active learning adaptations',
+        snippet: summarizeText(learningPromptContext, 220),
+        reason: 'Recent learning adaptations should bias symbolism, specificity, and repair choices.',
+        weight: 0.77,
+      } as DreamContextSignal)
     }
 
     for (const [index, event] of (agent.emotionalHistory || []).slice(-4).reverse().entries()) {
@@ -950,6 +1082,7 @@ class DreamService {
     return [
       `Repair the ${session.type} dream below so it passes the quality gate.`,
       `Current title: ${dream.title}`,
+      `Validation blockers: ${(dream.validation?.hardFailureFlags || []).join(' | ') || 'none'}`,
       `Weaknesses: ${evaluation.weaknesses.join(' | ') || 'Insufficient specificity and interpretation.'}`,
       `Repair instructions: ${evaluation.repairInstructions.join(' | ') || 'Strengthen symbolism, grounding, and interpretation.'}`,
       `Current summary: ${dream.summary}`,
@@ -964,23 +1097,26 @@ class DreamService {
     llmResponse,
     providerInfo,
     version,
-    status,
+    artifactRole,
+    sourceDreamId,
   }: {
     agent: AgentRecord
     session: DreamSession
     llmResponse: string
     providerInfo: LLMProviderInfo
     version: number
-    status: DreamStatus
-  }): Dream {
-    const parsed = safeParseJson<DreamDraftPayload>(llmResponse)
+    artifactRole: OutputArtifactRole
+    sourceDreamId?: string
+  }): DreamBuildResult {
+    const parsedResult = safeParseJsonWithExtraction<DreamDraftPayload>(llmResponse)
+    const parsed = parsedResult.parsed
     const now = new Date().toISOString()
     const scenes = (parsed?.scenes || [])
       .map((scene, index): DreamScene => ({
         id: `scene-${index + 1}`,
-        heading: scene.heading?.trim() || `Scene ${index + 1}`,
-        summary: scene.summary?.trim() || summarizeText(scene.body || '', 120) || `Dream sequence ${index + 1}.`,
-        body: scene.body?.trim() || scene.summary?.trim() || 'The dream remained difficult to stabilize into words.',
+        heading: normalizeWhitespace(scene.heading?.trim() || `Scene ${index + 1}`),
+        summary: normalizeWhitespace(scene.summary?.trim() || summarizeText(scene.body || '', 120) || `Dream sequence ${index + 1}.`),
+        body: normalizeWhitespace(scene.body?.trim() || scene.summary?.trim() || 'The dream remained difficult to stabilize into words.'),
         symbols: normalizeStringList(scene.symbols, 5),
         emotions: normalizeStringList(scene.emotions, 4) as EmotionType[],
       }))
@@ -989,17 +1125,17 @@ class DreamService {
     const normalizedScenes = scenes.length ? scenes : [{
       id: 'scene-1',
       heading: 'Dream fragment',
-      summary: summarizeText(llmResponse, 120) || 'An unstable symbolic fragment.',
-      body: llmResponse.trim() || 'The dream did not stabilize.',
+      summary: summarizeText(normalizeWhitespace(llmResponse), 120) || 'An unstable symbolic fragment.',
+      body: normalizeWhitespace(llmResponse) || 'The dream did not stabilize.',
       symbols: [],
       emotions: [],
     }]
 
-    const title = parsed?.title?.trim() || `${agent.name} dream`
-    const summary = parsed?.summary?.trim() || summarizeText(normalizedScenes.map((scene) => scene.summary).join(' '), 180)
+    const title = normalizeWhitespace(parsed?.title?.trim() || `${agent.name} dream`)
+    const summary = normalizeWhitespace(parsed?.summary?.trim() || summarizeText(normalizedScenes.map((scene) => scene.summary).join(' '), 180))
     const themes = normalizeStringList(parsed?.themes, 6)
     const interpretation = {
-      summary: parsed?.interpretation?.summary?.trim() || 'The dream points to unresolved emotional patterning and current behavioral pressure.',
+      summary: normalizeWhitespace(parsed?.interpretation?.summary?.trim() || 'The dream points to unresolved emotional patterning and current behavioral pressure.'),
       insights: normalizeStringList(parsed?.interpretation?.insights, 4),
       cautions: normalizeStringList(parsed?.interpretation?.cautions, 3),
       openLoops: normalizeStringList(parsed?.interpretation?.openLoops, 3),
@@ -1010,8 +1146,12 @@ class DreamService {
       agentId: agent.id,
       sessionId: session.id,
       type: session.type,
-      status,
+      status: artifactRole === 'final' ? 'draft' : artifactRole === 'repair' ? 'repaired' : 'draft',
+      artifactRole,
+      sourceDreamId,
       version,
+      promptVersion: DREAM_PROMPT_VERSION,
+      repairCount: artifactRole === 'repair' ? 1 : 0,
       title,
       summary,
       render: buildMessageRenderData(buildDreamMarkdown({
@@ -1023,31 +1163,92 @@ class DreamService {
       })),
       scenes: normalizedScenes,
       symbols: (parsed?.symbols || []).map((symbol) => ({
-        symbol: symbol.symbol?.trim() || 'symbol',
-        meaning: symbol.meaning?.trim() || 'Carries unresolved emotional meaning.',
-        evidence: symbol.evidence?.trim() || 'Appeared as a salient recurring image.',
+        symbol: normalizeWhitespace(symbol.symbol?.trim() || 'symbol'),
+        meaning: normalizeWhitespace(symbol.meaning?.trim() || 'Carries unresolved emotional meaning.'),
+        evidence: normalizeWhitespace(symbol.evidence?.trim() || 'Appeared as a salient recurring image.'),
         emotionalAssociation: (symbol.emotionalAssociation as EmotionType | undefined),
       })).slice(0, 8),
       themes,
       latentTensions: (parsed?.latentTensions || []).map((entry) => ({
-        tension: entry.tension?.trim() || 'Unresolved inner conflict',
-        whyItMatters: entry.whyItMatters?.trim() || 'It continues to shape near-term behavior.',
+        tension: normalizeWhitespace(entry.tension?.trim() || 'Unresolved inner conflict'),
+        whyItMatters: normalizeWhitespace(entry.whyItMatters?.trim() || 'It continues to shape near-term behavior.'),
       })).slice(0, 5),
       interpretation,
-      emotionalProcessing: parsed?.emotionalProcessing?.trim() || 'The dream is metabolizing recent tension into symbolic form.',
+      emotionalProcessing: normalizeWhitespace(parsed?.emotionalProcessing?.trim() || 'The dream is metabolizing recent tension into symbolic form.'),
       contextReferences: (session.contextPacket?.selectedSignals || []).slice(0, 8).map((signal) => ({
         sourceType: signal.sourceType,
         label: signal.label,
         linkedEntityId: signal.linkedEntityId,
       })),
       displayMetrics: deriveDisplayMetrics(undefined),
+      rawModelOutput: createRawModelOutput(llmResponse, {
+        parserNotes: parsedResult.parserNotes,
+        capturedAt: now,
+        responseFormat: 'json_object',
+        promptVersion: DREAM_PROMPT_VERSION,
+      }),
+      normalization: {
+        status: parsed ? (artifactRole === 'repair' ? 'repaired' : 'normalized') : 'failed',
+        parser: parsedResult.parser,
+        violations: parsed ? parsedResult.parserNotes : ['dream_parse_failed', ...parsedResult.parserNotes],
+        repairedFromId: sourceDreamId,
+      },
+      sourceRefs: (session.contextPacket?.selectedSignals || []).slice(0, 8).map((signal) => ({
+        id: signal.id,
+        sourceType: signal.sourceType,
+        label: signal.label,
+        reason: signal.reason,
+        linkedEntityId: signal.linkedEntityId,
+      })),
       provider: providerInfo.provider,
       model: providerInfo.model,
       createdAt: now,
       updatedAt: now,
     }
 
-    return dream
+    const validation = this.validateDreamArtifact(dream)
+    const tracked = syncTrackedQualityState({
+      ...dream,
+      validation,
+    }, { evaluationPass: undefined })
+
+    return {
+      dream: {
+        ...dream,
+        ...tracked,
+        normalizationStatus: tracked.normalization?.status,
+      },
+      validation,
+    }
+  }
+
+  private validateDreamArtifact(dream: Dream): OutputQualityValidationReport {
+    const hardFailureFlags = [
+      ...validateRequiredTextFields({
+        title: dream.title,
+        summary: dream.summary,
+        emotionalProcessing: dream.emotionalProcessing,
+      }),
+      ...validateSharedArtifactText({
+        title: dream.title,
+        summary: dream.summary,
+        interpretation: dream.interpretation.summary,
+        emotionalProcessing: dream.emotionalProcessing,
+      }),
+      ...(dream.scenes.length === 0 ? ['missing_scenes'] : []),
+      ...(dream.symbols.length === 0 && dream.themes.length === 0 ? ['missing_symbols_and_themes'] : []),
+      ...(!dream.interpretation.summary.trim() ? ['missing_interpretation'] : []),
+      ...validateSourceRefs(dream.sourceRefs || []),
+    ]
+
+    return createValidationReport({
+      hardFailureFlags,
+      softWarnings: [
+        ...(dream.latentTensions.length === 0 ? ['missing_latent_tensions'] : []),
+        ...(dream.interpretation.insights.length === 0 ? ['missing_interpretive_insights'] : []),
+      ],
+      validatorVersion: DREAM_VALIDATOR_VERSION,
+    })
   }
 
   private async evaluateDream(
@@ -1098,7 +1299,7 @@ class DreamService {
         ],
       })
 
-      const parsed = safeParseJson<{
+      const parsed = safeParseJsonWithExtraction<{
         pass?: boolean
         overallScore?: number
         dimensions?: Record<DreamQualityDimension, { score?: number; rationale?: string }>
@@ -1107,7 +1308,7 @@ class DreamService {
         weaknesses?: string[]
         repairInstructions?: string[]
         evaluatorSummary?: string
-      }>(response.content)
+      }>(response.content).parsed
 
       if (!parsed?.dimensions) {
         return heuristic
@@ -1237,6 +1438,107 @@ class DreamService {
       evaluatorSummary: pass
         ? 'Dream passes the quality gate with grounded symbolism, readable progression, and useful interpretation.'
         : 'Dream does not yet meet the quality gate for symbolism, grounding, or interpretive usefulness.',
+    }
+  }
+
+  private createBlockedEvaluation(validation: OutputQualityValidationReport): DreamQualityEvaluation {
+    const summary = validation.hardFailureFlags.length > 0
+      ? `Validation blocked evaluation: ${validation.hardFailureFlags.join(', ')}.`
+      : 'Validation blocked evaluation.'
+
+    return {
+      pass: false,
+      overallScore: 0,
+      dimensions: Object.fromEntries(
+        QUALITY_DIMENSIONS.map((dimension) => [
+          dimension,
+          {
+            score: 0,
+            rationale: summary,
+          },
+        ])
+      ) as DreamQualityEvaluation['dimensions'],
+      hardFailureFlags: validation.hardFailureFlags as DreamHardFailureFlag[],
+      strengths: [],
+      weaknesses: [summary],
+      repairInstructions: validation.hardFailureFlags.map((flag) => `Fix ${flag.replace(/_/g, ' ')} before saving the dream.`),
+      evaluatorSummary: summary,
+    }
+  }
+
+  private async finalizeDreamCandidate(params: {
+    session: DreamSession
+    sourceDream: Dream
+    evaluation: DreamQualityEvaluation
+  }): Promise<{ dream: Dream; gate: ReturnType<typeof applyFinalQualityGate> }> {
+    const gate = applyFinalQualityGate({
+      validation: params.sourceDream.validation,
+      evaluation: params.evaluation,
+      thresholds: DREAM_GATE_THRESHOLDS,
+    })
+
+    const tracked = syncTrackedQualityState({
+      ...params.sourceDream,
+      qualityStatus: gate.qualityStatus,
+      validation: params.sourceDream.validation,
+      normalization: params.sourceDream.normalization,
+      repairCount: params.sourceDream.repairCount ?? (params.sourceDream.artifactRole === 'repair' ? 1 : 0),
+      promptVersion: params.sourceDream.promptVersion || DREAM_PROMPT_VERSION,
+      rawModelOutput: params.sourceDream.rawModelOutput,
+      sourceRefs: params.sourceDream.sourceRefs,
+    }, { evaluationPass: gate.pass })
+
+    const finalArtifact: Dream = {
+      ...params.sourceDream,
+      ...tracked,
+      id: generateId('dream'),
+      artifactRole: 'final',
+      sourceDreamId: params.sourceDream.id,
+      status: 'draft',
+      version: Math.max(params.sourceDream.version + 1, params.sourceDream.artifactRole === 'repair' ? 3 : 2),
+      evaluation: params.evaluation,
+      displayMetrics: deriveDisplayMetrics(params.evaluation),
+      impressionPreview: gate.pass ? this.deriveImpressionPreview(params.sourceDream) : undefined,
+      normalizationStatus: tracked.normalization?.status,
+      qualityScore: params.evaluation.overallScore,
+      repairCount: params.sourceDream.repairCount ?? (params.sourceDream.artifactRole === 'repair' ? 1 : 0),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    return {
+      dream: await this.saveDream(finalArtifact),
+      gate,
+    }
+  }
+
+  private async recordQualityFailureObservation(params: {
+    agentId: string
+    feature: 'dream' | 'scenario'
+    description: string
+    blockerReasons: string[]
+    evidenceRefs?: string[]
+    rawExcerpt?: string
+    outputExcerpt?: string
+    qualityScore?: number
+  }) {
+    try {
+      await LearningService.recordQualityObservation({
+        agentId: params.agentId,
+        feature: params.feature,
+        description: params.description,
+        blockerReasons: params.blockerReasons,
+        evidenceRefs: params.evidenceRefs,
+        rawExcerpt: params.rawExcerpt,
+        outputExcerpt: params.outputExcerpt,
+        qualityScore: params.qualityScore,
+        candidateAdaptations: [
+          'Tighten output structure before considering the artifact ready.',
+          'Prefer clearer evidence-linked symbolism and direct interpretation.',
+        ],
+      })
+    } catch (error) {
+      console.error('Failed to record dream/scenario quality observation:', error)
     }
   }
 

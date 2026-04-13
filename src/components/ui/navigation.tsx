@@ -44,8 +44,8 @@ export function Navigation() {
       className={cn(
         'sticky top-0 z-[100] w-full transition-all duration-300',
         scrolled 
-          ? 'border-b border-border/40 bg-background/80 backdrop-blur-md py-3' 
-          : 'border-b border-transparent bg-transparent py-5'
+          ? 'border-b border-white/5 bg-background/5 backdrop-blur-xl py-1.5' 
+          : 'border-b border-transparent bg-transparent py-3'
       )}
     >
       <div className="flex w-full items-center px-4 sm:px-8 lg:px-12">

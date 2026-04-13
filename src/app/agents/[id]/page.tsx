@@ -979,6 +979,7 @@ export default function AgentDetail() {
                               <EmotionRadar
                                 emotionalState={agentEmotionalState}
                                 emotionalProfile={agentEmotionalProfile}
+                                recentEvents={agentEmotionalHistory}
                                 mode="live"
                                 size={280}
                               />
@@ -1134,7 +1135,7 @@ export default function AgentDetail() {
                       Recent Causes
                     </CardTitle>
                     <CardDescription>
-                      Every live shift is explained with cause, phase, and confidence.
+                      Every live shift is explained with cause, phase, confidence, linked evidence refs, and downstream hints for journal, dream, and scenario behavior.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>

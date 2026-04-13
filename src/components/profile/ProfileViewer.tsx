@@ -27,6 +27,8 @@ import type {
   MBTIProfile,
   PersonalityEventRecord,
   ProfileAnalysisRun,
+  ProfileClaimRef,
+  ProfileEvidenceCoverageSummary,
   ProfileBootstrapPayload,
   ProfileInterviewTurn,
   ProfilePipelineEvent,
@@ -49,7 +51,10 @@ interface EvolutionResponse {
 
 interface ProfileRunDetail {
   run: ProfileAnalysisRun | null
-  interviewTurns: ProfileInterviewTurn[]
+  interviewTurns: Array<ProfileInterviewTurn & {
+    prompt?: string
+    response?: string
+  }>
   pipelineEvents: ProfilePipelineEvent[]
 }
 
@@ -130,6 +135,24 @@ function formatDateTime(value?: string | null) {
 
 function formatTraitLabel(value: string) {
   return value.replaceAll('_', ' ')
+}
+
+function toLabel(value: string) {
+  return value.replaceAll('_', ' ')
+}
+
+function getQualityBadgeClass(status?: string) {
+  if (status === 'passed') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+  if (status === 'failed') return 'border-red-500/30 bg-red-500/10 text-red-300'
+  if (status === 'legacy_unvalidated') return 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+  return 'border-zinc-700/60 bg-zinc-900/60 text-muted-foreground'
+}
+
+function getTerminalRunLabel(run?: ProfileAnalysisRun | null) {
+  if (!run) return 'No run selected'
+  if (run.status === 'ready' && run.qualityStatus === 'passed') return 'Passing run'
+  if (run.status === 'failed') return 'Blocked run'
+  return run.status
 }
 
 function formatDeltaPercent(delta?: number | null) {
@@ -427,14 +450,23 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                 <div className={labelStyle}>Run status</div>
                 <div className={`${subPanel} p-3`}>
                   <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                    {detail?.run?.status === 'ready' ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <Clock3 className="h-4 w-4 text-muted-foreground" />}
-                    {detail?.run ? detail.run.status : 'No run selected'}
+                    {detail?.run?.qualityStatus === 'passed'
+                      ? <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                      : detail?.run?.status === 'failed'
+                        ? <AlertTriangle className="h-4 w-4 text-red-400" />
+                        : <Clock3 className="h-4 w-4 text-muted-foreground" />}
+                    {getTerminalRunLabel(detail?.run)}
                   </div>
                   <div className="mt-2 text-xs leading-6 text-muted-foreground">
                     {detail?.run
-                      ? `Latest stage: ${detail.run.latestStage.replaceAll('_', ' ')}. Transcript turns: ${detail.run.transcriptCount}.`
+                      ? `Latest stage: ${detail.run.latestStage.replaceAll('_', ' ')}. Transcript turns: ${detail.run.transcriptCount}. Quality: ${toLabel(detail.run.qualityStatus || 'pending')}.`
                       : 'Start a run to interview the agent, synthesize the profile, and record the trace.'}
                   </div>
+                  {detail?.run?.failureReason && (
+                    <div className="mt-3 rounded-sm border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs leading-5 text-red-200">
+                      {detail.run.failureReason}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -494,7 +526,9 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-bold text-foreground">{formatDateTime(run.updatedAt)}</span>
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{run.status}</span>
+                        <span className={`rounded-sm border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${getQualityBadgeClass(run.qualityStatus)}`}>
+                          {toLabel(run.qualityStatus || run.status)}
+                        </span>
                       </div>
                       <div className="mt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                         {run.provider || 'provider pending'} · {run.model || 'model pending'}
@@ -502,6 +536,11 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                       <div className="mt-2 text-xs leading-5 text-muted-foreground">
                         Stage {run.latestStage.replaceAll('_', ' ')} · {run.transcriptCount} interview turns · {run.sourceCount} signals
                       </div>
+                      {run.evidenceCoverage && (
+                        <div className="mt-2 text-[11px] text-muted-foreground">
+                          Evidence coverage {run.evidenceCoverage.coveragePercent}%
+                        </div>
+                      )}
                     </button>
                   )
                 })
@@ -595,6 +634,16 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                             <div className="mt-2 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
                               {selectedProfile.source === 'analysis_run' ? 'Interview-backed analysis run' : 'Deterministic scaffold'}
                             </div>
+                            <div className="mt-2 flex flex-wrap gap-2 text-[10px]">
+                              <span className={`rounded-sm border px-2 py-0.5 ${getQualityBadgeClass(selectedProfile.qualityStatus)}`}>
+                                active profile {toLabel(selectedProfile.qualityStatus || 'legacy_unvalidated')}
+                              </span>
+                              {selectedProfile.profileVersion && (
+                                <span className="rounded-sm border border-zinc-700/60 px-2 py-0.5 text-muted-foreground">
+                                  {selectedProfile.profileVersion}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
@@ -610,6 +659,21 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                             <span className="rounded-full border border-border/40 px-3 py-1 text-muted-foreground">
                               {selectedProfile.provider || 'provider unknown'} · {selectedProfile.model || 'model unknown'}
                             </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 lg:grid-cols-3">
+                        <EvidenceCoverageCard coverage={detail?.run?.evidenceCoverage || null} />
+                        <QualitySummaryCard run={detail?.run || null} />
+                        <div className={compactPanelClass}>
+                          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#cba6f7]">Live Profile Source</div>
+                          <div className="mt-3 text-sm leading-6 text-muted-foreground">
+                            {selectedProfile.qualityStatus === 'passed'
+                              ? 'The active psychological profile comes from a passing analysis run.'
+                              : selectedProfile.qualityStatus === 'legacy_unvalidated'
+                                ? 'The active psychological profile is still readable, but it predates the new validation contract.'
+                                : 'The active psychological profile is not from a passing run.'}
                           </div>
                         </div>
                       </div>
@@ -632,7 +696,7 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                       {profileTab === 'bigfive' && <BigFiveView profile={selectedProfile.bigFive} />}
                       {profileTab === 'mbti' && <MBTIView profile={selectedProfile.mbti} />}
                       {profileTab === 'enneagram' && <EnneagramView profile={selectedProfile.enneagram} />}
-                      {profileTab === 'insights' && <InsightsView profile={selectedProfile} />}
+                      {profileTab === 'insights' && <InsightsView profile={selectedProfile} run={detail?.run || null} />}
                     </>
                   )}
                 </div>
@@ -694,8 +758,17 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                     (detail?.interviewTurns || []).map((turn) => (
                       <div key={turn.id} className="rounded-sm border border-border/30 bg-muted/5 p-3">
                         <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{turn.stage.replaceAll('_', ' ')}</div>
-                        <div className="mt-2 text-sm font-medium text-foreground">{turn.question}</div>
-                        <div className="mt-2 text-sm leading-6 text-muted-foreground">{turn.answer}</div>
+                        <div className="mt-2 text-sm font-medium text-foreground">{turn.question || turn.prompt}</div>
+                        <div className="mt-2 text-sm leading-6 text-muted-foreground">{turn.answer || turn.response}</div>
+                        {(turn.evidenceRefs || []).length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-1.5">
+                            {(turn.evidenceRefs || []).map((ref) => (
+                              <span key={ref} className="rounded-sm border border-zinc-700/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                                {ref}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))
                   )}
@@ -717,7 +790,13 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                       <div key={event.id} className="rounded-sm border border-border/30 bg-muted/5 p-3">
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{event.stage.replaceAll('_', ' ')}</div>
-                          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{event.status}</div>
+                          <div className={`rounded-sm border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] ${
+                            event.status === 'completed'
+                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                              : event.status === 'failed'
+                                ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                                : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                          }`}>{event.status}</div>
                         </div>
                         <div className="mt-2 text-sm leading-6 text-muted-foreground">{event.summary}</div>
                       </div>
@@ -1001,12 +1080,22 @@ function EnneagramView({ profile }: { profile: EnneagramProfile }) {
   )
 }
 
-function InsightsView({ profile }: { profile: PsychologicalProfile }) {
+function InsightsView({ profile, run }: { profile: PsychologicalProfile; run: ProfileAnalysisRun | null }) {
   return (
     <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="space-y-3">
       <div className="grid gap-3 lg:grid-cols-2">
         <InsightBlock title="Core Strengths" items={profile.strengths} variant="positive" />
         <InsightBlock title="Growth Areas" items={profile.challenges} variant="warning" />
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <ClaimEvidenceBlock title="Triggers" items={profile.claimEvidence?.triggers || []} emptyCopy="No trigger claims were recorded." />
+        <ClaimEvidenceBlock title="Growth Edges" items={profile.claimEvidence?.growthEdges || []} emptyCopy="No growth-edge claims were recorded." />
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <EvidenceCoverageCard coverage={run?.evidenceCoverage || null} />
+        <QualitySummaryCard run={run} />
       </div>
 
       <div className={compactPanelClass}>
@@ -1087,6 +1176,82 @@ function InsightBlock({ title, items, variant }: { title: string; items: string[
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+function EvidenceCoverageCard({ coverage }: { coverage: ProfileEvidenceCoverageSummary | null }) {
+  return (
+    <div className={compactPanelClass}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#cba6f7]">Claim Evidence Coverage</div>
+        <span className={`rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${coverage?.pass ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-red-500/30 bg-red-500/10 text-red-300'}`}>
+          {coverage ? `${coverage.coveragePercent}%` : 'n/a'}
+        </span>
+      </div>
+      <div className="mt-3 text-sm leading-6 text-muted-foreground">
+        {coverage
+          ? `${coverage.claimGroupsWithEvidence} of ${coverage.totalClaimGroups} top-level claim groups are evidence-backed.`
+          : 'Coverage becomes visible after a run reaches synthesis.'}
+      </div>
+      {coverage && coverage.blockedGroups.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {coverage.blockedGroups.map((group) => (
+            <span key={group} className="rounded-sm border border-red-500/20 bg-red-500/5 px-2 py-0.5 text-[10px] uppercase tracking-wider text-red-200">
+              {toLabel(group)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function QualitySummaryCard({ run }: { run: ProfileAnalysisRun | null }) {
+  return (
+    <div className={compactPanelClass}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#cba6f7]">Run Quality Gate</div>
+        <span className={`rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getQualityBadgeClass(run?.qualityStatus)}`}>
+          {toLabel(run?.qualityStatus || 'pending')}
+        </span>
+      </div>
+      <div className="mt-3 text-sm leading-6 text-muted-foreground">
+        {run?.latestEvaluation
+          ? `Overall score ${run.latestEvaluation.overallScore}. ${run.latestEvaluation.pass ? 'The evaluator passed the run.' : 'The evaluator blocked the run.'}`
+          : 'Evaluation details appear after the synthesis step.'}
+      </div>
+      {run?.failureReason && (
+        <div className="mt-3 rounded-sm border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs leading-5 text-red-200">
+          {run.failureReason}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ClaimEvidenceBlock({ title, items, emptyCopy }: { title: string; items: ProfileClaimRef[]; emptyCopy: string }) {
+  return (
+    <div className={compactPanelClass}>
+      <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#cba6f7] mb-4">{title}</div>
+      {items.length === 0 ? (
+        <div className="text-sm leading-6 text-muted-foreground">{emptyCopy}</div>
+      ) : (
+        <div className="space-y-3">
+          {items.map((item) => (
+            <div key={`${title}_${item.claim}`} className="rounded-sm border border-zinc-800/50 bg-zinc-950/30 p-3">
+              <div className="text-sm text-foreground">{item.claim}</div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {item.evidenceRefs.map((ref) => (
+                  <span key={ref} className="rounded-sm border border-zinc-700/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {ref}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

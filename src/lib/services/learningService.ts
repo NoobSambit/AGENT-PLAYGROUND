@@ -580,6 +580,19 @@ export interface ProcessLearningTurnInput {
   emotionalContext?: LearningEvent['emotionalContext']
 }
 
+export interface RecordQualityObservationInput {
+  agentId: string
+  feature: 'journal' | 'creative' | 'dream' | 'profile' | 'scenario'
+  description: string
+  blockerReasons: string[]
+  evidenceRefs?: string[]
+  candidateAdaptations?: string[]
+  rawExcerpt?: string
+  outputExcerpt?: string
+  qualityScore?: number
+  category?: LearningPatternType
+}
+
 export class LearningService {
   static async getLearningState(agentId: string): Promise<{ state: MetaLearningState; skills: SkillProgression[] } | null> {
     const agent = await AgentService.getAgentById(agentId)
@@ -587,7 +600,22 @@ export class LearningService {
       return null
     }
 
-    return getLearningSnapshot(agent)
+    const snapshot = await getLearningSnapshot(agent)
+    const outputQualityObservations = snapshot.state.recentObservations.filter((observation) => observation.observationType === 'output_quality')
+    const outputQualityAdaptations = snapshot.state.recentAdaptations.filter((adaptation) => adaptation.isQualityRelated)
+
+    return {
+      ...snapshot,
+      state: {
+        ...snapshot.state,
+        outputQuality: {
+          recentObservations: outputQualityObservations,
+          recentAdaptations: outputQualityAdaptations,
+          blockedObservationCount: outputQualityObservations.length,
+          highSeverityCount: outputQualityObservations.filter((observation) => observation.severity === 'high').length,
+        },
+      },
+    }
   }
 
   static async getPromptContext(agentId: string): Promise<string | undefined> {
@@ -658,6 +686,67 @@ export class LearningService {
       skills,
       observation: currentObservation,
       resolvedPreviousObservation,
+    }
+  }
+
+  static async recordQualityObservation(input: RecordQualityObservationInput): Promise<{
+    state: MetaLearningState
+    skills: SkillProgression[]
+    observation: LearningObservation
+  } | null> {
+    const agent = await AgentService.getAgentById(input.agentId)
+    if (!agent) {
+      return null
+    }
+
+    const observation = await saveObservation(metaLearningService.createQualityFailureObservation({
+      agentId: input.agentId,
+      feature: input.feature,
+      category: input.category,
+      description: input.description,
+      blockerReasons: input.blockerReasons,
+      evidenceRefs: input.evidenceRefs,
+      candidateAdaptations: input.candidateAdaptations,
+      rawExcerpt: input.rawExcerpt,
+      outputExcerpt: input.outputExcerpt,
+      qualityScore: input.qualityScore,
+    }))
+
+    const recentObservations = await listObservations(input.agentId, 24)
+    const patterns = await reconcilePatterns(agent, recentObservations)
+    const goals = await reconcileGoals(agent, patterns)
+    const adaptations = await reconcileAdaptations(input.agentId, patterns, recentObservations)
+    const skills = await advanceSkillsFromObservations(input.agentId, [observation])
+
+    const event = metaLearningService.createLearningEvent(
+      input.agentId,
+      'observation',
+      input.description,
+      patterns.slice(0, 5),
+      agent.emotionalState?.dominantEmotion || 'trust'
+    )
+    await saveLearningEvent(event)
+
+    const state = metaLearningService.getMetaLearningState(
+      agent,
+      patterns,
+      adaptations,
+      goals,
+      await listObservations(input.agentId, 20)
+    )
+
+    return {
+      state: {
+        ...state,
+        outputQuality: {
+          recentObservations: state.recentObservations.filter((item) => item.observationType === 'output_quality'),
+          recentAdaptations: state.recentAdaptations.filter((item) => item.isQualityRelated),
+          blockedObservationCount: state.recentObservations.filter((item) => item.observationType === 'output_quality').length,
+          highSeverityCount: state.recentObservations.filter((item) => item.observationType === 'output_quality' && item.severity === 'high').length,
+        },
+      },
+      skills,
+      observation,
     }
   }
 

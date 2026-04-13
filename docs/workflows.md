@@ -154,6 +154,7 @@ The server:
 - groups repeated observations into confirmed `learning_patterns`
 - turns strong patterns into active `learning_adaptations`
 - feeds active adaptations back into later prompts
+- blocks generic or style-breaking assistant drafts with one bounded repair pass before persistence when the chat output-quality gate fails
 
 The chat turn can also include active dream residue in prompt assembly when `agents.activeDreamImpression` exists and is still unexpired.
 
@@ -207,6 +208,51 @@ When that happens the stored assistant message writes lightweight inspectable me
 - active behavioral residue
 
 This matters because the learning tab no longer creates its own learning data on page load.
+
+Dream detail responses now expose additive quality fields such as `qualityStatus`, `normalizationStatus`, `repairCount`, `promptVersion`, `validation`, and `evaluation`, plus the raw draft lineage needed for audit panels.
+
+## Creative And Journal Quality Gates
+
+Creative Studio and Journal Workspace now follow the same bounded contract:
+
+1. Create a draft session.
+2. Generate a raw draft.
+3. Normalize the raw output into the artifact contract.
+4. Run deterministic validation.
+5. Run evaluation only when validation passes.
+6. Attempt one bounded repair pass when needed.
+7. Mark the session `ready` only when the final gate passes.
+8. Save or publish only from that passing `ready` state.
+
+If a save or publish precondition fails, the API returns `409` with machine-readable blockers instead of silently accepting the transition.
+
+Historical creative and journal rows remain readable, but if they predate the upgraded payload contract the UI should show them as `legacy_unvalidated`.
+
+## Profile Analysis Quality Gate
+
+The deep profile workflow now has an explicit blocked terminal state:
+
+1. Create a draft run.
+2. Collect bounded evidence.
+3. Run the interview transcript.
+4. Synthesize profile claims with evidence refs.
+5. Validate and evaluate the synthesis.
+6. Optionally run one repair pass.
+7. Update `agents.psychologicalProfile` only when the run passes the final gate.
+
+The route still exposes `prompt` and `response` aliases for one release window, but `question` and `answer` are the canonical transcript fields.
+
+## Phase 5 Verification Flow
+
+Release verification now includes repo-level quality tooling in addition to lint/build:
+
+1. Run `npm run quality:replay` against the audit fixture.
+2. Run `npm run quality:benchmark` using the `ollama` / `qwen2.5:7b` baseline.
+3. Run `npm run quality:validate` against either the audit fixture or the live PostgreSQL dataset.
+4. Run `npm run lint`.
+5. Run `npm run build`.
+
+If PostgreSQL backfill is needed during rollout, run `npm run db:migrate` first and then `npm run quality:backfill` in dry-run mode before applying writes.
 
 ## Scenario: Stress + Identity + Project
 

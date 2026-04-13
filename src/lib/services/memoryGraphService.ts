@@ -11,6 +11,7 @@ import {
   Concept,
   MemoryLink,
   MemoryGraph,
+  MemoryGraphConsoleSummary,
   MemoryRecord,
   KnowledgeGraphData,
   KnowledgeGraphNode,
@@ -484,6 +485,61 @@ export class MemoryGraphService {
       .slice(0, maxMemories)
 
     return relevantMemories
+  }
+
+  static async getConsoleSummary(agentId: string): Promise<MemoryGraphConsoleSummary | null> {
+    const graph = await this.getMemoryGraph(agentId)
+    if (!graph) {
+      return null
+    }
+
+    const topConcepts = [...graph.concepts]
+      .sort((left, right) => (
+        right.importance - left.importance
+        || right.memoryIds.length - left.memoryIds.length
+      ))
+      .slice(0, 8)
+      .map((concept) => ({
+        id: concept.id,
+        name: concept.name,
+        category: concept.category,
+        importance: concept.importance,
+        memoryCount: concept.memoryIds.length,
+      }))
+
+    return {
+      totalConcepts: graph.stats.totalConcepts,
+      totalLinks: graph.stats.totalLinks,
+      lastUpdated: graph.lastUpdated,
+      topConcepts,
+      conceptClusters: graph.stats.conceptClusters.slice(0, 4),
+    }
+  }
+
+  static async getMatchedConceptNames(agentId: string, memoryId: string, queryText: string): Promise<string[]> {
+    const graph = await this.getMemoryGraph(agentId)
+    if (!graph) {
+      return []
+    }
+
+    const queryWords = queryText
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((word) => word.length >= 4)
+
+    if (queryWords.length === 0) {
+      return []
+    }
+
+    return graph.concepts
+      .filter((concept) => (
+        concept.memoryIds.includes(memoryId)
+        && queryWords.some((word) => concept.name.toLowerCase().includes(word))
+      ))
+      .sort((left, right) => right.importance - left.importance)
+      .slice(0, 3)
+      .map((concept) => concept.name)
   }
 
   /**

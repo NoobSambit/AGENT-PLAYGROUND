@@ -14,6 +14,28 @@ import {
 import { JournalWorkspaceRepository } from '@/lib/repositories/journalWorkspaceRepository'
 import { RelationshipRepository } from '@/lib/repositories/relationshipRepository'
 import { FeatureContentRepository } from '@/lib/repositories/featureContentRepository'
+import {
+  createPendingTrackedFields,
+  syncTrackedQualityState,
+} from '@/lib/services/outputQuality/contracts'
+import { applyFinalQualityGate } from '@/lib/services/outputQuality/evaluators'
+import {
+  createRawModelOutput,
+  normalizeSourceRefs,
+  normalizeStringList,
+  normalizeWhitespace,
+  safeParseJsonWithExtraction,
+} from '@/lib/services/outputQuality/normalizers'
+import {
+  createValidationReport,
+  validateRequiredTextFields,
+  validateSharedArtifactText,
+  validateSourceRefs,
+} from '@/lib/services/outputQuality/validators'
+import {
+  OUTPUT_QUALITY_FLAGS,
+  detectTextLeakage,
+} from '@/lib/services/outputQuality/flags'
 import type {
   AgentRecord,
   JournalBootstrapPayload,
@@ -31,16 +53,24 @@ import type {
   JournalVoicePacket,
   MemoryRecord,
 } from '@/types/database'
+import type {
+  OutputArtifactRole,
+  OutputQualitySourceRef,
+  OutputQualityValidationReport,
+} from '@/types/outputQuality'
 import { AgentService } from './agentService'
 import { agentProgressService } from './agentProgressService'
 import { CommunicationFingerprintService } from './communicationFingerprintService'
 import { emotionalService } from './emotionalService'
+import { LearningService } from './learningService'
 import { MemoryService } from './memoryService'
 import { MessageService } from './messageService'
 
 const DAILY_LIMIT = 12
 const RATE_WINDOW_MS = 24 * 60 * 60 * 1000
 const STALE_GENERATING_SESSION_MS = 3 * 60 * 1000
+const JOURNAL_PROMPT_VERSION = 'phase1-journal-contract-v1'
+const JOURNAL_VALIDATOR_VERSION = 'phase1-journal-validator-v1'
 
 const JOURNAL_TYPES: JournalEntryType[] = [
   'daily_reflection',
@@ -86,16 +116,6 @@ function countWords(value: string) {
   return value.trim().split(/\s+/).filter(Boolean).length
 }
 
-function normalizeTextList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.map((entry) => String(entry).trim()).filter(Boolean)
-  }
-  if (typeof value === 'string') {
-    return value.split(/\n|,/g).map((entry) => entry.trim()).filter(Boolean)
-  }
-  return []
-}
-
 function summarizeText(value: string, maxLength = 180) {
   const trimmed = value.replace(/\s+/g, ' ').trim()
   if (trimmed.length <= maxLength) return trimmed
@@ -104,14 +124,6 @@ function summarizeText(value: string, maxLength = 180) {
 
 function normalizeNote(value?: string) {
   return value?.trim() || undefined
-}
-
-function safeParseJson<T>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T
-  } catch {
-    return null
-  }
 }
 
 function normalizeFocus(value: unknown): JournalFocus[] {
@@ -132,6 +144,44 @@ function fallbackTitle(type: JournalEntryType, content: string) {
     return firstLine.replace(/^#+\s*/, '')
   }
   return TYPE_LABELS[type]
+}
+
+interface JournalDraftPayload {
+  title?: string
+  summary?: string
+  content?: string
+  insights?: string[]
+  openQuestions?: string[]
+  nextActions?: string[]
+  gratitudes?: string[]
+  themes?: string[]
+  referencedEntities?: string[]
+}
+
+interface JournalEntryBuildResult {
+  entry: JournalEntry
+  validation: OutputQualityValidationReport
+}
+
+interface JournalSaveBlockedPayload {
+  code: 'journal_save_blocked'
+  sessionId: string
+  entryId?: string
+  blockerReasons: string[]
+  qualityStatus: JournalSession['qualityStatus']
+  normalizationStatus?: JournalEntry['normalizationStatus']
+  validation?: OutputQualityValidationReport
+  evaluation?: JournalQualityEvaluation
+}
+
+export class JournalSaveBlockedError extends Error {
+  readonly payload: JournalSaveBlockedPayload
+
+  constructor(payload: JournalSaveBlockedPayload, message = 'Journal entry is blocked from save until quality preconditions pass.') {
+    super(message)
+    this.name = 'JournalSaveBlockedError'
+    this.payload = payload
+  }
 }
 
 class JournalService {
@@ -166,11 +216,16 @@ class JournalService {
     const recentSessions = readsFromPostgres(getPersistenceMode())
       ? await JournalWorkspaceRepository.listSessions(agentId, { limit: 8 })
       : await listJournalSessionsFromFirestore(agentId, 8)
-    const normalizedSessions = await Promise.all(recentSessions.map((session) => this.recoverStaleGeneratingSession(agentId, session)))
+    const normalizedSessions = await Promise.all(
+      recentSessions
+        .map((session) => this.hydrateSessionQuality(session))
+        .map((session) => this.recoverStaleGeneratingSession(agentId, session))
+    )
 
     const recentSavedEntries = readsFromPostgres(getPersistenceMode())
       ? await JournalWorkspaceRepository.listEntriesForAgent(agentId, { savedOnly: true, limit: 8 })
       : await listSavedJournalEntriesFromFirestore(agentId, 8)
+    const hydratedSavedEntries = recentSavedEntries.map((entry) => this.hydrateEntryQuality(entry))
 
     const readyToSaveCount = normalizedSessions.filter((session) => session.status === 'ready').length
     const failedSessions = normalizedSessions.filter((session) => session.status === 'failed').length
@@ -188,9 +243,9 @@ class JournalService {
         focus: [],
       },
       recentSessions: normalizedSessions,
-      recentSavedEntries,
+      recentSavedEntries: hydratedSavedEntries,
       metrics: {
-        totalSavedEntries: recentSavedEntries.length,
+        totalSavedEntries: hydratedSavedEntries.length,
         totalSessions: recentSessions.length,
         readyToSaveCount,
         failedSessions,
@@ -223,6 +278,9 @@ class JournalService {
       id: generateId('journal_session'),
       agentId,
       status: 'draft',
+      ...createPendingTrackedFields({
+        promptVersion: JOURNAL_PROMPT_VERSION,
+      }),
       latestStage: 'prepare_context',
       type: normalizedInput.type,
       normalizedInput,
@@ -252,10 +310,10 @@ class JournalService {
       if (!rawSession || rawSession.agentId !== agentId) {
         return { session: null, entries: [], pipelineEvents: [] }
       }
-      const session = await this.recoverStaleGeneratingSession(agentId, rawSession)
+      const session = await this.recoverStaleGeneratingSession(agentId, this.hydrateSessionQuality(rawSession))
       return {
         session,
-        entries: await JournalWorkspaceRepository.listEntriesForSession(sessionId),
+        entries: (await JournalWorkspaceRepository.listEntriesForSession(sessionId)).map((entry) => this.hydrateEntryQuality(entry)),
         pipelineEvents: await JournalWorkspaceRepository.listPipelineEvents(sessionId),
       }
     }
@@ -263,7 +321,8 @@ class JournalService {
     const detail = await getJournalSessionDetailFromFirestore(agentId, sessionId)
     return {
       ...detail,
-      session: detail.session ? await this.recoverStaleGeneratingSession(agentId, detail.session) : null,
+      session: detail.session ? await this.recoverStaleGeneratingSession(agentId, this.hydrateSessionQuality(detail.session)) : null,
+      entries: detail.entries.map((entry) => this.hydrateEntryQuality(entry)),
     }
   }
 
@@ -297,6 +356,17 @@ class JournalService {
       provider: providerInfo.provider,
       model: providerInfo.model,
       failureReason: undefined,
+      rawModelOutput: undefined,
+      validation: undefined,
+      sourceRefs: normalizeSourceRefs(contextSignals.map((signal) => ({
+        id: signal.id,
+        sourceType: signal.sourceType,
+        label: signal.label,
+        reason: signal.reason,
+        linkedEntityId: signal.linkedEntityId,
+      }))),
+      qualityStatus: 'pending',
+      promptVersion: JOURNAL_PROMPT_VERSION,
       updatedAt: new Date().toISOString(),
     }
     await this.saveSession(session)
@@ -343,32 +413,45 @@ class JournalService {
       ],
     })
 
-    const draftEntry = this.parseEntry({
+    const draftResult = this.buildValidatedEntry({
       agent,
       session,
       llmResponse: draftResponse.content,
-      providerInfo,
       version: 1,
       status: 'draft',
+      artifactRole: 'draft',
     })
-    let finalEntry = await this.saveEntry(draftEntry)
+    let finalEntry = await this.saveEntry(draftResult.entry)
     await this.savePipelineEvent(agentId, {
       id: generateId('journal_event'),
       sessionId,
       stage: 'draft_entry',
       status: 'completed',
-      summary: `Generated draft "${finalEntry.title}".`,
+      summary: draftResult.validation.pass
+        ? `Generated normalized draft "${finalEntry.title}".`
+        : 'Generated a draft, but normalization or validation blocked it from review.',
       payload: {
         entryId: finalEntry.id,
         wordCount: countWords(finalEntry.content),
+        normalization: finalEntry.normalization,
+        validation: finalEntry.validation,
       },
       createdAt: new Date().toISOString(),
     })
 
-    let evaluation = await this.evaluateEntry(agent, session, finalEntry, providerInfo)
+    let evaluation = draftResult.validation.pass
+      ? await this.evaluateEntry(agent, session, finalEntry, providerInfo)
+      : this.createBlockedEvaluation(finalEntry.validation)
     finalEntry = await this.updateEntry({
       ...finalEntry,
       evaluation,
+      qualityScore: evaluation.overallScore,
+      ...syncTrackedQualityState({
+        ...finalEntry,
+        evaluation,
+      }, {
+        evaluationPass: evaluation.pass,
+      }),
       updatedAt: new Date().toISOString(),
     })
     await this.savePipelineEvent(agentId, {
@@ -384,7 +467,7 @@ class JournalService {
       createdAt: new Date().toISOString(),
     })
 
-    if (!evaluation.pass) {
+    if (!draftResult.validation.pass || !evaluation.pass) {
       const repairResponse = await generateText({
         providerInfo,
         temperature: 0.7,
@@ -395,19 +478,30 @@ class JournalService {
         ],
       })
 
-      const repairedEntry = this.parseEntry({
+      const repairedResult = this.buildValidatedEntry({
         agent,
         session,
         llmResponse: repairResponse.content,
-        providerInfo,
         version: 2,
         status: 'repaired',
+        artifactRole: 'repair',
+        sourceEntryId: finalEntry.id,
       })
-      finalEntry = await this.saveEntry(repairedEntry)
-      evaluation = await this.evaluateEntry(agent, session, finalEntry, providerInfo)
+      finalEntry = await this.saveEntry(repairedResult.entry)
+      evaluation = repairedResult.validation.pass
+        ? await this.evaluateEntry(agent, session, finalEntry, providerInfo)
+        : this.createBlockedEvaluation(finalEntry.validation)
       finalEntry = await this.updateEntry({
         ...finalEntry,
         evaluation,
+        qualityScore: evaluation.overallScore,
+        ...syncTrackedQualityState({
+          ...finalEntry,
+          evaluation,
+          repairCount: 1,
+        }, {
+          evaluationPass: evaluation.pass,
+        }),
         updatedAt: new Date().toISOString(),
       })
 
@@ -416,37 +510,77 @@ class JournalService {
         sessionId,
         stage: 'repair_entry',
         status: evaluation.pass ? 'completed' : 'failed',
-        summary: evaluation.pass ? 'Repair pass improved the draft enough for review.' : 'Repair pass still failed the journal quality gate.',
+        summary: repairedResult.validation.pass && evaluation.pass
+          ? 'Repair pass improved the draft enough for review.'
+          : 'Repair pass still failed normalization, validation, or the journal quality gate.',
         payload: {
           evaluation,
           entryId: finalEntry.id,
+          normalization: finalEntry.normalization,
+          validation: finalEntry.validation,
         },
         createdAt: new Date().toISOString(),
       })
     }
 
+    const gate = applyFinalQualityGate({
+      validation: finalEntry.validation,
+      evaluation,
+      thresholds: {
+        overallScoreMinimum: 80,
+        dimensionFloor: 70,
+      },
+    })
+
     session = {
       ...session,
-      status: evaluation.pass ? 'ready' : 'failed',
-      latestStage: evaluation.pass ? 'ready' : 'failed',
+      status: gate.pass ? 'ready' : 'failed',
+      latestStage: gate.pass ? 'ready' : 'failed',
       latestEvaluation: evaluation,
       finalEntryId: finalEntry.id,
-      failureReason: evaluation.pass ? undefined : evaluation.evaluatorSummary,
+      rawModelOutput: finalEntry.rawModelOutput,
+      validation: finalEntry.validation,
+      qualityStatus: gate.qualityStatus,
+      repairCount: finalEntry.version > 1 ? 1 : 0,
+      promptVersion: JOURNAL_PROMPT_VERSION,
+      failureReason: gate.pass ? undefined : [evaluation.evaluatorSummary, ...gate.blockerReasons].filter(Boolean).join(' | '),
       updatedAt: new Date().toISOString(),
     }
     await this.saveSession(session)
     await this.savePipelineEvent(agentId, {
       id: generateId('journal_event'),
       sessionId,
-      stage: evaluation.pass ? 'ready' : 'failed',
-      status: evaluation.pass ? 'completed' : 'failed',
-      summary: evaluation.pass ? 'Journal draft is ready for review and explicit save.' : 'Journal draft failed the quality gate and requires regeneration.',
+      stage: gate.pass ? 'ready' : 'failed',
+      status: gate.pass ? 'completed' : 'failed',
+      summary: gate.pass
+        ? 'Journal draft is ready for review and explicit save.'
+        : 'Journal draft failed normalization, validation, or quality gating and requires regeneration.',
       payload: {
         entryId: finalEntry.id,
         evaluation,
+        validation: finalEntry.validation,
+        normalization: finalEntry.normalization,
+        gate,
       },
       createdAt: new Date().toISOString(),
     })
+
+    if (!gate.pass) {
+      await LearningService.recordQualityObservation({
+        agentId,
+        feature: 'journal',
+        description: `Journal session ${sessionId} was blocked by validation or evaluation.`,
+        blockerReasons: gate.blockerReasons,
+        evidenceRefs: [sessionId, finalEntry.id],
+        rawExcerpt: finalEntry.rawModelOutput?.text,
+        outputExcerpt: finalEntry.summary,
+        qualityScore: evaluation.overallScore,
+        category: 'communication_style',
+        candidateAdaptations: [
+          'Keep journal outputs structurally valid and grounded before surfacing them as ready.',
+        ],
+      })
+    }
 
     return this.getSessionDetail(agentId, sessionId)
   }
@@ -462,19 +596,64 @@ class JournalService {
       throw new Error('Journal session not found')
     }
 
-    if (session.status !== 'ready' || !session.finalEntryId || !session.latestEvaluation?.pass) {
-      throw new Error('Only passing ready sessions can be saved.')
+    if (!session.finalEntryId) {
+      throw new JournalSaveBlockedError({
+        code: 'journal_save_blocked',
+        sessionId,
+        blockerReasons: ['missing_final_entry'],
+        qualityStatus: session.qualityStatus,
+        validation: session.validation,
+        evaluation: session.latestEvaluation,
+      })
     }
 
-    const entry = await this.getEntryRecord(session.finalEntryId)
+    const sessionDetail = await this.getSessionDetail(agentId, sessionId)
+    const entry = sessionDetail.entries.find((candidate) => candidate.id === session.finalEntryId)
+      || await this.getEntryRecord(session.finalEntryId)
     if (!entry) {
-      throw new Error('Final journal entry not found')
+      throw new JournalSaveBlockedError({
+        code: 'journal_save_blocked',
+        sessionId,
+        entryId: session.finalEntryId,
+        blockerReasons: ['missing_final_entry_record'],
+        qualityStatus: session.qualityStatus,
+        evaluation: session.latestEvaluation,
+        validation: session.validation,
+      })
+    }
+
+    const gate = applyFinalQualityGate({
+      validation: entry.validation,
+      evaluation: session.latestEvaluation,
+      thresholds: {
+        overallScoreMinimum: 80,
+        dimensionFloor: 70,
+      },
+      extraHardFailureFlags: session.status !== 'ready'
+        ? [OUTPUT_QUALITY_FLAGS.invalidStageTransition]
+        : undefined,
+    })
+
+    if (!gate.pass || session.status !== 'ready') {
+      throw new JournalSaveBlockedError({
+        code: 'journal_save_blocked',
+        sessionId,
+        entryId: entry.id,
+        blockerReasons: session.status !== 'ready'
+          ? [...gate.blockerReasons, OUTPUT_QUALITY_FLAGS.invalidStageTransition]
+          : gate.blockerReasons,
+        qualityStatus: session.qualityStatus,
+        normalizationStatus: entry.normalizationStatus,
+        validation: entry.validation,
+        evaluation: session.latestEvaluation,
+      })
     }
 
     const now = new Date().toISOString()
     const savedEntry = await this.updateEntry({
       ...entry,
       status: 'saved',
+      qualityStatus: 'passed',
       savedAt: now,
       updatedAt: now,
     })
@@ -530,7 +709,8 @@ class JournalService {
     }
 
     const entries = await listSavedJournalEntriesFromFirestore(agentId, options?.limit || 20)
-    return options?.type ? entries.filter((entry) => entry.type === options.type) : entries
+    const hydratedEntries = entries.map((entry) => this.hydrateEntryQuality(entry))
+    return options?.type ? hydratedEntries.filter((entry) => entry.type === options.type) : hydratedEntries
   }
 
   private async getSessionRecord(agentId: string, sessionId: string) {
@@ -571,7 +751,8 @@ class JournalService {
 
   private async getEntryRecord(entryId: string) {
     if (readsFromPostgres(getPersistenceMode())) {
-      return JournalWorkspaceRepository.getEntry(entryId)
+      const entry = await JournalWorkspaceRepository.getEntry(entryId)
+      return entry ? this.hydrateEntryQuality(entry) : null
     }
     return null
   }
@@ -847,8 +1028,12 @@ class JournalService {
       voicePacket.communicationFingerprintSummary
         ? `Recent communication fingerprint: ${voicePacket.communicationFingerprintSummary}`
         : 'Recent communication fingerprint is thin. Lean on persona and linguistic baseline instead of inventing recent evidence.',
+      `Prompt version: ${JOURNAL_PROMPT_VERSION}`,
+      'Valid example: {"title":"The Pressure Is Naming Me Too Quickly","summary":"I can feel launch urgency narrowing my honesty.","content":"I kept calling it momentum today, but it was mostly fear dressed as speed...","insights":["Speed is covering fear."],"openQuestions":["What am I avoiding by shipping faster?"],"nextActions":["Name the real risk before tomorrow morning."],"gratitudes":["I still trust my own signal."],"themes":["launch pressure"],"referencedEntities":["cofounder","prototype"]}',
+      'Invalid example: ```json {"title":"title:","summary":"{\\"summary\\":\\"...\\"}","content":"```json ..."} ```',
       'Return JSON only with keys: title, summary, content, insights, openQuestions, nextActions, gratitudes, themes, referencedEntities.',
       'Content should be 180-360 words and read like a polished private reflection, not a report.',
+      'Never wrap the answer in markdown fences. Never prefix fields with labels outside the JSON object.',
     ].join('\n')
   }
 
@@ -882,42 +1067,65 @@ class JournalService {
         ? `Recent communication fingerprint: ${voicePacket.communicationFingerprintSummary}`
         : 'Recent communication fingerprint is thin. Stay aligned to persona and linguistic baseline.',
       `Draft content:\n${entry.content}`,
+      entry.validation?.hardFailureFlags?.length
+        ? `Validation blockers: ${entry.validation.hardFailureFlags.join(' | ')}`
+        : 'Validation blockers: none recorded.',
       'Return JSON only with the same keys as before.',
     ].join('\n\n')
   }
 
-  private parseEntry(params: {
+  private buildValidatedEntry(params: {
     agent: AgentRecord
     session: JournalSession
     llmResponse: string
-    providerInfo: LLMProviderInfo
     version: number
     status: JournalEntryStatus
-  }): JournalEntry {
-    const parsed = safeParseJson<{
-      title?: string
-      summary?: string
-      content?: string
-      insights?: string[]
-      openQuestions?: string[]
-      nextActions?: string[]
-      gratitudes?: string[]
-      themes?: string[]
-      referencedEntities?: string[]
-    }>(params.llmResponse) || {}
-
-    const content = String(parsed.content || params.llmResponse).trim()
+    artifactRole: OutputArtifactRole
+    sourceEntryId?: string
+  }): JournalEntryBuildResult {
     const now = new Date().toISOString()
-
-    return {
+    const parsedResult = safeParseJsonWithExtraction<JournalDraftPayload>(params.llmResponse)
+    const parsed = parsedResult.parsed || {}
+    const hasParsedPayload = Boolean(parsedResult.parsed)
+    const content = normalizeWhitespace(String(parsed.content || ''))
+    const summary = normalizeWhitespace(String(parsed.summary || '')) || summarizeText(content, 150)
+    const title = normalizeWhitespace(String(parsed.title || '')) || (content ? fallbackTitle(params.session.type, content) : '')
+    const sourceRefs = normalizeSourceRefs((params.session.contextPacket?.selectedSignals || []).map((signal) => ({
+      id: signal.id,
+      sourceType: signal.sourceType,
+      label: signal.label,
+      reason: signal.reason,
+      linkedEntityId: signal.linkedEntityId,
+    })))
+    const entry: JournalEntry = {
+      ...createPendingTrackedFields({
+        rawModelOutput: createRawModelOutput(params.llmResponse, {
+          parserNotes: parsedResult.parserNotes,
+          capturedAt: now,
+          responseFormat: 'json_object',
+          promptVersion: JOURNAL_PROMPT_VERSION,
+        }),
+        sourceRefs,
+        promptVersion: JOURNAL_PROMPT_VERSION,
+        repairCount: params.version > 1 ? 1 : 0,
+      }),
+      artifactRole: params.artifactRole,
+      normalizationStatus: hasParsedPayload ? (params.status === 'repaired' ? 'repaired' : 'normalized') : 'failed',
+      normalization: {
+        status: hasParsedPayload ? (params.status === 'repaired' ? 'repaired' : 'normalized') : 'failed',
+        parser: parsedResult.parser,
+        violations: hasParsedPayload ? [] : ['journal_json_contract_parse_failed'],
+        repairedFromId: params.sourceEntryId,
+      },
       id: generateId('journal_entry'),
       agentId: params.agent.id,
       sessionId: params.session.id,
       type: params.session.type,
       status: params.status,
+      sourceEntryId: params.sourceEntryId,
       version: params.version,
-      title: parsed.title?.trim() || fallbackTitle(params.session.type, content),
-      summary: parsed.summary?.trim() || summarizeText(content, 150),
+      title,
+      summary,
       content,
       render: buildMessageRenderData(content),
       mood: {
@@ -933,19 +1141,132 @@ class JournalService {
         .map((signal) => signal.linkedEntityId)
         .filter((value): value is string => Boolean(value)) || [],
       structured: {
-        insights: normalizeTextList(parsed.insights),
-        openQuestions: normalizeTextList(parsed.openQuestions),
-        nextActions: normalizeTextList(parsed.nextActions),
-        gratitudes: normalizeTextList(parsed.gratitudes),
-        themes: normalizeTextList(parsed.themes),
-        referencedEntities: normalizeTextList(parsed.referencedEntities),
-        conciseSummary: parsed.summary?.trim() || summarizeText(content, 140),
+        insights: normalizeStringList(parsed.insights),
+        openQuestions: normalizeStringList(parsed.openQuestions),
+        nextActions: normalizeStringList(parsed.nextActions),
+        gratitudes: normalizeStringList(parsed.gratitudes),
+        themes: normalizeStringList(parsed.themes),
+        referencedEntities: normalizeStringList(parsed.referencedEntities),
+        conciseSummary: summary || summarizeText(content, 140),
       },
-      provider: params.providerInfo.provider,
-      model: params.providerInfo.model,
       createdAt: now,
       updatedAt: now,
-    } as JournalEntry & { provider?: string; model?: string }
+    }
+
+    const validation = this.validateEntryArtifact(entry, {
+      parsedSuccessfully: hasParsedPayload,
+      sourceRefs,
+    })
+
+    return {
+      entry: {
+        ...entry,
+        validation,
+        qualityStatus: validation.pass ? 'pending' : 'failed',
+      },
+      validation,
+    }
+  }
+
+  private validateEntryArtifact(
+    entry: JournalEntry,
+    options: {
+      parsedSuccessfully: boolean
+      sourceRefs: OutputQualitySourceRef[]
+    }
+  ): OutputQualityValidationReport {
+    const hardFailureFlags = [
+      ...validateRequiredTextFields({
+        title: entry.title,
+        summary: entry.summary,
+        content: entry.content,
+      }),
+      ...validateSharedArtifactText({
+        title: entry.title,
+        summary: entry.summary,
+        content: entry.content,
+        conciseSummary: entry.structured.conciseSummary,
+      }),
+      ...validateSourceRefs(options.sourceRefs),
+      ...(options.parsedSuccessfully ? [] : ['journal_structured_extraction_failed']),
+      ...(!options.parsedSuccessfully && entry.structured.insights.length === 0 && entry.structured.openQuestions.length === 0 && entry.structured.nextActions.length === 0 && entry.structured.gratitudes.length === 0 && entry.structured.themes.length === 0
+        ? ['journal_structured_fields_empty_after_parse_failure']
+        : []),
+      ...(/\s*```json/i.test(entry.title) ? [OUTPUT_QUALITY_FLAGS.codeFenceLeakage] : []),
+      ...(!entry.summary || /^\s*[\[{]/.test(entry.summary) ? ['journal_summary_wrapper_leakage'] : []),
+    ]
+
+    const softWarnings = [
+      ...(options.parsedSuccessfully && entry.structured.insights.length === 0 ? ['journal_missing_insights'] : []),
+      ...(options.parsedSuccessfully && entry.structured.nextActions.length === 0 ? ['journal_missing_next_actions'] : []),
+      ...(options.parsedSuccessfully && entry.structured.openQuestions.length === 0 ? ['journal_missing_open_questions'] : []),
+    ]
+
+    return createValidationReport({
+      hardFailureFlags,
+      softWarnings,
+      validatorVersion: JOURNAL_VALIDATOR_VERSION,
+    })
+  }
+
+  private createBlockedEvaluation(validation?: OutputQualityValidationReport): JournalQualityEvaluation {
+    const blockerMessage = validation?.hardFailureFlags.length
+      ? `Validation blocked evaluation: ${validation.hardFailureFlags.join(', ')}.`
+      : 'Validation blocked evaluation.'
+
+    return {
+      pass: false,
+      overallScore: 0,
+      dimensions: Object.fromEntries(
+        QUALITY_DIMENSIONS.map((dimension) => [
+          dimension,
+          {
+            score: 0,
+            rationale: blockerMessage,
+          },
+        ])
+      ) as JournalQualityEvaluation['dimensions'],
+      hardFailureFlags: ['prompt_or_schema_leakage'],
+      strengths: [],
+      weaknesses: [blockerMessage],
+      repairInstructions: [
+        'Return a clean JSON object only.',
+        'Populate title, summary, content, and structured journal fields with normalized prose.',
+        'Remove wrapper text, fences, and schema leakage.',
+      ],
+      evaluatorSummary: blockerMessage,
+    }
+  }
+
+  private hydrateSessionQuality(session: JournalSession): JournalSession {
+    return {
+      ...session,
+      qualityStatus: session.qualityStatus || 'legacy_unvalidated',
+      repairCount: session.repairCount ?? 0,
+      promptVersion: session.promptVersion,
+    }
+  }
+
+  private hydrateEntryQuality(entry: JournalEntry): JournalEntry {
+    const contentLeakage = [
+      ...detectTextLeakage(entry.title),
+      ...detectTextLeakage(entry.summary),
+      ...detectTextLeakage(entry.content),
+    ]
+    const validation = entry.validation || (contentLeakage.length > 0
+      ? createValidationReport({
+          hardFailureFlags: [...new Set(contentLeakage)],
+          validatorVersion: JOURNAL_VALIDATOR_VERSION,
+        })
+      : undefined)
+
+    return {
+      ...entry,
+      normalizationStatus: entry.normalizationStatus || 'legacy_unvalidated',
+      qualityStatus: entry.qualityStatus || 'legacy_unvalidated',
+      repairCount: entry.repairCount ?? 0,
+      validation,
+    }
   }
 
   private async evaluateEntry(
@@ -987,7 +1308,7 @@ class JournalService {
         ],
       })
 
-      const parsed = safeParseJson<JournalQualityEvaluation>(response.content)
+      const { parsed } = safeParseJsonWithExtraction<JournalQualityEvaluation>(response.content)
       if (!parsed || !parsed.dimensions) {
         return heuristic
       }
@@ -1005,9 +1326,9 @@ class JournalService {
           ])
         ) as JournalQualityEvaluation['dimensions'],
         hardFailureFlags: Array.isArray(parsed.hardFailureFlags) ? parsed.hardFailureFlags : heuristic.hardFailureFlags,
-        strengths: normalizeTextList(parsed.strengths),
-        weaknesses: normalizeTextList(parsed.weaknesses),
-        repairInstructions: normalizeTextList(parsed.repairInstructions),
+        strengths: normalizeStringList(parsed.strengths),
+        weaknesses: normalizeStringList(parsed.weaknesses),
+        repairInstructions: normalizeStringList(parsed.repairInstructions),
         evaluatorSummary: parsed.evaluatorSummary || heuristic.evaluatorSummary,
       }
 

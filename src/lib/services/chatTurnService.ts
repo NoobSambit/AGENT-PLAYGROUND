@@ -17,6 +17,9 @@ import { PersonalityService } from './personalityService'
 import { LearningService } from './learningService'
 import { buildMessageRenderData } from '@/lib/chat/rendering'
 import { dreamService } from './dreamService'
+import { MemoryGraphService } from './memoryGraphService'
+import { applyChatTurnQualityGate } from './outputQuality/chatTurnQuality'
+import type { MemoryRecord } from '@/types/database'
 
 const STOP_WORDS = new Set([
   'the', 'and', 'for', 'are', 'but', 'not', 'you', 'that', 'with', 'this', 'from',
@@ -132,6 +135,23 @@ export class ChatTurnService {
       }
     }
 
+    const qualityGate = await applyChatTurnQualityGate({
+      prompt,
+      response: response.response,
+      llmConfig,
+    }).catch((error) => {
+      console.error('Chat turn quality gate failed:', error)
+      return null
+    })
+
+    if (qualityGate) {
+      response = {
+        ...response,
+        response: qualityGate.finalResponse,
+        qualityGate,
+      }
+    }
+
     const finalizedEmotion = await emotionalService.finalizeConversationTurn({
       agent,
       userMessage: prompt,
@@ -154,6 +174,16 @@ export class ChatTurnService {
         memoryUsed: response.memoryUsed,
         model: llmConfig?.model || providerInfo?.model,
         provider: llmConfig?.provider || providerInfo?.provider,
+        responseQuality: response.qualityGate ? {
+          promptVersion: response.qualityGate.promptVersion,
+          repaired: response.qualityGate.repaired,
+          repairCount: response.qualityGate.repairCount,
+          blockerReasons: response.qualityGate.blockerReasons,
+          warnings: response.qualityGate.warnings,
+          styleSignals: response.qualityGate.styleSignals,
+          validation: response.qualityGate.validation,
+          rawModelOutput: response.qualityGate.rawModelOutput,
+        } : undefined,
         emotionSummary: emotionalService.getEmotionalSummary(
           finalizedEmotion.emotionalState,
           agent.emotionalProfile
@@ -174,6 +204,57 @@ export class ChatTurnService {
       },
     })
 
+    const createdMemory = await MemoryService.createMemory({
+      agentId,
+      type: 'conversation_episode',
+      content: `User: ${prompt}\nAssistant: ${response.response}`,
+      summary: this.generateConversationMemorySummary(prompt, response.response),
+      keywords: this.extractConversationKeywords(prompt, response.response),
+      importance: this.calculateConversationMemoryImportance(prompt, response.response),
+      context: 'Regular conversation',
+      origin: 'conversation',
+      linkedMessageIds: [userMessage.id, agentMessage.id],
+      evidenceRefs: [userMessage.id, agentMessage.id],
+      metadata: {
+        inputLength: prompt.length,
+        outputLength: response.response.length,
+        toolsUsed: response.toolsUsed?.length ? response.toolsUsed : undefined,
+        reasoning: response.reasoning?.substring(0, 200),
+      },
+    })
+
+    const semanticMemories = await this.persistSemanticMemories({
+      agentId,
+      prompt,
+      response: response.response,
+      linkedMessageIds: [userMessage.id, agentMessage.id],
+      qualityBlockers: response.qualityGate?.blockerReasons || [],
+    })
+
+    const createdFactMemories = await this.persistStructuredFacts({
+      agentId,
+      prompt,
+      linkedMessageIds: [userMessage.id, agentMessage.id],
+    })
+
+    await this.updateMemoryGraph([createdMemory, ...semanticMemories].filter((memory): memory is MemoryRecord => Boolean(memory)))
+
+    if (finalizedEmotion.events.length > 0) {
+      const semanticThemes = semanticMemories
+        .map((memory) => memory.canonicalValue || memory.summary)
+        .filter(Boolean)
+        .slice(0, 4)
+
+      finalizedEmotion.events.forEach((event) => {
+        event.metadata = {
+          ...(event.metadata || {}),
+          semanticThemes,
+          semanticMemoryIds: semanticMemories.map((memory) => memory.id),
+          qualityBlockers: response.qualityGate?.blockerReasons || [],
+        }
+      })
+    }
+
     const updatedStats = this.updateStatsForTurn(
       agent,
       prompt,
@@ -192,29 +273,6 @@ export class ChatTurnService {
       stats: updatedStats,
       dynamicTraits: personalityUpdate?.traitUpdates,
       totalInteractions: personalityUpdate?.interactionCount ?? nextInteractionCount,
-    })
-
-    const createdMemory = await MemoryService.createMemory({
-      agentId,
-      type: 'conversation',
-      content: `User: ${prompt}\nAssistant: ${response.response}`,
-      summary: this.generateConversationMemorySummary(prompt, response.response),
-      keywords: this.extractConversationKeywords(prompt, response.response),
-      importance: this.calculateConversationMemoryImportance(prompt, response.response),
-      context: 'Regular conversation',
-      origin: 'conversation',
-      linkedMessageIds: [userMessage.id, agentMessage.id],
-      metadata: {
-        inputLength: prompt.length,
-        outputLength: response.response.length,
-        toolsUsed: response.toolsUsed?.length ? response.toolsUsed : undefined,
-        reasoning: response.reasoning?.substring(0, 200),
-      },
-    })
-    const createdFactMemories = await this.persistStructuredFacts({
-      agentId,
-      prompt,
-      linkedMessageIds: [userMessage.id, agentMessage.id],
     })
 
     if (personalityUpdate) {
@@ -255,11 +313,11 @@ export class ChatTurnService {
       'emotion',
       'stats',
       ...(learningResult ? ['learning'] : []),
-      ...(createdMemory || createdFactMemories > 0 ? ['memory'] : []),
+      ...(createdMemory || createdFactMemories > 0 || semanticMemories.length > 0 ? ['memory'] : []),
       ...(personalityUpdate ? ['profile_traits'] : []),
     ]
     const staleDomains = [
-      ...(createdMemory || createdFactMemories > 0 ? ['memory', 'timeline'] : []),
+      ...(createdMemory || createdFactMemories > 0 || semanticMemories.length > 0 ? ['memory', 'timeline'] : []),
       ...(personalityUpdate ? ['profile_analysis'] : []),
     ]
 
@@ -301,6 +359,16 @@ export class ChatTurnService {
       throw new Error(`Failed to create ${messageData.type} message`)
     }
     return message
+  }
+
+  private async updateMemoryGraph(memories: MemoryRecord[]): Promise<void> {
+    for (const memory of memories) {
+      try {
+        await MemoryGraphService.processNewMemory(memory)
+      } catch (error) {
+        console.error('Memory graph update failed:', error)
+      }
+    }
   }
 
   private updateStatsForTurn(
@@ -426,6 +494,245 @@ export class ChatTurnService {
     }
 
     return written
+  }
+
+  private async persistSemanticMemories(params: {
+    agentId: string
+    prompt: string
+    response: string
+    linkedMessageIds: string[]
+    qualityBlockers: string[]
+  }): Promise<MemoryRecord[]> {
+    const abstractions = this.extractSemanticMemories(params.prompt, params.response)
+    if (abstractions.length === 0) {
+      return []
+    }
+
+    const stored: MemoryRecord[] = []
+
+    for (const abstraction of abstractions) {
+      const memory = await MemoryService.upsertSemanticMemory({
+        agentId: params.agentId,
+        type: abstraction.type,
+        canonicalKey: abstraction.canonicalKey,
+        canonicalValue: abstraction.canonicalValue,
+        content: abstraction.content,
+        summary: abstraction.summary,
+        keywords: abstraction.keywords,
+        importance: abstraction.importance,
+        confidence: abstraction.confidence,
+        context: abstraction.context,
+        linkedMessageIds: params.linkedMessageIds,
+        evidenceRefs: params.linkedMessageIds,
+        metadata: {
+          semanticCategory: abstraction.type,
+          extractionSource: abstraction.source,
+          qualityBlockers: params.qualityBlockers,
+        },
+      })
+
+      if (memory) {
+        stored.push(memory)
+      }
+    }
+
+    return stored
+  }
+
+  private extractSemanticMemories(prompt: string, response: string): Array<{
+    type: Extract<MemoryRecord['type'], 'preference' | 'project' | 'relationship' | 'identity' | 'operating_constraint' | 'artifact_summary' | 'tension_snapshot'>
+    canonicalKey: string
+    canonicalValue: string
+    content: string
+    summary: string
+    keywords: string[]
+    importance: number
+    confidence: number
+    context: string
+    source: 'user_prompt' | 'assistant_response'
+  }> {
+    const abstractions: Array<{
+      type: Extract<MemoryRecord['type'], 'preference' | 'project' | 'relationship' | 'identity' | 'operating_constraint' | 'artifact_summary' | 'tension_snapshot'>
+      canonicalKey: string
+      canonicalValue: string
+      content: string
+      summary: string
+      keywords: string[]
+      importance: number
+      confidence: number
+      context: string
+      source: 'user_prompt' | 'assistant_response'
+    }> = []
+
+    const normalizedPrompt = prompt.trim()
+    const promptLower = normalizedPrompt.toLowerCase()
+
+    const pushAbstraction = (entry: typeof abstractions[number]) => {
+      if (!entry.canonicalValue) return
+      if (abstractions.some((existing) => existing.canonicalKey === entry.canonicalKey)) return
+      abstractions.push(entry)
+    }
+
+    const nameMatch = normalizedPrompt.match(/\bmy name is\s+([A-Za-z][A-Za-z'-]+(?:\s+[A-Za-z][A-Za-z'-]+){0,2})/i)
+    if (nameMatch) {
+      const name = this.normalizeFactValue(nameMatch[1])
+      pushAbstraction({
+        type: 'identity',
+        canonicalKey: 'identity:user_name',
+        canonicalValue: name,
+        content: `The user identifies themself as ${name}.`,
+        summary: `Identity: user name is ${name}`,
+        keywords: [name.toLowerCase(), 'identity', 'name'],
+        importance: 10,
+        confidence: 0.96,
+        context: 'User identity',
+        source: 'user_prompt',
+      })
+    }
+
+    const roleMatch = normalizedPrompt.match(/\b(?:i am|i'm|im)\s+(?:a|an)\s+([^.!?\n]+)/i)
+    if (roleMatch) {
+      const role = this.normalizeFactValue(roleMatch[1])
+      pushAbstraction({
+        type: 'identity',
+        canonicalKey: `identity:role:${this.slugify(role)}`,
+        canonicalValue: role,
+        content: `The user describes themself as ${role}.`,
+        summary: `Identity: ${role}`,
+        keywords: [...extractTopicsFromText(role), 'identity'],
+        importance: 8,
+        confidence: 0.78,
+        context: 'User self-description',
+        source: 'user_prompt',
+      })
+    }
+
+    const projectPatterns = [
+      /\b(?:i am|i'm|im)?\s*(?:building|working on|creating|launching|developing|shipping)\s+([^.!?\n]+)/i,
+      /\bmy project is\s+([^.!?\n]+)/i,
+    ]
+    for (const pattern of projectPatterns) {
+      const match = normalizedPrompt.match(pattern)
+      if (!match) continue
+      const project = this.normalizeFactValue(match[1].replace(/\b(today|right now|currently)\b/gi, '').trim())
+      pushAbstraction({
+        type: 'project',
+        canonicalKey: `project:${this.slugify(project)}`,
+        canonicalValue: project,
+        content: `The user is working on ${project}.`,
+        summary: `Project: ${project}`,
+        keywords: [...extractTopicsFromText(project), 'project'],
+        importance: 9,
+        confidence: 0.86,
+        context: 'Current user project',
+        source: 'user_prompt',
+      })
+      break
+    }
+
+    const preferencePatterns: Array<{ regex: RegExp; prefix: string }> = [
+      { regex: /\bi\s+(?:prefer|want)\s+([^.!?\n]{3,100})/i, prefix: 'preference' },
+      { regex: /\b(?:be|keep|stay|make it|answer)\s+(more\s+)?(direct|brief|concise|blunt|to the point)/i, prefix: 'style' },
+      { regex: /\bno fluff\b/i, prefix: 'style' },
+    ]
+    for (const { regex, prefix } of preferencePatterns) {
+      const match = normalizedPrompt.match(regex)
+      if (!match) continue
+      const preference = this.normalizeFactValue((match[2] || match[1] || match[0]).replace(/^more\s+/i, ''))
+      pushAbstraction({
+        type: 'preference',
+        canonicalKey: `${prefix}:${this.slugify(preference)}`,
+        canonicalValue: preference,
+        content: `The user prefers ${preference}.`,
+        summary: `Preference: ${preference}`,
+        keywords: [...extractTopicsFromText(preference), 'preference', 'style'],
+        importance: prefix === 'style' ? 9 : 7,
+        confidence: 0.9,
+        context: 'User preference',
+        source: 'user_prompt',
+      })
+    }
+
+    const relationshipMatch = normalizedPrompt.match(/\bmy\s+(manager|wife|husband|partner|friend|boss|client|cofounder|co-founder|teammate|team|mentor)\b([^.!?\n]*)/i)
+    if (relationshipMatch) {
+      const counterpart = this.normalizeFactValue(`${relationshipMatch[1]}${relationshipMatch[2] || ''}`)
+      pushAbstraction({
+        type: 'relationship',
+        canonicalKey: `relationship:${this.slugify(counterpart)}`,
+        canonicalValue: counterpart,
+        content: `The user referenced an active relationship with ${counterpart}.`,
+        summary: `Relationship: ${counterpart}`,
+        keywords: [...extractTopicsFromText(counterpart), 'relationship'],
+        importance: 7,
+        confidence: 0.72,
+        context: 'Relevant counterpart in the user context',
+        source: 'user_prompt',
+      })
+    }
+
+    const constraintMatch = normalizedPrompt.match(/\b(?:can\'t|cannot|must|need to|only have|within|without)\s+([^.!?\n]{4,120})/i)
+    if (constraintMatch) {
+      const constraint = this.normalizeFactValue(constraintMatch[1])
+      pushAbstraction({
+        type: 'operating_constraint',
+        canonicalKey: `constraint:${this.slugify(constraint)}`,
+        canonicalValue: constraint,
+        content: `The user is operating under this constraint: ${constraint}.`,
+        summary: `Constraint: ${constraint}`,
+        keywords: [...extractTopicsFromText(constraint), 'constraint'],
+        importance: 8,
+        confidence: 0.74,
+        context: 'User-stated operating constraint',
+        source: 'user_prompt',
+      })
+    }
+
+    const tensionPatterns = [
+      /\b(?:i'm|i am)\s+(stuck|torn|conflicted)\s+between\s+([^.!?\n]+)/i,
+      /\b(?:worried|anxious|torn)\s+about\s+([^.!?\n]+)/i,
+    ]
+    for (const pattern of tensionPatterns) {
+      const match = normalizedPrompt.match(pattern)
+      if (!match) continue
+      const tension = this.normalizeFactValue(match[2] || match[1] || '')
+      pushAbstraction({
+        type: 'tension_snapshot',
+        canonicalKey: `tension:${this.slugify(tension)}`,
+        canonicalValue: tension,
+        content: `Current tension: ${tension}.`,
+        summary: `Tension: ${tension}`,
+        keywords: [...extractTopicsFromText(tension), 'tension'],
+        importance: 8,
+        confidence: 0.76,
+        context: 'Current user tension or tradeoff',
+        source: 'user_prompt',
+      })
+      break
+    }
+
+    if (
+      /\b(build|create|write|draft|outline|plan|ship|design|refactor)\b/.test(promptLower)
+      && response.trim().length >= 80
+    ) {
+      const artifactSummary = response
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 180)
+      pushAbstraction({
+        type: 'artifact_summary',
+        canonicalKey: `artifact:${this.slugify(prompt.slice(0, 80))}`,
+        canonicalValue: artifactSummary,
+        content: `Assistant output summary: ${artifactSummary}`,
+        summary: `Artifact summary: ${artifactSummary.slice(0, 80)}${artifactSummary.length > 80 ? '...' : ''}`,
+        keywords: [...extractTopicsFromText(prompt), ...extractTopicsFromText(artifactSummary), 'artifact'],
+        importance: 6,
+        confidence: 0.68,
+        context: 'Summary of assistant-produced artifact or plan',
+        source: 'assistant_response',
+      })
+    }
+
+    return abstractions
   }
 
   private extractStructuredFacts(input: string): Array<{

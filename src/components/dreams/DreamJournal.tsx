@@ -9,11 +9,9 @@ import {
   MoonStar,
   RefreshCw,
   Save,
-  Sparkles,
   Archive,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { buildLLMPreferenceHeaders } from '@/lib/llm/clientPreference'
 import { useLLMPreferenceStore } from '@/stores/llmPreferenceStore'
 import type {
@@ -28,7 +26,6 @@ import type {
 import {
   PipelineIcon,
   QualityIcon,
-  ContextIcon,
   ArchiveLibraryIcon,
   StageIcon,
 } from '@/components/journal/JournalIcons'
@@ -352,7 +349,9 @@ export function DreamJournal({ agentId, agentName }: DreamJournalProps) {
   }, [activeSessionId, agentId, loadBootstrap])
 
   const activeStage = getActiveStage(detail)
-  const canSave = detail?.session?.status === 'ready' && Boolean(detail.session.latestEvaluation?.pass)
+  const canSave = detail?.session?.status === 'ready'
+    && detail.session.qualityStatus === 'passed'
+    && Boolean(detail.session.latestEvaluation?.pass)
 
   if (loading && !bootstrap) {
     return (
@@ -820,6 +819,28 @@ function DreamInspector({
         </div>
 
         <div>
+          <div className={labelStyle}>Contract State</div>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <MetricTile label="Quality" value={detail?.session?.qualityStatus || dream?.qualityStatus || 'unknown'} />
+            <MetricTile label="Normalization" value={dream?.normalizationStatus || 'legacy_unvalidated'} />
+            <MetricTile label="Repairs" value={detail?.session?.repairCount ?? dream?.repairCount ?? 0} />
+            <MetricTile label="Prompt" value={detail?.session?.promptVersion || dream?.promptVersion || 'legacy'} />
+          </div>
+          {dream?.validation?.hardFailureFlags?.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {dream.validation.hardFailureFlags.map((flag) => (
+                <span
+                  key={flag}
+                  className="rounded-sm border border-pastel-red/40 bg-pastel-red/10 px-2 py-0.5 text-[10px] font-medium text-pastel-red"
+                >
+                  {flag.replace(/_/g, ' ')}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div>
           <div className={labelStyle}>Selected Context</div>
           <div className="mt-3 space-y-3">
             {detail?.session?.contextPacket?.selectedSignals?.length ? detail.session.contextPacket.selectedSignals.slice(0, 5).map((signal) => (
@@ -852,6 +873,32 @@ function DreamInspector({
             </div>
           ) : (
             <InspectorSkeleton copy="Symbol extraction hydrates after the draft stabilizes." />
+          )}
+        </div>
+
+        <div>
+          <div className={labelStyle}>Lineage</div>
+          {dream ? (
+            <div className="mt-3 space-y-2">
+              <div className={`${subPanel} px-3 py-2.5 text-[11px] text-muted-foreground`}>
+                <span className="font-bold text-foreground">Role:</span> {dream.artifactRole || 'legacy'}
+              </div>
+              {dream.sourceDreamId ? (
+                <div className={`${subPanel} px-3 py-2.5 text-[11px] text-muted-foreground`}>
+                  <span className="font-bold text-foreground">Source draft:</span> {dream.sourceDreamId}
+                </div>
+              ) : null}
+              {dream.rawModelOutput?.text ? (
+                <div className={`${subPanel} px-3 py-2.5`}>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Raw Draft</div>
+                  <p className="mt-2 line-clamp-5 text-[10px] leading-relaxed text-muted-foreground">
+                    {dream.rawModelOutput.text}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <InspectorSkeleton copy="Draft versus repair lineage appears after generation." />
           )}
         </div>
 

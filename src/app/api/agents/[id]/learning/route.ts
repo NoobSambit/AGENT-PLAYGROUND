@@ -54,11 +54,10 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  void request
-
   try {
     const { id: agentId } = await params
     const data = await LearningService.getLearningState(agentId)
+    const filter = request.nextUrl.searchParams.get('filter')
 
     if (!data) {
       return NextResponse.json(
@@ -69,7 +68,14 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      state: data.state,
+      state: filter === 'quality'
+        ? {
+            ...data.state,
+            activePatterns: data.state.activePatterns.filter((pattern) => pattern.type === 'communication_style' || pattern.type === 'problem_solving'),
+            recentAdaptations: data.state.outputQuality?.recentAdaptations || [],
+            recentObservations: data.state.outputQuality?.recentObservations || [],
+          }
+        : data.state,
       skills: data.skills,
     })
   } catch (error) {

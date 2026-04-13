@@ -17,6 +17,9 @@ import type {
   EnneagramProfile,
   MBTIProfile,
   ProfileAnalysisRun,
+  ProfileClaimEvidenceMap,
+  ProfileClaimRef,
+  ProfileEvidenceCoverageSummary,
   ProfileAnalysisStage,
   ProfileBootstrapPayload,
   ProfileEvidenceSignal,
@@ -26,12 +29,24 @@ import type {
   ProfileStageFinding,
   PsychologicalProfile,
 } from '@/types/database'
+import { applyFinalQualityGate } from './outputQuality/evaluators'
+import { createPendingTrackedFields } from './outputQuality/contracts'
+import { createValidationReport, validateRequiredTextFields, validateSharedArtifactText, validateSourceRefs } from './outputQuality/validators'
+import type { OutputQualityRawModelOutput, OutputQualitySourceRef, OutputQualityValidationReport } from '@/types/outputQuality'
 import { AgentService } from './agentService'
 import { CommunicationFingerprintService } from './communicationFingerprintService'
+import { LearningService } from './learningService'
 import { MemoryService } from './memoryService'
 import { MessageService } from './messageService'
 import { PersonalityEventService } from './personalityEventService'
 import { psychologicalProfileService } from './psychologicalProfileService'
+
+const PROFILE_PROMPT_VERSION = 'phase3-profile-evidence-led-v1'
+const PROFILE_VALIDATOR_VERSION = 'phase3-profile-validator-v1'
+const PROFILE_VERSION = 'phase3-profile-v1'
+const PROFILE_OVERALL_SCORE_MINIMUM = 80
+const PROFILE_DIMENSION_FLOOR = 75
+const PROFILE_EVIDENCE_COVERAGE_MINIMUM = 80
 
 const INTERVIEW_STAGES: Array<{
   stage: ProfileAnalysisStage
@@ -88,17 +103,120 @@ const QUALITY_THRESHOLDS = {
   rationaleCompleteness: 75,
 }
 
+function createRawModelOutput(text: string): OutputQualityRawModelOutput {
+  return {
+    text,
+    capturedAt: new Date().toISOString(),
+    responseFormat: 'json_object',
+    promptVersion: PROFILE_PROMPT_VERSION,
+  }
+}
+
+function toSourceRefs(signals: ProfileEvidenceSignal[]): OutputQualitySourceRef[] {
+  return signals.map((signal) => ({
+    id: signal.id,
+    sourceType: signal.sourceType,
+    label: signal.label,
+    reason: signal.reason,
+    linkedEntityId: signal.linkedEntityId,
+  }))
+}
+
+function normalizeEvidenceRefList(value: unknown, knownRefs: Set<string>, fallback: string[] = []): string[] {
+  const refs = Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string' && knownRefs.has(entry))
+    : []
+  return refs.length > 0 ? Array.from(new Set(refs)) : fallback
+}
+
+function normalizeProfileClaimRefs(value: unknown, knownRefs: Set<string>, fallback: string[] = []): ProfileClaimRef[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null
+      const record = entry as Record<string, unknown>
+      const claim = typeof record.claim === 'string' ? summarizeText(record.claim, 220) : ''
+      const evidenceRefs = normalizeEvidenceRefList(record.evidenceRefs, knownRefs, fallback)
+      if (!claim || evidenceRefs.length === 0) return null
+      return { claim, evidenceRefs }
+    })
+    .filter((entry): entry is ProfileClaimRef => Boolean(entry))
+}
+
+function listClaimEvidenceCoverage(refs: string[] | undefined) {
+  return Array.isArray(refs) && refs.length > 0
+}
+
+function computeEvidenceCoverage(profile: PsychologicalProfile | undefined | null): ProfileEvidenceCoverageSummary {
+  const claimEvidence = profile?.claimEvidence
+  const checks = [
+    { key: 'summary', pass: listClaimEvidenceCoverage(claimEvidence?.summary) },
+    { key: 'communicationStyle', pass: listClaimEvidenceCoverage(claimEvidence?.communicationStyle) },
+    { key: 'motivationalProfile', pass: listClaimEvidenceCoverage(claimEvidence?.motivationalProfile) },
+    { key: 'bigFive', pass: Object.values(claimEvidence?.bigFive || {}).filter((refs) => Array.isArray(refs) && refs.length > 0).length >= 4 },
+    { key: 'mbti', pass: listClaimEvidenceCoverage(claimEvidence?.mbti) },
+    { key: 'enneagram', pass: listClaimEvidenceCoverage(claimEvidence?.enneagram) },
+    { key: 'strengths', pass: (claimEvidence?.strengths || []).length > 0 && (claimEvidence?.strengths || []).every((item) => item.evidenceRefs.length > 0) },
+    { key: 'challenges', pass: (claimEvidence?.challenges || []).length > 0 && (claimEvidence?.challenges || []).every((item) => item.evidenceRefs.length > 0) },
+    { key: 'triggers', pass: (claimEvidence?.triggers || []).length > 0 && (claimEvidence?.triggers || []).every((item) => item.evidenceRefs.length > 0) },
+    { key: 'growthEdges', pass: (claimEvidence?.growthEdges || []).length > 0 && (claimEvidence?.growthEdges || []).every((item) => item.evidenceRefs.length > 0) },
+  ]
+  const claimGroupsWithEvidence = checks.filter((item) => item.pass).length
+  const totalClaimGroups = checks.length
+  const coveragePercent = totalClaimGroups > 0 ? Math.round((claimGroupsWithEvidence / totalClaimGroups) * 100) : 0
+
+  return {
+    claimGroupsWithEvidence,
+    totalClaimGroups,
+    coveragePercent,
+    thresholdPercent: PROFILE_EVIDENCE_COVERAGE_MINIMUM,
+    pass: coveragePercent >= PROFILE_EVIDENCE_COVERAGE_MINIMUM,
+    blockedGroups: checks.filter((item) => !item.pass).map((item) => item.key),
+  }
+}
+
+function extractClaimTexts(claims: ProfileClaimRef[] | undefined) {
+  return (claims || []).map((claim) => claim.claim)
+}
+
+function normalizePsychologicalProfile(
+  profile: PsychologicalProfile,
+  params: {
+    runId?: string
+    source?: PsychologicalProfile['source']
+    qualityStatus?: PsychologicalProfile['qualityStatus']
+    profileVersion?: string
+  } = {}
+): PsychologicalProfile {
+  const nextProfile: PsychologicalProfile = {
+    ...profile,
+    sourceRunId: profile.sourceRunId || params.runId || profile.runId,
+    runId: profile.runId || params.runId,
+    source: profile.source || params.source,
+    qualityStatus: profile.qualityStatus || params.qualityStatus || 'legacy_unvalidated',
+    profileVersion: profile.profileVersion || params.profileVersion,
+    triggers: profile.triggers || [],
+    growthEdges: profile.growthEdges || [],
+  }
+
+  return {
+    ...nextProfile,
+    claimEvidence: nextProfile.claimEvidence
+      ? {
+          ...nextProfile.claimEvidence,
+          strengths: nextProfile.claimEvidence.strengths || [],
+          challenges: nextProfile.claimEvidence.challenges || [],
+          triggers: nextProfile.claimEvidence.triggers || [],
+          growthEdges: nextProfile.claimEvidence.growthEdges || [],
+        }
+      : nextProfile.claimEvidence,
+  }
+}
+
 function summarizeText(value: string, maxLength = 240) {
   const cleaned = value.replace(/\s+/g, ' ').trim()
   if (cleaned.length <= maxLength) return cleaned
   return `${cleaned.slice(0, maxLength - 1).trim()}…`
-}
-
-function summarizeSignals(signals: ProfileEvidenceSignal[], limit = 10) {
-  return signals
-    .slice(0, limit)
-    .map((signal) => `- [${signal.sourceType}] ${signal.label}: ${signal.snippet}`)
-    .join('\n')
 }
 
 function average(values: number[]) {
@@ -311,6 +429,10 @@ function clamp(value: number, min = 0, max = 1) {
   return Math.max(min, Math.min(max, value))
 }
 
+function clampSigned(value: number) {
+  return Math.max(-1, Math.min(1, value))
+}
+
 function asRecordOfStringArrays(value: unknown): Partial<Record<keyof BigFiveProfile, string[]>> {
   if (!value || typeof value !== 'object') return {}
   const record = value as Record<string, unknown>
@@ -329,6 +451,10 @@ function makeRun(agentId: string): ProfileAnalysisRun {
     id: generateId('profile_run'),
     agentId,
     status: 'draft',
+    ...createPendingTrackedFields({
+      promptVersion: PROFILE_PROMPT_VERSION,
+    }),
+    profileVersion: PROFILE_VERSION,
     latestStage: 'evidence',
     sourceCount: 0,
     transcriptCount: 0,
@@ -372,6 +498,7 @@ function defaultQualityEvaluation(summary = 'Evaluation unavailable; using bound
     weaknesses: ['Quality evaluation fell back to a default score.'],
     repairInstructions: ['Tighten the rationale and make the profile more distinct from generic defaults.'],
     evaluatorSummary: summary,
+    hardFailureFlags: ['profile_evaluation_unavailable'],
   }
 }
 
@@ -389,15 +516,23 @@ export class ProfileAnalysisService {
       MessageService.getMessagesByAgentId(agentId),
     ])
 
-    const latestCompletedRun = recentRuns.find((run) => run.status === 'ready') || null
+    const latestCompletedRun = recentRuns.find((run) => run.status === 'ready' && run.qualityStatus === 'passed') || null
+    const activeProfile = agent.psychologicalProfile
+      ? normalizePsychologicalProfile(agent.psychologicalProfile, {
+          runId: agent.psychologicalProfile.runId,
+          source: agent.psychologicalProfile.source,
+          qualityStatus: agent.psychologicalProfile.qualityStatus || 'legacy_unvalidated',
+          profileVersion: agent.psychologicalProfile.profileVersion,
+        })
+      : null
     const stale = Boolean(
-      agent.psychologicalProfile?.updatedAt &&
+      activeProfile?.updatedAt &&
       lastEvent?.createdAt &&
-      new Date(lastEvent.createdAt).getTime() > new Date(agent.psychologicalProfile.updatedAt).getTime()
+      new Date(lastEvent.createdAt).getTime() > new Date(activeProfile.updatedAt).getTime()
     )
 
     return {
-      profile: agent.psychologicalProfile || null,
+      profile: activeProfile,
       stale,
       lastTraitUpdateAt: lastEvent?.createdAt || null,
       recentRuns,
@@ -481,9 +616,13 @@ export class ProfileAnalysisService {
     let run: ProfileAnalysisRun = {
       ...existing,
       status: 'running',
+      qualityStatus: 'pending',
       latestStage: 'evidence',
       provider: resolvedProvider.provider,
       model: resolvedProvider.model,
+      promptVersion: PROFILE_PROMPT_VERSION,
+      profileVersion: PROFILE_VERSION,
+      repairCount: 0,
       updatedAt: new Date().toISOString(),
       failureReason: undefined,
     }
@@ -494,10 +633,12 @@ export class ProfileAnalysisService {
 
     try {
       const evidenceSignals = await this.buildEvidenceSignals(agent)
+      const sourceRefs = toSourceRefs(evidenceSignals)
       run = await this.saveRun({
         ...run,
         sourceCount: evidenceSignals.length,
         evidenceSignals,
+        sourceRefs,
         updatedAt: new Date().toISOString(),
       })
       pipelineEvents.push(await this.savePipelineEvent(agentId, makePipelineEvent(
@@ -521,7 +662,7 @@ export class ProfileAnalysisService {
 
         const stageTurns: ProfileInterviewTurn[] = []
         for (const question of stageConfig.questions) {
-          const answer = await this.askAgentInterviewQuestion(agent, question, interviewHistory, resolvedProvider)
+          const answer = await this.askAgentInterviewQuestion(agent, question, interviewHistory, evidenceSignals, resolvedProvider)
           const turn: ProfileInterviewTurn = {
             id: generateId('profile_turn'),
             runId: run.id,
@@ -530,9 +671,10 @@ export class ProfileAnalysisService {
             question,
             answer,
             createdAt: new Date().toISOString(),
+            promptVersion: PROFILE_PROMPT_VERSION,
             provider: resolvedProvider.provider,
             model: resolvedProvider.model,
-            evidenceRefs: evidenceSignals.slice(0, 6).map((signal) => signal.id),
+            evidenceRefs: this.selectEvidenceRefsForQuestion(question, evidenceSignals),
           }
           stageTurns.push(await this.saveInterviewTurn(agentId, turn))
           interviewTurns.push(turn)
@@ -556,7 +698,12 @@ export class ProfileAnalysisService {
           stageConfig.stage,
           'completed',
           `Completed ${stageConfig.title.toLowerCase()} interview stage.`,
-          { turnCount: stageTurns.length, summary: finding.summary }
+          {
+            turnCount: stageTurns.length,
+            summary: finding.summary,
+            evidenceRefs: finding.evidenceRefs,
+            claimCount: finding.claims?.length || 0,
+          }
         )))
       }
 
@@ -566,67 +713,179 @@ export class ProfileAnalysisService {
         updatedAt: new Date().toISOString(),
       })
 
-      let profile = await this.synthesizeProfile(agent, evidenceSignals, stageFindings, interviewTurns, resolvedProvider)
-      let evaluation = await this.evaluateProfile(agent, profile, evidenceSignals, stageFindings, resolvedProvider)
+      const synthesisResult = await this.synthesizeProfile(agent, evidenceSignals, stageFindings, interviewTurns, resolvedProvider)
+      let profile = synthesisResult.profile
+      let validation = this.validateProfileRun({
+        profile,
+        stageFindings,
+        interviewTurns,
+        sourceRefs,
+      })
+      let evaluation = validation.pass
+        ? await this.evaluateProfile(agent, profile, evidenceSignals, stageFindings, resolvedProvider)
+        : this.createBlockedEvaluation(validation)
+      let evidenceCoverage = computeEvidenceCoverage(profile)
 
+      run = await this.saveRun({
+        ...run,
+        rawModelOutput: synthesisResult.rawModelOutput,
+        validation,
+        evidenceCoverage,
+        qualityStatus: validation.pass ? 'pending' : 'failed',
+        latestProfile: profile,
+        latestEvaluation: evaluation,
+        updatedAt: new Date().toISOString(),
+      })
+      pipelineEvents.push(await this.savePipelineEvent(agentId, makePipelineEvent(
+        run.id,
+        'synthesis',
+        validation.pass ? 'completed' : 'failed',
+        validation.pass
+          ? 'Synthesized an evidence-led profile candidate.'
+          : 'Synthesis produced a profile candidate, but validation blocked it.',
+        {
+          validation,
+          evidenceCoverage,
+        }
+      )))
       pipelineEvents.push(await this.savePipelineEvent(agentId, makePipelineEvent(
         run.id,
         'evaluation',
         'completed',
         `Profile evaluation scored ${evaluation.overallScore}.`,
-        { evaluation }
+        { evaluation, validation, evidenceCoverage }
       )))
 
-      if (!evaluation.pass) {
+      if (!validation.pass || !evaluation.pass) {
         run = await this.saveRun({
           ...run,
           latestStage: 'repair',
+          repairCount: 1,
           updatedAt: new Date().toISOString(),
         })
-        profile = await this.repairProfile(agent, profile, evaluation, stageFindings, evidenceSignals, resolvedProvider)
-        evaluation = await this.evaluateProfile(agent, profile, evidenceSignals, stageFindings, resolvedProvider)
+        const repairedResult = await this.repairProfile(agent, profile, evaluation, stageFindings, evidenceSignals, resolvedProvider)
+        profile = repairedResult.profile
+        validation = this.validateProfileRun({
+          profile,
+          stageFindings,
+          interviewTurns,
+          sourceRefs,
+        })
+        evaluation = validation.pass
+          ? await this.evaluateProfile(agent, profile, evidenceSignals, stageFindings, resolvedProvider)
+          : this.createBlockedEvaluation(validation)
+        evidenceCoverage = computeEvidenceCoverage(profile)
         pipelineEvents.push(await this.savePipelineEvent(agentId, makePipelineEvent(
           run.id,
           'repair',
-          'completed',
+          validation.pass && evaluation.pass ? 'completed' : 'failed',
           `Ran one bounded repair pass. New overall score: ${evaluation.overallScore}.`,
-          { evaluation }
+          {
+            evaluation,
+            validation,
+            evidenceCoverage,
+          }
         )))
+        run = await this.saveRun({
+          ...run,
+          rawModelOutput: repairedResult.rawModelOutput,
+          validation,
+          latestProfile: profile,
+          latestEvaluation: evaluation,
+          evidenceCoverage,
+          qualityStatus: validation.pass && evaluation.pass ? 'pending' : 'failed',
+          updatedAt: new Date().toISOString(),
+        })
       }
 
       const completedAt = new Date().toISOString()
+      const gate = applyFinalQualityGate({
+        validation,
+        evaluation,
+        thresholds: {
+          overallScoreMinimum: PROFILE_OVERALL_SCORE_MINIMUM,
+          dimensionFloor: PROFILE_DIMENSION_FLOOR,
+        },
+        extraHardFailureFlags: evidenceCoverage.pass ? [] : ['profile_evidence_coverage_below_threshold'],
+      })
       profile = {
-        ...profile,
+        ...normalizePsychologicalProfile(profile, {
+          runId: run.id,
+          source: 'analysis_run',
+          qualityStatus: gate.qualityStatus,
+          profileVersion: PROFILE_VERSION,
+        }),
         source: 'analysis_run',
         runId: run.id,
+        sourceRunId: run.id,
         provider: resolvedProvider.provider,
         model: resolvedProvider.model,
+        qualityStatus: gate.qualityStatus,
+        profileVersion: PROFILE_VERSION,
         createdAt: profile.createdAt || completedAt,
         updatedAt: completedAt,
       }
 
+      const finalRunStatus: ProfileAnalysisRun['status'] = gate.pass ? 'ready' : 'failed'
+      const failureReason = gate.pass
+        ? undefined
+        : `Profile run blocked: ${gate.blockerReasons.join(', ')}${evidenceCoverage.blockedGroups.length ? `; missing evidence on ${evidenceCoverage.blockedGroups.join(', ')}` : ''}`
+
       run = await this.saveRun({
         ...run,
-        status: 'ready',
-        latestStage: 'completed',
+        status: finalRunStatus,
+        qualityStatus: gate.qualityStatus,
+        qualityScore: evaluation.overallScore,
+        latestStage: gate.pass ? 'completed' : run.latestStage,
         latestProfile: profile,
         latestEvaluation: evaluation,
+        evidenceCoverage,
         transcriptCount: interviewTurns.length,
         completedAt,
         updatedAt: completedAt,
+        failureReason,
       })
 
-      await AgentService.updateAgent(agent.id, {
-        psychologicalProfile: profile,
-      })
+      if (gate.pass) {
+        await AgentService.updateAgent(agent.id, {
+          psychologicalProfile: profile,
+        })
+      }
 
       pipelineEvents.push(await this.savePipelineEvent(agentId, makePipelineEvent(
         run.id,
         'completed',
-        'completed',
-        'Profile analysis run completed and latest psychological profile was updated.',
-        { profileId: profile.id }
+        gate.pass ? 'completed' : 'skipped',
+        gate.pass
+          ? 'Profile analysis run completed and the active psychological profile was updated.'
+          : 'Profile analysis run finished, but live profile update was blocked by validation or evaluation.',
+        {
+          profileId: profile.id,
+          gate,
+          evidenceCoverage,
+          validation,
+          evaluation,
+        }
       )))
+
+      if (!gate.pass) {
+        await LearningService.recordQualityObservation({
+          agentId,
+          feature: 'profile',
+          description: `Profile analysis run ${run.id} was blocked by validation or evaluation.`,
+          blockerReasons: [
+            ...gate.blockerReasons,
+            ...evidenceCoverage.blockedGroups.map((group) => `missing_evidence_${group}`),
+          ],
+          evidenceRefs: [run.id],
+          outputExcerpt: profile.summary,
+          qualityScore: evaluation.overallScore,
+          category: 'problem_solving',
+          candidateAdaptations: [
+            'Anchor profile claims more tightly to collected evidence refs.',
+          ],
+        })
+      }
 
       return { run, interviewTurns, pipelineEvents }
     } catch (error) {
@@ -706,13 +965,14 @@ export class ProfileAnalysisService {
   }
 
   private async buildEvidenceSignals(agent: AgentRecord): Promise<ProfileEvidenceSignal[]> {
-    const [messages, memories, journalEntries, personalityEvents] = await Promise.all([
+    const [messages, memories, journalEntries, personalityEvents, communicationFingerprint] = await Promise.all([
       MessageService.getMessagesByAgentId(agent.id),
       MemoryService.getRecentMemories(agent.id, 24),
       readsFromPostgres(getPersistenceMode())
         ? FeatureContentRepository.listJournalEntries(agent.id, { limit: 3 })
         : Promise.resolve([]),
       PersonalityEventService.listByAgent(agent.id, 12),
+      CommunicationFingerprintService.buildSnapshot(agent),
     ])
 
     const latestMessages = messages.slice(-48)
@@ -819,16 +1079,29 @@ export class ProfileAnalysisService {
       })
     }
 
+    if (communicationFingerprint) {
+      evidence.push({
+        id: generateId('profile_signal'),
+        sourceType: 'linguistic_baseline',
+        label: 'Observed communication fingerprint',
+        snippet: summarizeText(communicationFingerprint.summary, 200),
+        reason: 'Observed voice behavior gathered from recent agent replies.',
+        weight: communicationFingerprint.enoughData ? 0.92 : 0.72,
+      })
+    }
+
     for (const memory of memories
-      .filter((memory) => memory.importance >= 6 || memory.type === 'fact')
-      .slice(0, 6)) {
+      .filter((memory) => memory.importance >= 6 || ['identity', 'preference', 'relationship', 'project', 'tension_snapshot', 'artifact_summary', 'fact'].includes(memory.type))
+      .slice(0, 10)) {
       evidence.push({
         id: generateId('profile_signal'),
         sourceType: 'memory',
         label: `Memory: ${memory.type}`,
-        snippet: summarizeText(`${memory.summary} Context: ${memory.context}`, 180),
-        reason: 'Important retained context and continuity.',
-        weight: 0.7,
+        snippet: summarizeText(memory.canonicalValue || `${memory.summary} Context: ${memory.context}`, 180),
+        reason: memory.evidenceRefs?.length
+          ? 'Canonical semantic memory with retained evidence links.'
+          : 'Important retained context and continuity.',
+        weight: ['identity', 'relationship', 'preference', 'project', 'tension_snapshot'].includes(memory.type) ? 0.92 : 0.75,
         linkedEntityId: memory.id,
       })
     }
@@ -848,10 +1121,24 @@ export class ProfileAnalysisService {
     return evidence.slice(0, 64)
   }
 
+  private selectEvidenceRefsForQuestion(question: string, evidenceSignals: ProfileEvidenceSignal[], limit = 6): string[] {
+    const loweredQuestion = question.toLowerCase()
+    const ranked = [...evidenceSignals].sort((left, right) => {
+      const leftText = `${left.label} ${left.snippet} ${left.reason}`.toLowerCase()
+      const rightText = `${right.label} ${right.snippet} ${right.reason}`.toLowerCase()
+      const leftScore = left.weight + keywordWeight(leftText, loweredQuestion.split(/\W+/).filter(Boolean)) * 0.15
+      const rightScore = right.weight + keywordWeight(rightText, loweredQuestion.split(/\W+/).filter(Boolean)) * 0.15
+      return rightScore - leftScore
+    })
+
+    return ranked.slice(0, limit).map((signal) => signal.id)
+  }
+
   private async askAgentInterviewQuestion(
     agent: AgentRecord,
     question: string,
     interviewHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+    evidenceSignals: ProfileEvidenceSignal[],
     providerInfo: LLMProviderInfo
   ): Promise<string> {
     const emotionalState = agent.emotionalState
@@ -861,20 +1148,25 @@ export class ProfileAnalysisService {
       .slice(-4)
       .map((entry) => `${entry.role === 'user' ? 'Interviewer' : agent.name}: ${entry.content}`)
       .join('\n')
+    const evidenceRefs = this.selectEvidenceRefsForQuestion(question, evidenceSignals)
+    const evidencePacket = evidenceSignals
+      .filter((signal) => evidenceRefs.includes(signal.id))
+      .map((signal) => `- ${signal.id} | ${signal.label} | ${signal.snippet}`)
+      .join('\n')
 
     const result = await generateText({
       providerInfo,
-      temperature: 0.6,
-      maxTokens: 180,
+      temperature: 0.45,
+      maxTokens: 220,
       timeoutMs: 45000,
       messages: [
         {
           role: 'system',
-          content: `You are ${agent.name}. Answer a short psychological interview in first person. Stay grounded in this identity:\nPersona: ${summarizeText(agent.persona, 320)}\nGoals: ${agent.goals.slice(0, 4).join(' | ') || 'none'}\n${emotionalState}\nBe concrete, emotionally honest, and concise. Do not narrate system details or mention being an AI unless the question directly requires it.`,
+          content: `You are ${agent.name}. Answer a short psychological interview in first person. Stay grounded in this identity:\nPersona: ${summarizeText(agent.persona, 320)}\nGoals: ${agent.goals.slice(0, 4).join(' | ') || 'none'}\n${emotionalState}\nUse the evidence packet directly. Refer to concrete habits, pressures, values, and remembered context instead of generic personality language. Do not narrate system details or mention being an AI unless the question directly requires it.`,
         },
         {
           role: 'user',
-          content: `${historyBlock ? `Recent interview context:\n${historyBlock}\n\n` : ''}Question: ${question}\n\nAnswer in 3-5 sentences.`,
+          content: `${historyBlock ? `Recent interview context:\n${historyBlock}\n\n` : ''}Evidence packet:\n${evidencePacket}\n\nQuestion: ${question}\n\nAnswer in 3-5 sentences. Use the evidence packet; do not invent unsupported details.`,
         },
       ],
     })
@@ -889,12 +1181,16 @@ export class ProfileAnalysisService {
     turns: ProfileInterviewTurn[],
     providerInfo: LLMProviderInfo
   ): Promise<ProfileStageFinding> {
-    const evidenceBlock = summarizeSignals(evidenceSignals, 10)
+    const evidenceBlock = evidenceSignals
+      .slice(0, 12)
+      .map((signal) => `- ${signal.id} | ${signal.label} | ${signal.snippet}`)
+      .join('\n')
     const transcriptBlock = turns
       .map((turn, index) => `Q${index + 1}: ${turn.question}\nA${index + 1}: ${turn.answer}`)
       .join('\n\n')
+    const knownRefs = new Set(evidenceSignals.map((signal) => signal.id))
 
-    const prompt = `You are extracting structured psychological evidence from one interview stage.\nReturn strict JSON only.\n\nStage: ${stageTitle}\n\nEvidence:\n${evidenceBlock}\n\nTranscript:\n${transcriptBlock}\n\nReturn JSON with keys:\nsummary, bigFiveSignals, mbtiHints, enneagramHints, communicationHints, contradictions, confidenceNotes.\n- bigFiveSignals must be an object with optional arrays for openness, conscientiousness, extraversion, agreeableness, neuroticism.\n- Keep all arrays concise.\n- Do not include markdown.`
+    const prompt = `You are extracting structured psychological evidence from one interview stage.\nReturn strict JSON only.\n\nStage: ${stageTitle}\n\nEvidence:\n${evidenceBlock}\n\nTranscript:\n${transcriptBlock}\n\nReturn JSON with keys:\nsummary, evidenceRefs, claims, bigFiveSignals, mbtiHints, enneagramHints, communicationHints, contradictions, confidenceNotes.\nRules:\n- evidenceRefs must be an array of evidence ids used by the summary.\n- claims must be an array of objects with keys claim, evidenceRefs, categories.\n- categories must use only: summary, communicationStyle, motivationalProfile, strengths, challenges, triggers, growthEdges, bigFive, mbti, enneagram.\n- bigFiveSignals must be an object with optional arrays for openness, conscientiousness, extraversion, agreeableness, neuroticism.\n- Keep all arrays concise.\n- Do not include markdown or unsupported evidence ids.`
 
     const result = await generateText({
       providerInfo,
@@ -908,9 +1204,26 @@ export class ProfileAnalysisService {
     })
 
     const parsed = safeJsonParse<Record<string, unknown>>(result.content)
+    const fallbackRefs = turns.flatMap((turn) => turn.evidenceRefs || []).slice(0, 6)
     return {
       stage,
       summary: typeof parsed?.summary === 'string' ? parsed.summary : `${stageTitle} findings extracted from interview and evidence.`,
+      evidenceRefs: normalizeEvidenceRefList(parsed?.evidenceRefs, knownRefs, fallbackRefs),
+      claims: Array.isArray(parsed?.claims)
+        ? parsed.claims
+          .map((entry) => {
+            if (!entry || typeof entry !== 'object') return null
+            const record = entry as Record<string, unknown>
+            const claim = typeof record.claim === 'string' ? summarizeText(record.claim, 220) : ''
+            const evidenceRefs = normalizeEvidenceRefList(record.evidenceRefs, knownRefs, fallbackRefs)
+            const categories = Array.isArray(record.categories)
+              ? record.categories.filter((category): category is string => typeof category === 'string')
+              : []
+            if (!claim || evidenceRefs.length === 0) return null
+            return { claim, evidenceRefs, categories }
+          })
+          .filter((entry): entry is NonNullable<ProfileStageFinding['claims']>[number] => Boolean(entry))
+        : [],
       bigFiveSignals: asRecordOfStringArrays(parsed?.bigFiveSignals),
       mbtiHints: ensureArray(parsed?.mbtiHints),
       enneagramHints: ensureArray(parsed?.enneagramHints),
@@ -926,14 +1239,26 @@ export class ProfileAnalysisService {
     stageFindings: ProfileStageFinding[],
     interviewTurns: ProfileInterviewTurn[],
     providerInfo: LLMProviderInfo
-  ): Promise<PsychologicalProfile> {
+  ): Promise<{
+    profile: PsychologicalProfile
+    rawModelOutput: OutputQualityRawModelOutput
+  }> {
     const scaffold = psychologicalProfileService.generateProfile(agent)
-    const prompt = `You are synthesizing a production-ready psychological profile for an inspectable AI agent.\nReturn strict JSON only.\n\nAgent name: ${agent.name}\nPersona: ${summarizeText(agent.persona, 280)}\nGoals: ${(agent.goals || []).slice(0, 4).join(' | ') || 'none'}\n\nDeterministic scaffold:\n${JSON.stringify(scaffold, null, 2)}\n\nStage findings:\n${JSON.stringify(stageFindings, null, 2)}\n\nRecent interview transcript:\n${JSON.stringify(interviewTurns.slice(-6), null, 2)}\n\nEvidence sample:\n${JSON.stringify(evidenceSignals.slice(0, 12), null, 2)}\n\nReturn JSON with keys:\n- bigFive\n- mbti\n- enneagram\n- communicationStyle\n- attachmentStyle\n- cognitiveStyle\n- emotionalIntelligence\n- motivationalProfile\n- summary\n- strengths\n- challenges\n- confidence\n- rationales\n\nRules:\n- Preserve the same shapes as the deterministic scaffold where applicable.\n- Confidence must be 0-1.\n- strengths and challenges should each have 3-5 items.\n- rationales must include bigFive, mbti, enneagram, communicationStyle, stressPattern, motivationAndGrowth.\n- Keep the profile distinct, concrete, and evidence-grounded.`
+    const knownRefs = new Set(evidenceSignals.map((signal) => signal.id))
+    const prompt = `You are synthesizing a production-ready psychological profile for an inspectable AI agent.\nReturn strict JSON only.\n\nAgent name: ${agent.name}\nPersona: ${summarizeText(agent.persona, 280)}\nGoals: ${(agent.goals || []).slice(0, 4).join(' | ') || 'none'}\n\nUse this deterministic scaffold only as a shape fallback, not as your narrative source of truth:\n${JSON.stringify({
+      bigFive: scaffold.bigFive,
+      mbti: scaffold.mbti,
+      enneagram: scaffold.enneagram,
+      communicationStyle: scaffold.communicationStyle,
+      attachmentStyle: scaffold.attachmentStyle,
+      cognitiveStyle: scaffold.cognitiveStyle,
+      motivationalProfile: scaffold.motivationalProfile,
+    }, null, 2)}\n\nStage findings:\n${JSON.stringify(stageFindings, null, 2)}\n\nRecent interview transcript:\n${JSON.stringify(interviewTurns.slice(-8), null, 2)}\n\nEvidence sample:\n${JSON.stringify(evidenceSignals.slice(0, 16), null, 2)}\n\nReturn JSON with keys:\n- bigFive\n- mbti\n- enneagram\n- communicationStyle\n- attachmentStyle\n- cognitiveStyle\n- emotionalIntelligence\n- motivationalProfile\n- summary\n- strengths\n- challenges\n- triggers\n- growthEdges\n- confidence\n- rationales\n- claimEvidence\n\nclaimEvidence must contain:\n- summary: evidence ids\n- communicationStyle: evidence ids\n- motivationalProfile: evidence ids\n- bigFive: object of trait -> evidence ids\n- mbti: evidence ids\n- enneagram: evidence ids\n- strengths: array of { claim, evidenceRefs }\n- challenges: array of { claim, evidenceRefs }\n- triggers: array of { claim, evidenceRefs }\n- growthEdges: array of { claim, evidenceRefs }\n\nRules:\n- Every top-level claim group must cite evidence ids that exist in the evidence sample or stage findings.\n- Keep the language evidence-led and specific. Avoid generic descriptor stacks.\n- strengths, challenges, triggers, and growthEdges must each have 2-4 items.\n- rationales must include bigFive, mbti, enneagram, communicationStyle, stressPattern, motivationAndGrowth.\n- Confidence must be 0-1.`
 
     const result = await generateText({
       providerInfo,
-      temperature: 0.35,
-      maxTokens: 1200,
+      temperature: 0.3,
+      maxTokens: 1600,
       timeoutMs: 50000,
       messages: [
         { role: 'system', content: 'You create inspectable structured profiles. Return valid JSON only.' },
@@ -965,25 +1290,90 @@ export class ProfileAnalysisService {
     const enneagram = deriveEnneagram(agent, scaffold.enneagram, stageFindings)
     const derivedStrengthsAndChallenges = buildStrengthsAndChallenges(agent, bigFive)
     const rationales = {
-      ...(typeof parsed?.rationales === 'object' && parsed.rationales ? parsed.rationales as Record<string, string> : {}),
       ...buildRationales(stageFindings, bigFive, mbti, enneagram),
+      ...(typeof parsed?.rationales === 'object' && parsed.rationales ? parsed.rationales as Record<string, string> : {}),
     }
+    const claimEvidenceInput = parsed?.claimEvidence && typeof parsed.claimEvidence === 'object'
+      ? parsed.claimEvidence as Record<string, unknown>
+      : {}
+    const fallbackStageRefs = Array.from(new Set(stageFindings.flatMap((finding) => finding.evidenceRefs || []))).slice(0, 6)
+    const claimEvidence: ProfileClaimEvidenceMap = {
+      summary: normalizeEvidenceRefList(claimEvidenceInput.summary, knownRefs, fallbackStageRefs),
+      communicationStyle: normalizeEvidenceRefList(claimEvidenceInput.communicationStyle, knownRefs, fallbackStageRefs),
+      motivationalProfile: normalizeEvidenceRefList(claimEvidenceInput.motivationalProfile, knownRefs, fallbackStageRefs),
+      bigFive: {
+        openness: normalizeEvidenceRefList((claimEvidenceInput.bigFive as Record<string, unknown> | undefined)?.openness, knownRefs, fallbackStageRefs),
+        conscientiousness: normalizeEvidenceRefList((claimEvidenceInput.bigFive as Record<string, unknown> | undefined)?.conscientiousness, knownRefs, fallbackStageRefs),
+        extraversion: normalizeEvidenceRefList((claimEvidenceInput.bigFive as Record<string, unknown> | undefined)?.extraversion, knownRefs, fallbackStageRefs),
+        agreeableness: normalizeEvidenceRefList((claimEvidenceInput.bigFive as Record<string, unknown> | undefined)?.agreeableness, knownRefs, fallbackStageRefs),
+        neuroticism: normalizeEvidenceRefList((claimEvidenceInput.bigFive as Record<string, unknown> | undefined)?.neuroticism, knownRefs, fallbackStageRefs),
+      },
+      mbti: normalizeEvidenceRefList(claimEvidenceInput.mbti, knownRefs, fallbackStageRefs),
+      enneagram: normalizeEvidenceRefList(claimEvidenceInput.enneagram, knownRefs, fallbackStageRefs),
+      strengths: normalizeProfileClaimRefs(claimEvidenceInput.strengths, knownRefs, fallbackStageRefs),
+      challenges: normalizeProfileClaimRefs(claimEvidenceInput.challenges, knownRefs, fallbackStageRefs),
+      triggers: normalizeProfileClaimRefs(claimEvidenceInput.triggers, knownRefs, fallbackStageRefs),
+      growthEdges: normalizeProfileClaimRefs(claimEvidenceInput.growthEdges, knownRefs, fallbackStageRefs),
+    }
+    const strengths = extractClaimTexts(claimEvidence.strengths)
+    const challenges = extractClaimTexts(claimEvidence.challenges)
+    const triggers = extractClaimTexts(claimEvidence.triggers)
+    const growthEdges = extractClaimTexts(claimEvidence.growthEdges)
+    const summary = typeof parsed?.summary === 'string' ? summarizeText(parsed.summary, 460) : buildSummary(agent, bigFive, mbti, enneagram)
 
     return {
-      ...scaffold,
+      profile: normalizePsychologicalProfile({
+        ...scaffold,
       bigFive,
       mbti,
       enneagram,
-      communicationStyle: scaffold.communicationStyle,
-      attachmentStyle: scaffold.attachmentStyle,
-      cognitiveStyle: scaffold.cognitiveStyle,
+      communicationStyle: typeof parsed?.communicationStyle === 'object' && parsed.communicationStyle
+        ? {
+            directness: clamp(typeof (parsed.communicationStyle as Record<string, unknown>).directness === 'number' ? (parsed.communicationStyle as Record<string, number>).directness : scaffold.communicationStyle.directness),
+            emotionalExpression: clamp(typeof (parsed.communicationStyle as Record<string, unknown>).emotionalExpression === 'number' ? (parsed.communicationStyle as Record<string, number>).emotionalExpression : scaffold.communicationStyle.emotionalExpression),
+            conflictStyle: ['avoiding', 'accommodating', 'competing', 'collaborating', 'compromising'].includes(String((parsed.communicationStyle as Record<string, unknown>).conflictStyle))
+              ? (parsed.communicationStyle as Record<string, PsychologicalProfile['communicationStyle']['conflictStyle']>).conflictStyle
+              : scaffold.communicationStyle.conflictStyle,
+          }
+        : scaffold.communicationStyle,
+      attachmentStyle: ['secure', 'anxious', 'avoidant', 'disorganized'].includes(String(parsed?.attachmentStyle))
+        ? parsed?.attachmentStyle as PsychologicalProfile['attachmentStyle']
+        : scaffold.attachmentStyle,
+      cognitiveStyle: typeof parsed?.cognitiveStyle === 'object' && parsed.cognitiveStyle
+        ? {
+            analyticalVsIntuitive: clampSigned(typeof (parsed.cognitiveStyle as Record<string, unknown>).analyticalVsIntuitive === 'number' ? (parsed.cognitiveStyle as Record<string, number>).analyticalVsIntuitive : scaffold.cognitiveStyle.analyticalVsIntuitive),
+            abstractVsConcrete: clampSigned(typeof (parsed.cognitiveStyle as Record<string, unknown>).abstractVsConcrete === 'number' ? (parsed.cognitiveStyle as Record<string, number>).abstractVsConcrete : scaffold.cognitiveStyle.abstractVsConcrete),
+            sequentialVsGlobal: clampSigned(typeof (parsed.cognitiveStyle as Record<string, unknown>).sequentialVsGlobal === 'number' ? (parsed.cognitiveStyle as Record<string, number>).sequentialVsGlobal : scaffold.cognitiveStyle.sequentialVsGlobal),
+            reflectiveVsImpulsive: clampSigned(typeof (parsed.cognitiveStyle as Record<string, unknown>).reflectiveVsImpulsive === 'number' ? (parsed.cognitiveStyle as Record<string, number>).reflectiveVsImpulsive : scaffold.cognitiveStyle.reflectiveVsImpulsive),
+          }
+        : scaffold.cognitiveStyle,
       emotionalIntelligence: clamp(typeof parsed?.emotionalIntelligence === 'number' ? parsed.emotionalIntelligence : scaffold.emotionalIntelligence),
-      motivationalProfile: scaffold.motivationalProfile,
-      summary: buildSummary(agent, bigFive, mbti, enneagram),
-      strengths: derivedStrengthsAndChallenges.strengths,
-      challenges: derivedStrengthsAndChallenges.challenges,
+      motivationalProfile: typeof parsed?.motivationalProfile === 'object' && parsed.motivationalProfile
+        ? {
+            primaryMotivations: ensureArray((parsed.motivationalProfile as Record<string, unknown>).primaryMotivations).slice(0, 4),
+            fears: ensureArray((parsed.motivationalProfile as Record<string, unknown>).fears).slice(0, 4),
+            desires: ensureArray((parsed.motivationalProfile as Record<string, unknown>).desires).slice(0, 4),
+            coreValues: ensureArray((parsed.motivationalProfile as Record<string, unknown>).coreValues).slice(0, 5),
+            growthAreas: ensureArray((parsed.motivationalProfile as Record<string, unknown>).growthAreas).slice(0, 4),
+          }
+        : scaffold.motivationalProfile,
+      summary,
+      strengths: strengths.length > 0 ? strengths : derivedStrengthsAndChallenges.strengths,
+      challenges: challenges.length > 0 ? challenges : derivedStrengthsAndChallenges.challenges,
+      triggers,
+      growthEdges,
       confidence: clamp(typeof parsed?.confidence === 'number' ? parsed.confidence : 0.74),
       rationales,
+      claimEvidence,
+      source: 'analysis_run',
+      qualityStatus: 'pending',
+      profileVersion: PROFILE_VERSION,
+    }, {
+      source: 'analysis_run',
+      qualityStatus: 'pending',
+      profileVersion: PROFILE_VERSION,
+    }),
+      rawModelOutput: createRawModelOutput(result.content),
     }
   }
 
@@ -994,7 +1384,8 @@ export class ProfileAnalysisService {
     stageFindings: ProfileStageFinding[],
     providerInfo: LLMProviderInfo
   ): Promise<ProfileQualityEvaluation> {
-    const prompt = `Evaluate this psychological profile for an inspectable AI agent. Return strict JSON only.\n\nAgent: ${agent.name}\nProfile:\n${JSON.stringify(profile, null, 2)}\n\nStage findings:\n${JSON.stringify(stageFindings, null, 2)}\n\nEvidence sample:\n${JSON.stringify(evidenceSignals.slice(0, 10), null, 2)}\n\nReturn JSON with keys: overallScore, pass, dimensions, strengths, weaknesses, repairInstructions, evaluatorSummary.\nDimensions must include evidenceGrounding, consistency, distinctiveness, communicationUsefulness, rationaleCompleteness, each with score and rationale.\nThe pass rule is only true if all threshold scores are met: grounding >= ${QUALITY_THRESHOLDS.evidenceGrounding}, consistency >= ${QUALITY_THRESHOLDS.consistency}, distinctiveness >= ${QUALITY_THRESHOLDS.distinctiveness}, communication usefulness >= ${QUALITY_THRESHOLDS.communicationUsefulness}, rationale completeness >= ${QUALITY_THRESHOLDS.rationaleCompleteness}.`
+    const evidenceCoverage = computeEvidenceCoverage(profile)
+    const prompt = `Evaluate this psychological profile for an inspectable AI agent. Return strict JSON only.\n\nAgent: ${agent.name}\nProfile:\n${JSON.stringify(profile, null, 2)}\n\nStage findings:\n${JSON.stringify(stageFindings, null, 2)}\n\nEvidence sample:\n${JSON.stringify(evidenceSignals.slice(0, 12), null, 2)}\n\nEvidence coverage summary:\n${JSON.stringify(evidenceCoverage, null, 2)}\n\nReturn JSON with keys: overallScore, pass, dimensions, strengths, weaknesses, repairInstructions, evaluatorSummary, hardFailureFlags.\nDimensions must include evidenceGrounding, consistency, distinctiveness, communicationUsefulness, rationaleCompleteness, each with score and rationale.\nSet pass true only if overallScore >= ${PROFILE_OVERALL_SCORE_MINIMUM}, every dimension >= ${PROFILE_DIMENSION_FLOOR}, evidence coverage >= ${PROFILE_EVIDENCE_COVERAGE_MINIMUM} percent, and there are no hard failure flags.`
 
     try {
       const result = await generateText({
@@ -1043,14 +1434,18 @@ export class ProfileAnalysisService {
         weaknesses: ensureArray(parsed.weaknesses),
         repairInstructions: ensureArray(parsed.repairInstructions),
         evaluatorSummary: typeof parsed.evaluatorSummary === 'string' ? parsed.evaluatorSummary : 'No evaluator summary provided.',
+        hardFailureFlags: ensureArray(parsed.hardFailureFlags),
       }
 
       normalized.pass = (
+        normalized.overallScore >= PROFILE_OVERALL_SCORE_MINIMUM &&
         normalized.dimensions.evidenceGrounding.score >= QUALITY_THRESHOLDS.evidenceGrounding &&
         normalized.dimensions.consistency.score >= QUALITY_THRESHOLDS.consistency &&
         normalized.dimensions.distinctiveness.score >= QUALITY_THRESHOLDS.distinctiveness &&
         normalized.dimensions.communicationUsefulness.score >= QUALITY_THRESHOLDS.communicationUsefulness &&
-        normalized.dimensions.rationaleCompleteness.score >= QUALITY_THRESHOLDS.rationaleCompleteness
+        normalized.dimensions.rationaleCompleteness.score >= QUALITY_THRESHOLDS.rationaleCompleteness &&
+        evidenceCoverage.pass &&
+        (normalized.hardFailureFlags?.length || 0) === 0
       )
 
       return normalized
@@ -1066,8 +1461,11 @@ export class ProfileAnalysisService {
     stageFindings: ProfileStageFinding[],
     evidenceSignals: ProfileEvidenceSignal[],
     providerInfo: LLMProviderInfo
-  ): Promise<PsychologicalProfile> {
-    const prompt = `Repair this psychological profile once. Return strict JSON only.\n\nAgent: ${agent.name}\nCurrent profile:\n${JSON.stringify(profile, null, 2)}\n\nEvaluation:\n${JSON.stringify(evaluation, null, 2)}\n\nStage findings:\n${JSON.stringify(stageFindings, null, 2)}\n\nEvidence sample:\n${JSON.stringify(evidenceSignals.slice(0, 10), null, 2)}\n\nPreserve the same schema as the current profile. Improve distinctiveness, grounding, and rationale clarity without becoming verbose.`
+  ): Promise<{
+    profile: PsychologicalProfile
+    rawModelOutput: OutputQualityRawModelOutput
+  }> {
+    const prompt = `Repair this psychological profile once. Return strict JSON only.\n\nAgent: ${agent.name}\nCurrent profile:\n${JSON.stringify(profile, null, 2)}\n\nEvaluation:\n${JSON.stringify(evaluation, null, 2)}\n\nStage findings:\n${JSON.stringify(stageFindings, null, 2)}\n\nEvidence sample:\n${JSON.stringify(evidenceSignals.slice(0, 12), null, 2)}\n\nKeep the same schema. Improve evidence coverage, distinctiveness, and rationale clarity without becoming verbose. Do not remove claimEvidence.`
 
     const result = await generateText({
       providerInfo,
@@ -1081,10 +1479,99 @@ export class ProfileAnalysisService {
     })
 
     const parsed = safeJsonParse<PsychologicalProfile>(result.content)
-    return parsed ? {
-      ...profile,
-      ...parsed,
-    } : profile
+    return {
+      profile: parsed ? normalizePsychologicalProfile({
+        ...profile,
+        ...parsed,
+      }, {
+        source: 'analysis_run',
+        qualityStatus: 'pending',
+        profileVersion: PROFILE_VERSION,
+      }) : profile,
+      rawModelOutput: createRawModelOutput(result.content),
+    }
+  }
+
+  private validateProfileRun(params: {
+    profile: PsychologicalProfile
+    stageFindings: ProfileStageFinding[]
+    interviewTurns: ProfileInterviewTurn[]
+    sourceRefs: OutputQualitySourceRef[]
+  }): OutputQualityValidationReport {
+    const coverage = computeEvidenceCoverage(params.profile)
+    const hardFailureFlags = [
+      ...validateRequiredTextFields({
+        summary: params.profile.summary,
+      }),
+      ...validateSharedArtifactText({
+        summary: params.profile.summary,
+        strengths: params.profile.strengths.join(' | '),
+        challenges: params.profile.challenges.join(' | '),
+        triggers: (params.profile.triggers || []).join(' | '),
+        growthEdges: (params.profile.growthEdges || []).join(' | '),
+        rationaleBigFive: params.profile.rationales?.bigFive,
+        rationaleMbti: params.profile.rationales?.mbti,
+        rationaleEnneagram: params.profile.rationales?.enneagram,
+        rationaleCommunication: params.profile.rationales?.communicationStyle,
+        rationaleStress: params.profile.rationales?.stressPattern,
+        rationaleGrowth: params.profile.rationales?.motivationAndGrowth,
+      }),
+      ...validateSourceRefs(params.sourceRefs),
+      ...(params.interviewTurns.length === 0 ? ['profile_missing_interview_transcript'] : []),
+      ...(params.interviewTurns.some((turn) => !turn.question.trim() || !turn.answer.trim()) ? ['profile_empty_interview_turn'] : []),
+      ...(params.stageFindings.length === 0 ? ['profile_missing_stage_findings'] : []),
+      ...(params.stageFindings.some((finding) => !finding.evidenceRefs?.length) ? ['profile_stage_summary_missing_evidence_refs'] : []),
+      ...(params.stageFindings.some((finding) => (finding.claims || []).length === 0) ? ['profile_stage_claims_missing'] : []),
+      ...(params.stageFindings.some((finding) => (finding.claims || []).some((claim) => claim.evidenceRefs.length === 0)) ? ['profile_stage_claim_missing_evidence_refs'] : []),
+      ...(coverage.pass ? [] : ['profile_evidence_coverage_below_threshold']),
+      ...(listClaimEvidenceCoverage(params.profile.claimEvidence?.summary) ? [] : ['profile_summary_missing_evidence_refs']),
+      ...(listClaimEvidenceCoverage(params.profile.claimEvidence?.communicationStyle) ? [] : ['profile_communication_missing_evidence_refs']),
+      ...(listClaimEvidenceCoverage(params.profile.claimEvidence?.motivationalProfile) ? [] : ['profile_motivation_missing_evidence_refs']),
+      ...(listClaimEvidenceCoverage(params.profile.claimEvidence?.mbti) ? [] : ['profile_mbti_missing_evidence_refs']),
+      ...(listClaimEvidenceCoverage(params.profile.claimEvidence?.enneagram) ? [] : ['profile_enneagram_missing_evidence_refs']),
+      ...((params.profile.claimEvidence?.strengths || []).length === 0 ? ['profile_strengths_missing_evidence_refs'] : []),
+      ...((params.profile.claimEvidence?.challenges || []).length === 0 ? ['profile_challenges_missing_evidence_refs'] : []),
+      ...((params.profile.claimEvidence?.triggers || []).length === 0 ? ['profile_triggers_missing_evidence_refs'] : []),
+      ...((params.profile.claimEvidence?.growthEdges || []).length === 0 ? ['profile_growth_edges_missing_evidence_refs'] : []),
+    ]
+
+    const softWarnings = [
+      ...(params.profile.confidence && params.profile.confidence < 0.55 ? ['profile_low_confidence'] : []),
+      ...(coverage.coveragePercent < 100 ? [`profile_partial_evidence_coverage:${coverage.coveragePercent}`] : []),
+    ]
+
+    return createValidationReport({
+      hardFailureFlags,
+      softWarnings,
+      validatorVersion: PROFILE_VALIDATOR_VERSION,
+    })
+  }
+
+  private createBlockedEvaluation(validation?: OutputQualityValidationReport): ProfileQualityEvaluation {
+    const blockerMessage = validation?.hardFailureFlags.length
+      ? `Validation blocked evaluation: ${validation.hardFailureFlags.join(', ')}.`
+      : 'Validation blocked evaluation.'
+
+    return {
+      overallScore: 0,
+      pass: false,
+      dimensions: {
+        evidenceGrounding: { score: 0, rationale: blockerMessage },
+        consistency: { score: 0, rationale: blockerMessage },
+        distinctiveness: { score: 0, rationale: blockerMessage },
+        communicationUsefulness: { score: 0, rationale: blockerMessage },
+        rationaleCompleteness: { score: 0, rationale: blockerMessage },
+      },
+      strengths: [],
+      weaknesses: [blockerMessage],
+      repairInstructions: [
+        'Return a clean JSON object only.',
+        'Add evidence refs to every stage finding and every top-level profile claim group.',
+        'Keep the profile grounded in the provided evidence packet and transcript.',
+      ],
+      evaluatorSummary: blockerMessage,
+      hardFailureFlags: validation?.hardFailureFlags || ['profile_validation_blocked_evaluation'],
+    }
   }
 }
 

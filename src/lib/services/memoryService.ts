@@ -27,6 +27,16 @@ import {
 import { AgentService } from './agentService'
 
 const MEMORIES_COLLECTION = 'memories'
+const SEMANTIC_MEMORY_TYPES = new Set<MemoryRecord['type']>([
+  'fact',
+  'preference',
+  'project',
+  'relationship',
+  'identity',
+  'operating_constraint',
+  'artifact_summary',
+  'tension_snapshot',
+])
 
 function stripUndefinedFields<T extends Record<string, unknown>>(data: T): T {
   return Object.fromEntries(
@@ -48,6 +58,12 @@ function firestoreDocToMemory(docSnap: { id: string; data: () => Record<string, 
     timestamp: data.timestamp as string || new Date().toISOString(),
     origin: (data.origin as MemoryRecord['origin']) || 'imported',
     linkedMessageIds: (data.linkedMessageIds as string[]) || [],
+    canonicalKey: data.canonicalKey as string | undefined,
+    canonicalValue: data.canonicalValue as string | undefined,
+    confidence: typeof data.confidence === 'number' ? data.confidence as number : undefined,
+    evidenceRefs: (data.evidenceRefs as string[]) || undefined,
+    supersedes: (data.supersedes as string[]) || undefined,
+    lastConfirmedAt: data.lastConfirmedAt as string | undefined,
     metadata: data.metadata as Record<string, unknown> | undefined,
     userId: data.userId as string | undefined,
     isActive: (data.isActive as boolean) !== false,
@@ -65,6 +81,12 @@ function memoryToFirestoreDoc(memory: Partial<MemoryRecord>): Record<string, unk
     context: memory.context,
     origin: memory.origin,
     linkedMessageIds: memory.linkedMessageIds,
+    canonicalKey: memory.canonicalKey,
+    canonicalValue: memory.canonicalValue,
+    confidence: memory.confidence,
+    evidenceRefs: memory.evidenceRefs,
+    supersedes: memory.supersedes,
+    lastConfirmedAt: memory.lastConfirmedAt,
     metadata: memory.metadata,
     userId: memory.userId,
     isActive: memory.isActive,
@@ -94,6 +116,10 @@ function resolveMemoryOrigin(memoryData: Pick<CreateMemoryData, 'type' | 'origin
 
 function isConsoleMemory(memory: MemoryRecord): boolean {
   return memory.type !== 'personality_insight' && memory.isActive !== false
+}
+
+function isSemanticMemory(memory: MemoryRecord): boolean {
+  return SEMANTIC_MEMORY_TYPES.has(memory.type)
 }
 
 function normalizeMemoryText(value: string): string {
@@ -225,6 +251,12 @@ export class MemoryService {
         context: memoryData.context,
         origin: resolveMemoryOrigin(memoryData),
         linkedMessageIds: memoryData.linkedMessageIds || [],
+        canonicalKey: memoryData.canonicalKey,
+        canonicalValue: memoryData.canonicalValue,
+        confidence: memoryData.confidence,
+        evidenceRefs: memoryData.evidenceRefs,
+        supersedes: memoryData.supersedes,
+        lastConfirmedAt: memoryData.lastConfirmedAt,
         metadata: memoryData.metadata,
         userId: memoryData.userId,
         isActive: true,
@@ -306,6 +338,13 @@ export class MemoryService {
           importance: Math.max(existing.importance, params.importance ?? existing.importance),
           context: params.context,
           linkedMessageIds: mergeStringArrays(existing.linkedMessageIds, params.linkedMessageIds),
+          canonicalKey: params.factKey,
+          canonicalValue: typeof params.metadata?.canonicalValue === 'string'
+            ? params.metadata.canonicalValue
+            : existing.canonicalValue,
+          confidence: Math.max(existing.confidence || 0, 0.7),
+          evidenceRefs: mergeStringArrays(existing.evidenceRefs, params.linkedMessageIds),
+          lastConfirmedAt: nextMetadata.lastConfirmedAt as string,
           metadata: nextMetadata,
         })
 
@@ -322,10 +361,90 @@ export class MemoryService {
         context: params.context,
         origin: 'system',
         linkedMessageIds: params.linkedMessageIds || [],
+        canonicalKey: params.factKey,
+        canonicalValue: typeof params.metadata?.canonicalValue === 'string'
+          ? params.metadata.canonicalValue
+          : params.summary,
+        confidence: 0.7,
+        evidenceRefs: params.linkedMessageIds || [],
+        lastConfirmedAt: nextMetadata.lastConfirmedAt as string,
         metadata: nextMetadata,
       })
     } catch (error) {
       console.error('Error upserting fact memory:', error)
+      return null
+    }
+  }
+
+  static async upsertSemanticMemory(params: {
+    agentId: string
+    type: Extract<MemoryRecord['type'], 'preference' | 'project' | 'relationship' | 'identity' | 'operating_constraint' | 'artifact_summary' | 'tension_snapshot' | 'fact'>
+    canonicalKey: string
+    canonicalValue: string
+    content: string
+    summary: string
+    keywords: string[]
+    importance?: number
+    confidence?: number
+    context: string
+    linkedMessageIds?: string[]
+    evidenceRefs?: string[]
+    metadata?: Record<string, unknown>
+  }): Promise<MemoryRecord | null> {
+    try {
+      const existingOfType = await this.getMemoriesByType(params.agentId, params.type)
+      const existing = existingOfType.find((memory) => (
+        memory.canonicalKey === params.canonicalKey
+        || memory.metadata?.factKey === params.canonicalKey
+      ))
+
+      const lastConfirmedAt = new Date().toISOString()
+      const nextMetadata = {
+        ...(existing?.metadata || {}),
+        ...(params.metadata || {}),
+        factKey: params.canonicalKey,
+        semanticType: params.type,
+        lastConfirmedAt,
+      }
+
+      if (existing) {
+        const updated = await this.updateMemory(existing.id, {
+          content: normalizeMemoryText(params.content),
+          summary: normalizeMemoryText(params.summary),
+          keywords: mergeStringArrays(existing.keywords, params.keywords),
+          importance: Math.max(existing.importance, params.importance ?? existing.importance),
+          context: params.context,
+          linkedMessageIds: mergeStringArrays(existing.linkedMessageIds, params.linkedMessageIds),
+          canonicalKey: params.canonicalKey,
+          canonicalValue: normalizeMemoryText(params.canonicalValue),
+          confidence: Math.max(existing.confidence || 0, params.confidence || 0),
+          evidenceRefs: mergeStringArrays(existing.evidenceRefs, params.evidenceRefs),
+          metadata: nextMetadata,
+          lastConfirmedAt,
+        })
+
+        return updated ? await this.getMemoryById(existing.id) : null
+      }
+
+      return this.createMemory({
+        agentId: params.agentId,
+        type: params.type,
+        content: normalizeMemoryText(params.content),
+        summary: normalizeMemoryText(params.summary),
+        keywords: mergeStringArrays(params.keywords, [params.canonicalKey]),
+        importance: params.importance ?? 8,
+        context: params.context,
+        origin: 'system',
+        linkedMessageIds: params.linkedMessageIds || [],
+        canonicalKey: params.canonicalKey,
+        canonicalValue: normalizeMemoryText(params.canonicalValue),
+        confidence: params.confidence,
+        evidenceRefs: params.evidenceRefs || [],
+        lastConfirmedAt,
+        metadata: nextMetadata,
+      })
+    } catch (error) {
+      console.error('Error upserting semantic memory:', error)
       return null
     }
   }
@@ -517,8 +636,9 @@ export class MemoryService {
         const contentLower = memory.content.toLowerCase()
         const summaryLower = memory.summary.toLowerCase()
         const contextLower = memory.context.toLowerCase()
+        const canonicalLower = memory.canonicalValue?.toLowerCase() || ''
         const overlap = queryWords.filter((word) => (
-          contentLower.includes(word) || summaryLower.includes(word) || contextLower.includes(word)
+          contentLower.includes(word) || summaryLower.includes(word) || contextLower.includes(word) || canonicalLower.includes(word)
         )).length
 
         memory.keywords.forEach((keyword) => {
@@ -529,13 +649,14 @@ export class MemoryService {
 
         if (
           contentLower.includes(queryLower) ||
-          contextLower.includes(queryLower)
+          contextLower.includes(queryLower) ||
+          canonicalLower.includes(queryLower)
         ) {
           score += 1
         }
 
         score += overlap * 0.75
-        if (memory.type === 'fact') {
+        if (isSemanticMemory(memory)) {
           score += 1.25
         }
         score += memory.importance * 0.5
@@ -580,6 +701,8 @@ export class MemoryService {
           memory.summary.toLowerCase().includes(search)
           || memory.content.toLowerCase().includes(search)
           || memory.context.toLowerCase().includes(search)
+          || memory.canonicalKey?.toLowerCase().includes(search)
+          || memory.canonicalValue?.toLowerCase().includes(search)
           || memory.keywords.some((keyword) => keyword.toLowerCase().includes(search))
         ))
       }
@@ -615,8 +738,10 @@ export class MemoryService {
 
       const memories = await this.listConsoleMemories(agentId, { limit: 200 })
       const queryWords = trimmedQueryWords(trimmedQuery)
-      const scoredMemories = memories.map((memory) => {
-        let score = memory.importance * 0.4
+      const { MemoryGraphService } = await import('./memoryGraphService')
+      const scoredMemories = await Promise.all(memories.map(async (memory) => {
+        const semanticHit = isSemanticMemory(memory)
+        let score = memory.importance * (semanticHit ? 0.55 : 0.35)
         const reasons: string[] = []
         const contentLower = memory.content.toLowerCase()
         const summaryLower = memory.summary.toLowerCase()
@@ -628,8 +753,19 @@ export class MemoryService {
           reasons.push(`Matched keywords: ${exactKeywordMatches.slice(0, 3).join(', ')}`)
         }
 
+        if (semanticHit && memory.canonicalValue) {
+          const canonicalLower = memory.canonicalValue.toLowerCase()
+          if (canonicalLower.includes(trimmedQuery) || queryWords.some((word) => canonicalLower.includes(word))) {
+            score += 2.2
+            reasons.push('Matched a canonical semantic memory')
+          }
+        }
+
         const overlappingWords = queryWords.filter((word) => (
-          summaryLower.includes(word) || contentLower.includes(word) || contextLower.includes(word)
+          summaryLower.includes(word)
+          || contentLower.includes(word)
+          || contextLower.includes(word)
+          || memory.canonicalValue?.toLowerCase().includes(word)
         ))
         if (overlappingWords.length > 0) {
           score += overlappingWords.length * 0.7
@@ -651,17 +787,27 @@ export class MemoryService {
           reasons.push('Matched the memory context')
         }
 
-        if (memory.type === 'fact') {
-          score += 1.25
-          reasons.push('Canonical fact memory')
+        if (semanticHit) {
+          score += 1.25 + ((memory.confidence || 0) * 0.8)
+          reasons.push(`Semantic ${memory.type.replace(/_/g, ' ')} memory`)
+        } else {
+          reasons.push('Matched a raw conversation episode')
+        }
+
+        const matchedConcepts = await MemoryGraphService.getMatchedConceptNames(agentId, memory.id, trimmedQuery)
+        if (matchedConcepts.length > 0) {
+          score += matchedConcepts.length * 0.45
+          reasons.push(`Memory graph concepts: ${matchedConcepts.join(', ')}`)
         }
 
         return {
           memory,
           score,
           reasons,
+          hitType: semanticHit ? 'semantic' as const : 'episode' as const,
+          matchedConcepts,
         }
-      })
+      }))
 
       return scoredMemories
         .filter((item) => item.score > 0 && item.reasons.length > 0)

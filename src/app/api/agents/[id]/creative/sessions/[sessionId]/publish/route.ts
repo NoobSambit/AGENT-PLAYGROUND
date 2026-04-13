@@ -5,7 +5,7 @@ import {
   writeCreativeSessionToFirestore,
 } from '@/lib/creative/firestoreStore'
 import { getPersistenceMode } from '@/lib/db/persistence'
-import { creativityService } from '@/lib/services/creativityService'
+import { CreativePublishBlockedError, creativityService } from '@/lib/services/creativityService'
 
 export async function POST(
   _request: NextRequest,
@@ -28,6 +28,15 @@ export async function POST(
     return NextResponse.json(detail)
   } catch (error) {
     console.error('Creative publish error:', error)
+    if (error instanceof CreativePublishBlockedError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          publishBlockers: error.payload,
+        },
+        { status: 409 }
+      )
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to publish creative artifact' },
       { status: 500 }

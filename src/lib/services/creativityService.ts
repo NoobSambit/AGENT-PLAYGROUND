@@ -7,6 +7,28 @@ import type { LLMProviderInfo } from '@/lib/llmConfig'
 import { generateText } from '@/lib/llm/provider'
 import { CreativeStudioRepository } from '@/lib/repositories/creativeStudioRepository'
 import { FeatureContentRepository } from '@/lib/repositories/featureContentRepository'
+import {
+  createPendingTrackedFields,
+  syncTrackedQualityState,
+} from '@/lib/services/outputQuality/contracts'
+import { applyFinalQualityGate } from '@/lib/services/outputQuality/evaluators'
+import {
+  detectTextLeakage,
+  OUTPUT_QUALITY_FLAGS,
+} from '@/lib/services/outputQuality/flags'
+import {
+  createRawModelOutput,
+  normalizeSourceRefs,
+  normalizeStringList,
+  normalizeWhitespace,
+  safeParseJsonWithExtraction,
+} from '@/lib/services/outputQuality/normalizers'
+import {
+  createValidationReport,
+  validateRequiredTextFields,
+  validateSharedArtifactText,
+  validateSourceRefs,
+} from '@/lib/services/outputQuality/validators'
 import type {
   AgentRecord,
   CreativeArtifact,
@@ -25,12 +47,20 @@ import type {
   MemoryRecord,
   MessageRecord,
 } from '@/types/database'
+import type {
+  OutputArtifactRole,
+  OutputQualitySourceRef,
+  OutputQualityValidationReport,
+} from '@/types/outputQuality'
 import { AgentService } from './agentService'
 import { agentStatsService } from './agentStatsService'
 import { emotionalService } from './emotionalService'
+import { LearningService } from './learningService'
 
 const DAILY_LIMIT = 20
 const RATE_WINDOW_MS = 24 * 60 * 60 * 1000
+const CREATIVE_PROMPT_VERSION = 'phase1-creative-contract-v1'
+const CREATIVE_VALIDATOR_VERSION = 'phase1-creative-validator-v1'
 
 const CREATIVE_FORMATS: CreativeFormat[] = ['story', 'poem', 'song', 'dialogue', 'essay']
 const CREATIVE_TONES: CreativeTone[] = [
@@ -97,18 +127,6 @@ function splitList(value: string | string[] | undefined): string[] {
     .filter(Boolean)
 }
 
-function normalizeTextList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.map((entry) => String(entry).trim()).filter(Boolean)
-  }
-
-  if (typeof value === 'string') {
-    return splitList(value)
-  }
-
-  return []
-}
-
 function normalizeSingleText(value: unknown): string {
   if (typeof value === 'string') {
     return value.trim()
@@ -123,19 +141,6 @@ function normalizeSingleText(value: unknown): string {
   }
 
   return ''
-}
-
-function safeParseJson<T>(value: string): T | null {
-  const match = value.match(/\{[\s\S]*\}/)
-  if (!match) {
-    return null
-  }
-
-  try {
-    return JSON.parse(match[0]) as T
-  } catch {
-    return null
-  }
 }
 
 function stripDecorativeBreaks(value: string): string {
@@ -259,6 +264,43 @@ interface CreativeSessionDetail {
   pipelineEvents: CreativePipelineEvent[]
 }
 
+interface CreativeDraftPayload {
+  title?: string
+  summary?: string
+  content?: string
+  themes?: string[]
+  inspiration?: string
+}
+
+interface CreativeArtifactBuildResult {
+  artifact: CreativeArtifact
+  validation: OutputQualityValidationReport
+}
+
+interface CreativePublishBlockedPayload {
+  code: 'creative_publish_blocked'
+  sessionId: string
+  artifactId?: string
+  blockerReasons: string[]
+  qualityStatus: CreativeSession['qualityStatus']
+  normalizationStatus?: CreativeArtifact['normalizationStatus']
+  validation?: OutputQualityValidationReport
+  evaluation?: CreativeRubricEvaluation
+}
+
+export class CreativePublishBlockedError extends Error {
+  readonly payload: CreativePublishBlockedPayload
+
+  constructor(
+    payload: CreativePublishBlockedPayload,
+    message = 'Creative artifact is blocked from publish until quality preconditions pass.'
+  ) {
+    super(message)
+    this.name = 'CreativePublishBlockedError'
+    this.payload = payload
+  }
+}
+
 class CreativityService {
   async getBootstrap(agentId: string): Promise<BootstrapPayload> {
     const agent = await AgentService.getAgentById(agentId)
@@ -268,8 +310,13 @@ class CreativityService {
 
     const defaults = this.createSuggestedBrief(agent)
     const contextPacket = await this.buildContextPacket(agent, defaults)
-    const recentSessions = await CreativeStudioRepository.listSessions(agentId, { limit: 6 })
-    const library = await CreativeStudioRepository.listPublishedLibrary(agentId)
+    const recentSessions = (await CreativeStudioRepository.listSessions(agentId, { limit: 6 }))
+      .map((session) => this.hydrateSessionQuality(session))
+    const library = (await CreativeStudioRepository.listPublishedLibrary(agentId))
+      .map((item) => ({
+        session: this.hydrateSessionQuality(item.session),
+        artifact: this.hydrateArtifactQuality(item.artifact),
+      }))
 
     return {
       agent: {
@@ -356,6 +403,9 @@ class CreativityService {
       id: generateId('creative_session'),
       agentId,
       status: 'draft',
+      ...createPendingTrackedFields({
+        promptVersion: CREATIVE_PROMPT_VERSION,
+      }),
       brief: normalizedBrief,
       normalizedBrief,
       createdAt: now,
@@ -398,12 +448,26 @@ class CreativityService {
     }
 
     const contextPacket = await this.buildContextPacket(agent, existing.normalizedBrief)
+    const sourceRefs = normalizeSourceRefs(contextPacket.selectedSignals.map((signal) => ({
+      id: signal.id,
+      sourceType: signal.sourceType,
+      label: signal.label,
+      reason: signal.reason,
+      linkedEntityId: signal.linkedEntityId,
+    })))
     const generatingSession: CreativeSession = {
       ...existing,
       status: 'generating',
       contextPacket,
+      sourceRefs,
       provider: providerInfo.provider,
       model: providerInfo.model,
+      qualityStatus: 'pending',
+      promptVersion: CREATIVE_PROMPT_VERSION,
+      repairCount: 0,
+      failureReason: undefined,
+      rawModelOutput: undefined,
+      validation: undefined,
       updatedAt: new Date().toISOString(),
     }
     await CreativeStudioRepository.updateSession(sessionId, generatingSession)
@@ -429,7 +493,7 @@ class CreativityService {
       ],
     })
 
-    const draftArtifact = this.parseArtifactFromResponse({
+    const draftResult = this.buildValidatedArtifact({
       agentId,
       sessionId,
       format: existing.normalizedBrief.format,
@@ -439,42 +503,57 @@ class CreativityService {
       providerInfo,
       version: 1,
       status: 'draft',
+      artifactRole: 'draft',
+      sourceRefs,
     })
-    const savedDraft = await CreativeStudioRepository.saveArtifact(draftArtifact)
+    let finalArtifact = await CreativeStudioRepository.saveArtifact(draftResult.artifact)
     await CreativeStudioRepository.savePipelineEvent({
       id: generateId('creative_event'),
       sessionId,
       stage: 'draft_generated',
       status: 'completed',
-      summary: `Generated draft artifact "${savedDraft.title}".`,
+      summary: draftResult.validation.pass
+        ? `Generated normalized draft "${finalArtifact.title}".`
+        : 'Generated a draft, but normalization or validation blocked it from review.',
       payload: {
-        artifactId: savedDraft.id,
-        wordCount: savedDraft.wordCount,
+        artifactId: finalArtifact.id,
+        wordCount: finalArtifact.wordCount,
+        normalization: finalArtifact.normalization,
+        validation: finalArtifact.validation,
       },
       createdAt: new Date().toISOString(),
     })
 
-    const draftEvaluation = await this.evaluateArtifact(agent, existing.normalizedBrief, contextPacket, savedDraft, providerInfo)
+    let evaluation = draftResult.validation.pass
+      ? await this.evaluateArtifact(agent, existing.normalizedBrief, contextPacket, finalArtifact, providerInfo)
+      : this.createBlockedEvaluation(finalArtifact.validation)
     await CreativeStudioRepository.savePipelineEvent({
       id: generateId('creative_event'),
       sessionId,
       stage: 'draft_evaluated',
       status: 'completed',
-      summary: draftEvaluation.evaluatorSummary,
+      summary: evaluation.evaluatorSummary,
       payload: {
-        evaluation: draftEvaluation,
+        artifactId: finalArtifact.id,
+        evaluation,
       },
       createdAt: new Date().toISOString(),
     })
 
-    let finalArtifact: CreativeArtifact = {
-      ...savedDraft,
-      evaluation: draftEvaluation,
+    finalArtifact = await CreativeStudioRepository.updateArtifact(finalArtifact.id, {
+      ...finalArtifact,
+      evaluation,
+      qualityScore: evaluation.overallScore,
+      ...syncTrackedQualityState({
+        ...finalArtifact,
+        evaluation,
+      }, {
+        evaluationPass: evaluation.pass,
+      }),
       updatedAt: new Date().toISOString(),
-    }
-    finalArtifact = await CreativeStudioRepository.updateArtifact(finalArtifact.id, finalArtifact)
+    })
 
-    if (!draftEvaluation.pass) {
+    if (!draftResult.validation.pass || !evaluation.pass) {
       const revisionResponse = await generateText({
         providerInfo,
         temperature: 0.85,
@@ -483,12 +562,12 @@ class CreativityService {
           { role: 'system', content: this.buildGeneratorSystemPrompt(agent, existing.normalizedBrief, contextPacket) },
           {
             role: 'user',
-            content: this.buildRevisionPrompt(existing.normalizedBrief, contextPacket, finalArtifact, draftEvaluation),
+            content: this.buildRevisionPrompt(existing.normalizedBrief, contextPacket, finalArtifact, evaluation),
           },
         ],
       })
 
-      const revisedArtifact = this.parseArtifactFromResponse({
+      const repairedResult = this.buildValidatedArtifact({
         agentId,
         sessionId,
         format: existing.normalizedBrief.format,
@@ -498,20 +577,31 @@ class CreativityService {
         providerInfo,
         version: 2,
         status: 'revised',
+        artifactRole: 'repair',
+        sourceArtifactId: finalArtifact.id,
+        sourceRefs,
       })
-
-      const savedRevision = await CreativeStudioRepository.saveArtifact(revisedArtifact)
-      const revisionEvaluation = await this.evaluateArtifact(
+      const repairedArtifact = await CreativeStudioRepository.saveArtifact(repairedResult.artifact)
+      evaluation = repairedResult.validation.pass
+        ? await this.evaluateArtifact(
         agent,
         existing.normalizedBrief,
         contextPacket,
-        savedRevision,
+        repairedArtifact,
         providerInfo
       )
-
-      finalArtifact = await CreativeStudioRepository.updateArtifact(savedRevision.id, {
-        ...savedRevision,
-        evaluation: revisionEvaluation,
+        : this.createBlockedEvaluation(repairedArtifact.validation)
+      const evaluatedRepairArtifact = await CreativeStudioRepository.updateArtifact(repairedArtifact.id, {
+        ...repairedArtifact,
+        evaluation,
+        qualityScore: evaluation.overallScore,
+        ...syncTrackedQualityState({
+          ...repairedArtifact,
+          evaluation,
+          repairCount: 1,
+        }, {
+          evaluationPass: evaluation.pass,
+        }),
         updatedAt: new Date().toISOString(),
       })
 
@@ -519,32 +609,103 @@ class CreativityService {
         id: generateId('creative_event'),
         sessionId,
         stage: 'revision_generated',
-        status: 'completed',
-        summary: revisionEvaluation.evaluatorSummary,
+        status: evaluation.pass ? 'completed' : 'failed',
+        summary: repairedResult.validation.pass && evaluation.pass
+          ? 'Repair pass improved the creative draft enough for final review.'
+          : 'Repair pass still failed normalization, validation, or the creative quality gate.',
         payload: {
-          artifactId: finalArtifact.id,
-          evaluation: revisionEvaluation,
+          artifactId: evaluatedRepairArtifact.id,
+          evaluation,
+          normalization: evaluatedRepairArtifact.normalization,
+          validation: evaluatedRepairArtifact.validation,
         },
         createdAt: new Date().toISOString(),
       })
+
+      finalArtifact = await CreativeStudioRepository.saveArtifact(this.promoteFinalArtifact({
+        sourceArtifact: evaluatedRepairArtifact,
+        sourceArtifactId: evaluatedRepairArtifact.id,
+        evaluation,
+        status: 'revised',
+        artifactRole: 'final',
+        version: 3,
+      }))
+    } else {
+      finalArtifact = await CreativeStudioRepository.saveArtifact(this.promoteFinalArtifact({
+        sourceArtifact: finalArtifact,
+        sourceArtifactId: finalArtifact.id,
+        evaluation,
+        status: 'revised',
+        artifactRole: 'final',
+        version: 2,
+      }))
     }
+
+    const gate = applyFinalQualityGate({
+      validation: finalArtifact.validation,
+      evaluation,
+      thresholds: {
+        overallScoreMinimum: 80,
+        dimensionFloor: 70,
+      },
+    })
 
     const readySession: CreativeSession = {
       ...generatingSession,
-      status: 'ready',
-      latestEvaluation: finalArtifact.evaluation,
-      draftArtifactId: savedDraft.id,
+      status: gate.pass ? 'ready' : 'failed',
+      latestEvaluation: evaluation,
+      rawModelOutput: finalArtifact.rawModelOutput,
+      validation: finalArtifact.validation,
+      qualityStatus: gate.qualityStatus,
+      repairCount: finalArtifact.repairCount ?? 0,
+      promptVersion: CREATIVE_PROMPT_VERSION,
+      failureReason: gate.pass ? undefined : [evaluation.evaluatorSummary, ...gate.blockerReasons].filter(Boolean).join(' | '),
+      draftArtifactId: draftResult.artifact.id,
       finalArtifactId: finalArtifact.id,
       updatedAt: new Date().toISOString(),
     }
     const updatedSession = await CreativeStudioRepository.updateSession(sessionId, readySession)
+    await CreativeStudioRepository.savePipelineEvent({
+      id: generateId('creative_event'),
+      sessionId,
+      stage: gate.pass ? 'ready' : 'failed',
+      status: gate.pass ? 'completed' : 'failed',
+      summary: gate.pass
+        ? 'Creative artifact passed normalization, validation, and evaluation and is ready to publish.'
+        : 'Creative artifact failed normalization, validation, or evaluation and is blocked from publish.',
+      payload: {
+        artifactId: finalArtifact.id,
+        evaluation,
+        validation: finalArtifact.validation,
+        normalization: finalArtifact.normalization,
+        gate,
+      },
+      createdAt: new Date().toISOString(),
+    })
+
+    if (!gate.pass) {
+      await LearningService.recordQualityObservation({
+        agentId,
+        feature: 'creative',
+        description: `Creative session ${sessionId} was blocked by validation or evaluation.`,
+        blockerReasons: gate.blockerReasons,
+        evidenceRefs: [sessionId, finalArtifact.id],
+        rawExcerpt: finalArtifact.rawModelOutput?.text,
+        outputExcerpt: finalArtifact.summary,
+        qualityScore: evaluation.overallScore,
+        category: 'communication_style',
+        candidateAdaptations: [
+          'Prefer direct final prose over wrapper leakage in creative outputs.',
+        ],
+      })
+    }
 
     const artifacts = await CreativeStudioRepository.listArtifactsForSession(sessionId)
     const pipelineEvents = await CreativeStudioRepository.listPipelineEvents(sessionId)
 
     return {
-      session: updatedSession,
-      artifacts,
+      session: this.hydrateSessionQuality(updatedSession),
+      artifacts: artifacts.map((artifact) => this.hydrateArtifactQuality(artifact)),
       pipelineEvents,
     }
   }
@@ -556,44 +717,90 @@ class CreativityService {
     }
 
     if (!session.finalArtifactId) {
-      throw new Error('Generate a creative artifact before publishing.')
+      throw new CreativePublishBlockedError({
+        code: 'creative_publish_blocked',
+        sessionId,
+        blockerReasons: ['missing_final_artifact'],
+        qualityStatus: session.qualityStatus,
+        validation: session.validation,
+        evaluation: session.latestEvaluation,
+      })
     }
 
     const finalArtifact = await CreativeStudioRepository.getArtifact(session.finalArtifactId)
     if (!finalArtifact) {
-      throw new Error('Final artifact not found.')
+      throw new CreativePublishBlockedError({
+        code: 'creative_publish_blocked',
+        sessionId,
+        artifactId: session.finalArtifactId,
+        blockerReasons: ['missing_final_artifact_record'],
+        qualityStatus: session.qualityStatus,
+        validation: session.validation,
+        evaluation: session.latestEvaluation,
+      })
     }
 
-    let artifact = finalArtifact
-    if (artifact.status !== 'published') {
-      artifact = await CreativeStudioRepository.updateArtifact(artifact.id, {
-        ...artifact,
-        status: 'published',
-        publishedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+    const gate = applyFinalQualityGate({
+      validation: finalArtifact.validation,
+      evaluation: finalArtifact.evaluation,
+      thresholds: {
+        overallScoreMinimum: 80,
+        dimensionFloor: 70,
+      },
+      extraHardFailureFlags: session.status !== 'ready'
+        ? [OUTPUT_QUALITY_FLAGS.invalidStageTransition]
+        : undefined,
+    })
+
+    if (!gate.pass || session.status !== 'ready') {
+      throw new CreativePublishBlockedError({
+        code: 'creative_publish_blocked',
+        sessionId,
+        artifactId: finalArtifact.id,
+        blockerReasons: session.status !== 'ready'
+          ? [...gate.blockerReasons, OUTPUT_QUALITY_FLAGS.invalidStageTransition]
+          : gate.blockerReasons,
+        qualityStatus: session.qualityStatus,
+        normalizationStatus: finalArtifact.normalizationStatus,
+        validation: finalArtifact.validation,
+        evaluation: finalArtifact.evaluation,
       })
+    }
 
-      const agent = await AgentService.getAgentById(agentId)
-      if (agent) {
-        const nextStats = {
-          ...agentStatsService.normalizeStats(agent.stats),
-          creativeWorksCreated: (agent.stats?.creativeWorksCreated || 0) + 1,
-        }
+    const now = new Date().toISOString()
+    const artifact = await CreativeStudioRepository.saveArtifact(this.promoteFinalArtifact({
+      sourceArtifact: finalArtifact,
+      sourceArtifactId: finalArtifact.id,
+      evaluation: finalArtifact.evaluation || session.latestEvaluation || this.createBlockedEvaluation(finalArtifact.validation),
+      status: 'published',
+      artifactRole: 'published',
+      version: (finalArtifact.version || 0) + 1,
+      publishedAt: now,
+    }))
 
-        await AgentService.updateAgent(agentId, {
-          creativeWorks: (agent.creativeWorks || 0) + 1,
-          stats: nextStats,
-        })
+    const agent = await AgentService.getAgentById(agentId)
+    if (agent) {
+      const nextStats = {
+        ...agentStatsService.normalizeStats(agent.stats),
+        creativeWorksCreated: (agent.stats?.creativeWorksCreated || 0) + 1,
       }
+
+      await AgentService.updateAgent(agentId, {
+        creativeWorks: (agent.creativeWorks || 0) + 1,
+        stats: nextStats,
+      })
     }
 
     const publishedSession = await CreativeStudioRepository.updateSession(sessionId, {
       ...session,
       status: 'published',
+      qualityStatus: 'passed',
       publishedArtifactId: artifact.id,
-      publishedAt: artifact.publishedAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      publishedAt: artifact.publishedAt || now,
+      updatedAt: now,
       latestEvaluation: artifact.evaluation,
+      rawModelOutput: artifact.rawModelOutput,
+      validation: artifact.validation,
     })
 
     await CreativeStudioRepository.savePipelineEvent({
@@ -609,8 +816,9 @@ class CreativityService {
     })
 
     return {
-      session: publishedSession,
-      artifacts: await CreativeStudioRepository.listArtifactsForSession(sessionId),
+      session: this.hydrateSessionQuality(publishedSession),
+      artifacts: (await CreativeStudioRepository.listArtifactsForSession(sessionId))
+        .map((artifact) => this.hydrateArtifactQuality(artifact)),
       pipelineEvents: await CreativeStudioRepository.listPipelineEvents(sessionId),
     }
   }
@@ -622,8 +830,9 @@ class CreativityService {
     }
 
     return {
-      session,
-      artifacts: await CreativeStudioRepository.listArtifactsForSession(sessionId),
+      session: this.hydrateSessionQuality(session),
+      artifacts: (await CreativeStudioRepository.listArtifactsForSession(sessionId))
+        .map((artifact) => this.hydrateArtifactQuality(artifact)),
       pipelineEvents: await CreativeStudioRepository.listPipelineEvents(sessionId),
     }
   }
@@ -801,8 +1010,12 @@ class CreativityService {
       ...(contextPacket.dreamDirectives?.length ? [`Dream residue: ${contextPacket.dreamDirectives.join(' ')}`] : []),
       `Voice directives: ${contextPacket.voiceDirectives.join(' | ')}`,
       `Psychological directives: ${contextPacket.psychologicalDirectives.join(' | ') || 'Maintain internal coherence and curiosity.'}`,
-      'Return valid JSON with keys: title, summary, content, themes, inspiration.',
+      `Prompt version: ${CREATIVE_PROMPT_VERSION}`,
+      'Valid example: {"title":"The Glass Elevator Remembers","summary":"A tense ascent turns into a confession about ambition and fear.","content":"The elevator kept its own weather...","themes":["ambition","pressure"],"inspiration":"Drawn from recent product urgency and lingering dream imagery."}',
+      'Invalid example: ```json {"title":"Title: Launch","summary":"{\\"summary\\":\\"...\\"}","content":"**Content:** wrapper text"} ```',
+      'Return JSON only with keys: title, summary, content, themes, inspiration.',
       'The content field must contain markdown-safe prose only. No HTML. No code fences.',
+      'Do not prefix fields with Title:, Summary:, or Content: outside the JSON object.',
       'Do not mention the rubric, context packet, or that you are following instructions.',
     ].join('\n')
   }
@@ -837,11 +1050,14 @@ class CreativityService {
       `Context signals to preserve:\n${contextPacket.selectedSignals.slice(0, 6).map((signal) => `- ${signal.label}: ${signal.snippet}`).join('\n')}`,
       `Current draft title: ${artifact.title}`,
       `Current draft content:\n${artifact.content}`,
+      artifact.validation?.hardFailureFlags?.length
+        ? `Validation blockers: ${artifact.validation.hardFailureFlags.join(' | ')}`
+        : 'Validation blockers: none recorded.',
       'Return valid JSON with keys: title, summary, content, themes, inspiration.',
     ].join('\n\n')
   }
 
-  private parseArtifactFromResponse(params: {
+  private buildValidatedArtifact(params: {
     agentId: string
     sessionId: string
     format: CreativeFormat
@@ -851,32 +1067,52 @@ class CreativityService {
     providerInfo: LLMProviderInfo
     version: number
     status: CreativeArtifact['status']
-  }): CreativeArtifact {
-    const parsed = safeParseJson<{
-      title?: string
-      summary?: string
-      content?: string
-      themes?: string[]
-      inspiration?: string
-    }>(params.llmResponse) || parseLabeledCreativeResponse(params.llmResponse)
-
-    const content = stripDecorativeBreaks((parsed?.content || params.llmResponse).trim())
+    artifactRole: OutputArtifactRole
+    sourceRefs: OutputQualitySourceRef[]
+    sourceArtifactId?: string
+  }): CreativeArtifactBuildResult {
     const now = new Date().toISOString()
-
-    const resolvedTitle = parsed?.title?.trim() || deriveFallbackTitle(content, params.format)
-
-    return {
+    const parsedResult = safeParseJsonWithExtraction<CreativeDraftPayload>(params.llmResponse)
+    const labeledFallback = !parsedResult.parsed ? parseLabeledCreativeResponse(params.llmResponse) : null
+    const parsed = parsedResult.parsed || labeledFallback || {}
+    const usedLabeledFallback = Boolean(labeledFallback)
+    const content = stripDecorativeBreaks(normalizeWhitespace(String(parsed.content || '')))
+    const title = normalizeWhitespace(String(parsed.title || '')) || (content ? deriveFallbackTitle(content, params.format) : '')
+    const summary = normalizeWhitespace(String(parsed.summary || '')) || summarizeText(content, 150)
+    const parser = usedLabeledFallback ? 'labeled_sections' : parsedResult.parser
+    const parsedSuccessfully = usedLabeledFallback || Boolean(parsedResult.parsed)
+    const artifact: CreativeArtifact = {
+      ...createPendingTrackedFields({
+        rawModelOutput: createRawModelOutput(params.llmResponse, {
+          parserNotes: parsedResult.parserNotes,
+          capturedAt: now,
+          responseFormat: 'json_object',
+          promptVersion: CREATIVE_PROMPT_VERSION,
+        }),
+        sourceRefs: params.sourceRefs,
+        promptVersion: CREATIVE_PROMPT_VERSION,
+        repairCount: params.version > 1 ? 1 : 0,
+      }),
       id: generateId('creative_artifact'),
       agentId: params.agentId,
       sessionId: params.sessionId,
       format: params.format,
       status: params.status,
+      artifactRole: params.artifactRole,
+      normalizationStatus: parsedSuccessfully ? (params.artifactRole === 'repair' ? 'repaired' : 'normalized') : 'failed',
+      normalization: {
+        status: parsedSuccessfully ? (params.artifactRole === 'repair' ? 'repaired' : 'normalized') : 'failed',
+        parser,
+        violations: parsedSuccessfully ? [] : ['creative_artifact_contract_parse_failed'],
+        repairedFromId: params.sourceArtifactId,
+      },
+      sourceArtifactId: params.sourceArtifactId,
       version: params.version,
-      title: resolvedTitle,
-      summary: parsed?.summary?.trim() || summarizeText(content, 150),
+      title,
+      summary,
       content,
       render: buildMessageRenderData(content),
-      themes: normalizeTextList(parsed?.themes),
+      themes: normalizeStringList(parsed.themes),
       inspiration: normalizeSingleText(parsed?.inspiration) || 'Derived from the selected creative context.',
       audience: params.audience,
       tone: params.tone,
@@ -885,6 +1121,20 @@ class CreativityService {
       model: params.providerInfo.model,
       createdAt: now,
       updatedAt: now,
+    }
+
+    const validation = this.validateCreativeArtifact(artifact, {
+      parsedSuccessfully,
+      sourceRefs: params.sourceRefs,
+    })
+
+    return {
+      artifact: {
+        ...artifact,
+        validation,
+        qualityStatus: validation.pass ? 'pending' : 'failed',
+      },
+      validation,
     }
   }
 
@@ -896,8 +1146,6 @@ class CreativityService {
     providerInfo: LLMProviderInfo
   ): Promise<CreativeRubricEvaluation> {
     const heuristic = this.scoreArtifactHeuristically(brief, artifact)
-    const hasUntitledTitle = /^untitled\b/i.test(artifact.title)
-    const leakedLabeledSections = /\*\*title:\*\*|\*\*summary:\*\*|\*\*content:\*\*/i.test(artifact.content)
 
     try {
       const response = await generateText({
@@ -930,9 +1178,10 @@ class CreativityService {
         ],
       })
 
-      const parsed = safeParseJson<CreativeRubricEvaluation & {
+      const parsedResult = safeParseJsonWithExtraction<CreativeRubricEvaluation & {
         dimensions?: Partial<Record<CreativeRubricDimension, { score?: number; rationale?: string }>>
       }>(response.content)
+      const parsed = parsedResult.parsed
 
       if (parsed?.dimensions) {
         const mergedDimensions = ([
@@ -955,14 +1204,19 @@ class CreativityService {
           Object.values(mergedDimensions).reduce((total, entry) => total + entry.score, 0) / 6
         ))
 
-        const strengths = normalizeTextList(parsed.strengths).slice(0, 4)
-        const weaknesses = normalizeTextList(parsed.weaknesses).slice(0, 4)
-        const repairInstructions = normalizeTextList(parsed.repairInstructions).slice(0, 4)
+        const strengths = normalizeStringList(parsed.strengths).slice(0, 4)
+        const weaknesses = normalizeStringList(parsed.weaknesses).slice(0, 4)
+        const repairInstructions = normalizeStringList(parsed.repairInstructions).slice(0, 4)
+        const hardFailureFlags = [
+          ...(artifact.validation?.hardFailureFlags || []),
+          ...normalizeStringList(parsed.hardFailureFlags),
+        ]
 
         return {
-          pass: Boolean(parsed.pass) && overallScore >= 80 && !hasUntitledTitle && !leakedLabeledSections,
+          pass: Boolean(parsed.pass) && overallScore >= 80 && hardFailureFlags.length === 0,
           overallScore,
           dimensions: mergedDimensions,
+          hardFailureFlags,
           strengths: strengths.length > 0 ? strengths : heuristic.strengths,
           weaknesses: weaknesses.length > 0 ? weaknesses : heuristic.weaknesses,
           repairInstructions: repairInstructions.length > 0 ? repairInstructions : heuristic.repairInstructions,
@@ -1054,17 +1308,127 @@ class CreativityService {
     const repairInstructions = weaknesses[0] === 'No major structural weakness was detected.'
       ? ['Preserve the current structure and only sharpen standout lines if needed.']
       : weaknesses.map((entry) => `Repair ${entry.replace(' needs stronger execution.', '')} with more specificity and stronger format discipline.`)
+    const hardFailureFlags = artifact.validation?.hardFailureFlags || []
 
     return {
-      pass: overallScore >= 80 && weaknesses.length <= 2 && !hasUntitledTitle && !leakedLabeledSections,
+      pass: overallScore >= 80 && weaknesses.length <= 2 && !hasUntitledTitle && !leakedLabeledSections && hardFailureFlags.length === 0,
       overallScore,
       dimensions,
+      hardFailureFlags,
       strengths: strengths.slice(0, 4),
       weaknesses: weaknesses.slice(0, 4),
       repairInstructions: repairInstructions.slice(0, 4),
       evaluatorSummary: overallScore >= 72
         ? `The piece is publishable with an overall score of ${overallScore}.`
         : `The piece missed the quality gate with an overall score of ${overallScore}.`,
+    }
+  }
+
+  private validateCreativeArtifact(
+    artifact: CreativeArtifact,
+    options: {
+      parsedSuccessfully: boolean
+      sourceRefs: OutputQualitySourceRef[]
+    }
+  ): OutputQualityValidationReport {
+    const hardFailureFlags = [
+      ...validateRequiredTextFields({
+        title: artifact.title,
+        summary: artifact.summary,
+        content: artifact.content,
+      }),
+      ...validateSharedArtifactText({
+        title: artifact.title,
+        summary: artifact.summary,
+        content: artifact.content,
+      }),
+      ...validateSourceRefs(options.sourceRefs),
+      ...(options.parsedSuccessfully ? [] : ['creative_structured_extraction_failed']),
+      ...(/^\s*(title|\*\*title:\*\*|```)/i.test(artifact.title) ? ['creative_title_prefix_leakage'] : []),
+      ...(/^\s*[\[{]/.test(artifact.summary) ? ['creative_summary_wrapper_leakage'] : []),
+      ...(/\b(title|summary|content)\b\s*:/i.test(artifact.summary) ? ['creative_summary_schema_leakage'] : []),
+      ...(/\b(title|summary|content)\b\s*:/i.test(artifact.content) ? ['creative_content_wrapper_leakage'] : []),
+      ...(!artifact.render?.blocks?.length && artifact.content.trim() ? ['creative_render_generation_failed'] : []),
+    ]
+
+    const softWarnings = [
+      ...(artifact.themes.length === 0 ? ['creative_missing_themes'] : []),
+      ...(!artifact.inspiration.trim() ? ['creative_missing_inspiration'] : []),
+    ]
+
+    return createValidationReport({
+      hardFailureFlags,
+      softWarnings,
+      validatorVersion: CREATIVE_VALIDATOR_VERSION,
+    })
+  }
+
+  private createBlockedEvaluation(validation?: OutputQualityValidationReport): CreativeRubricEvaluation {
+    const blockerMessage = validation?.hardFailureFlags.length
+      ? `Validation blocked evaluation: ${validation.hardFailureFlags.join(', ')}.`
+      : 'Validation blocked evaluation.'
+
+    return {
+      pass: false,
+      overallScore: 0,
+      dimensions: {
+        formatFidelity: { score: 0, rationale: blockerMessage },
+        originality: { score: 0, rationale: blockerMessage },
+        voiceConsistency: { score: 0, rationale: blockerMessage },
+        emotionalCoherence: { score: 0, rationale: blockerMessage },
+        specificity: { score: 0, rationale: blockerMessage },
+        readability: { score: 0, rationale: blockerMessage },
+      },
+      hardFailureFlags: validation?.hardFailureFlags || ['prompt_or_schema_leakage'],
+      strengths: [],
+      weaknesses: [blockerMessage],
+      repairInstructions: [
+        'Return a clean JSON object only.',
+        'Populate title, summary, and content with final user-facing prose.',
+        'Remove wrapper labels, schema leakage, and fenced output.',
+      ],
+      evaluatorSummary: blockerMessage,
+    }
+  }
+
+  private promoteFinalArtifact(params: {
+    sourceArtifact: CreativeArtifact
+    sourceArtifactId: string
+    evaluation: CreativeRubricEvaluation
+    status: CreativeArtifact['status']
+    artifactRole: OutputArtifactRole
+    version: number
+    publishedAt?: string
+  }): CreativeArtifact {
+    const now = new Date().toISOString()
+
+    return {
+      ...params.sourceArtifact,
+      id: generateId('creative_artifact'),
+      status: params.status,
+      artifactRole: params.artifactRole,
+      sourceArtifactId: params.sourceArtifactId,
+      version: params.version,
+      evaluation: params.evaluation,
+      qualityScore: params.evaluation.overallScore,
+      repairCount: params.artifactRole === 'published'
+        ? params.sourceArtifact.repairCount ?? 0
+        : Math.max(params.sourceArtifact.repairCount ?? 0, params.sourceArtifact.version > 1 ? 1 : 0),
+      normalizationStatus: params.sourceArtifact.normalizationStatus || 'normalized',
+      normalization: {
+        ...params.sourceArtifact.normalization,
+        repairedFromId: params.sourceArtifactId,
+      },
+      publishedAt: params.publishedAt,
+      createdAt: now,
+      updatedAt: now,
+      ...syncTrackedQualityState({
+        ...params.sourceArtifact,
+        evaluation: params.evaluation,
+        repairCount: params.sourceArtifact.repairCount ?? 0,
+      }, {
+        evaluationPass: params.evaluation.pass,
+      }),
     }
   }
 
@@ -1125,6 +1489,37 @@ class CreativityService {
       `Attachment style ${agent.psychologicalProfile.attachmentStyle}.`,
       `Strengths to echo: ${agent.psychologicalProfile.strengths.slice(0, 2).join(', ')}.`,
     ]
+  }
+
+  private hydrateSessionQuality(session: CreativeSession): CreativeSession {
+    return {
+      ...session,
+      qualityStatus: session.qualityStatus || 'legacy_unvalidated',
+      repairCount: session.repairCount ?? 0,
+      promptVersion: session.promptVersion,
+    }
+  }
+
+  private hydrateArtifactQuality(artifact: CreativeArtifact): CreativeArtifact {
+    const contentLeakage = [
+      ...detectTextLeakage(artifact.title),
+      ...detectTextLeakage(artifact.summary),
+      ...detectTextLeakage(artifact.content),
+    ]
+    const validation = artifact.validation || (contentLeakage.length > 0
+      ? createValidationReport({
+          hardFailureFlags: [...new Set(contentLeakage)],
+          validatorVersion: CREATIVE_VALIDATOR_VERSION,
+        })
+      : undefined)
+
+    return {
+      ...artifact,
+      normalizationStatus: artifact.normalizationStatus || 'legacy_unvalidated',
+      qualityStatus: artifact.qualityStatus || 'legacy_unvalidated',
+      repairCount: artifact.repairCount ?? 0,
+      validation,
+    }
   }
 
   private async listRecentMessages(agentId: string): Promise<MessageRecord[]> {

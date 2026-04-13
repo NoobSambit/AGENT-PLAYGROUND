@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import type { MemoryOrigin, MemoryRecallResult, MemoryRecord, MemoryStatsSummary } from '@/types/database'
+import type { MemoryGraphConsoleSummary, MemoryOrigin, MemoryRecallResult, MemoryRecord, MemoryStatsSummary } from '@/types/database'
 import { ContextIcon } from '@/components/journal/JournalIcons'
 import { 
   MemoryCoreIcon, DataQueryIcon, GeometricSyncIcon, VoidSearchIcon, 
@@ -31,6 +31,7 @@ export function MemoryConsole({
   const [memories, setMemories] = useState<MemoryRecord[]>([])
   const [stats, setStats] = useState<MemoryStatsSummary | null>(null)
   const [selectedMemoryId, setSelectedMemoryId] = useState<string | null>(null)
+  const [graph, setGraph] = useState<MemoryGraphConsoleSummary | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [draftSearchQuery, setDraftSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | MemoryRecord['type']>('all')
@@ -65,13 +66,14 @@ export function MemoryConsole({
       ])
 
       const memoriesPayload = memoriesResponse.ok
-        ? await memoriesResponse.json() as { memories: MemoryRecord[] }
-        : { memories: [] }
+        ? await memoriesResponse.json() as { memories: MemoryRecord[]; graph: MemoryGraphConsoleSummary | null }
+        : { memories: [], graph: null }
       const statsPayload = statsResponse.ok
         ? await statsResponse.json() as { stats: MemoryStatsSummary }
         : { stats: null }
 
       setMemories(memoriesPayload.memories || [])
+      setGraph(memoriesPayload.graph || null)
       setStats(statsPayload.stats || null)
       onMemoryCountChange?.(statsPayload.stats?.totalMemories || 0)
 
@@ -84,6 +86,7 @@ export function MemoryConsole({
     } catch (error) {
       console.error('Failed to load memory console:', error)
       setMemories([])
+      setGraph(null)
       setStats(null)
       setSelectedMemoryId(null)
     } finally {
@@ -239,8 +242,16 @@ export function MemoryConsole({
                       options={[
                         { value: 'all', label: 'All types' },
                         { value: 'conversation', label: 'Conversation' },
+                        { value: 'conversation_episode', label: 'Episode' },
                         { value: 'fact', label: 'Fact' },
                         { value: 'interaction', label: 'Interaction' },
+                        { value: 'preference', label: 'Preference' },
+                        { value: 'project', label: 'Project' },
+                        { value: 'relationship', label: 'Relationship' },
+                        { value: 'identity', label: 'Identity' },
+                        { value: 'operating_constraint', label: 'Constraint' },
+                        { value: 'artifact_summary', label: 'Artifact' },
+                        { value: 'tension_snapshot', label: 'Tension' },
                       ]}
                     />
                     <FilterSelect
@@ -389,6 +400,23 @@ export function MemoryConsole({
                  </div>
               </div>
 
+              {graph ? (
+                <div className="grid gap-2 border-b border-border/30 bg-muted/5 px-3 py-2 sm:grid-cols-2">
+                  <div className="rounded-sm border border-border/20 bg-background/40 px-3 py-2">
+                    <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Graph</div>
+                    <div className="mt-1 text-[11px] font-medium text-foreground">
+                      {graph.totalConcepts} concepts, {graph.totalLinks} links
+                    </div>
+                  </div>
+                  <div className="rounded-sm border border-border/20 bg-background/40 px-3 py-2">
+                    <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Top Cluster</div>
+                    <div className="mt-1 text-[11px] font-medium text-foreground">
+                      {graph.conceptClusters[0]?.name || 'No active cluster'}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="flex-1 overflow-y-auto scrollbar-thin p-3 bg-background/20 h-[180px]">
                 {recallResults.length > 0 ? (
                   <div className="space-y-2">
@@ -396,11 +424,29 @@ export function MemoryConsole({
                       <div key={`recall_${result.memory.id}`} className={`${subPanel} p-3 hover:border-pastel-blue/30 transition-all`}>
                         <div className="flex items-start justify-between gap-3 mb-1.5">
                           <div className="text-[11px] font-bold text-foreground leading-tight line-clamp-1">{result.memory.summary}</div>
-                          <span className="rounded-sm bg-pastel-blue/10 border border-pastel-blue/20 px-1.5 py-0.5 text-[8px] font-bold tracking-wider uppercase text-pastel-blue shrink-0">
-                            Match {result.score.toFixed(2)}
-                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className={`rounded-sm px-1.5 py-0.5 text-[8px] font-bold tracking-wider uppercase ${
+                              result.hitType === 'semantic'
+                                ? 'bg-pastel-green/10 border border-pastel-green/20 text-pastel-green'
+                                : 'bg-muted/30 border border-border/20 text-muted-foreground'
+                            }`}>
+                              {result.hitType}
+                            </span>
+                            <span className="rounded-sm bg-pastel-blue/10 border border-pastel-blue/20 px-1.5 py-0.5 text-[8px] font-bold tracking-wider uppercase text-pastel-blue">
+                              Match {result.score.toFixed(2)}
+                            </span>
+                          </div>
                         </div>
-                        <div className="text-[10px] text-muted-foreground/80 font-medium mb-2 line-clamp-2">"{result.memory.content}"</div>
+                        <div className="text-[10px] text-muted-foreground/80 font-medium mb-2 line-clamp-2">&quot;{result.memory.content}&quot;</div>
+                        {result.matchedConcepts?.length ? (
+                          <div className="mb-2 flex flex-wrap gap-1">
+                            {result.matchedConcepts.map((concept) => (
+                              <span key={`${result.memory.id}_${concept}`} className="rounded-sm border border-pastel-purple/20 bg-pastel-purple/10 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-pastel-purple">
+                                {concept}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
                         <ul className="space-y-1">
                           {result.reasons.map((reason) => (
                             <li key={`${result.memory.id}_${reason}`} className="flex gap-1.5 items-start text-[9px] font-bold text-muted-foreground uppercase tracking-wide leading-tight">
@@ -481,7 +527,24 @@ export function MemoryConsole({
                              <DetailField label="Extraction Time" value={formatDateTime(selectedMemory.timestamp)} />
                              <DetailField label="Linked References" value={selectedMemory.linkedMessageIds.length > 0 ? String(selectedMemory.linkedMessageIds.length) : 'None'} />
                              <DetailField label="Index Keys" value={selectedMemory.keywords.join(', ') || 'N/A'} />
+                             <DetailField label="Canonical Key" value={selectedMemory.canonicalKey || 'N/A'} />
+                             <DetailField label="Canonical Value" value={selectedMemory.canonicalValue || 'N/A'} />
+                             <DetailField label="Confidence" value={typeof selectedMemory.confidence === 'number' ? `${Math.round(selectedMemory.confidence * 100)}%` : 'N/A'} />
+                             <DetailField label="Evidence Refs" value={selectedMemory.evidenceRefs?.join(', ') || 'N/A'} />
                           </div>
+
+                          {graph?.topConcepts?.length ? (
+                            <div className="space-y-2">
+                              <div className={labelStyle}>Memory Graph Highlights</div>
+                              <div className="flex flex-wrap gap-2">
+                                {graph.topConcepts.slice(0, 6).map((concept) => (
+                                  <span key={concept.id} className="rounded-sm border border-border/20 bg-muted/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-foreground/80">
+                                    {concept.name} · {concept.memoryCount}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
                        </motion.div>
                     </AnimatePresence>
                  )}

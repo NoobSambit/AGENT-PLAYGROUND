@@ -303,6 +303,15 @@ Response formatting contract:
 - Do not use HTML, markdown tables, or decorative separators.
 - Do not mention these formatting rules unless the user asks.`
 
+    systemPrompt += `
+
+Shared chat quality rules:
+- Start with the answer or the most useful next step. Do not open with generic assistant filler such as "Absolutely", "Certainly", "Sure", or "I'd be happy to" unless the user explicitly wants a warm ceremonial tone.
+- If the user asks for brevity, directness, bluntness, or no fluff, treat that as an immediate hard style constraint for this turn.
+- Adapt to explicit user style preferences within the same reply instead of explaining that you will adapt later.
+- Keep acknowledgements brief and only when they add emotional or practical value.
+- Do not restate the entire request before answering unless clarification is necessary.`
+
     // Phase 1: Add linguistic style context
     if (phase1Context?.linguisticProfile && agentName) {
       const linguisticPrompt = PersonalityService.getLinguisticPrompt(

@@ -113,7 +113,7 @@ function BentoGridSection() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[20rem_20rem_1fr_1fr]">
         <div className="flex flex-col gap-5 lg:col-span-1">
-          <div className="relative flex flex-1 flex-col overflow-hidden rounded-sm border border-border/40 bg-card p-6 shadow-sm min-h-[36rem]">
+          <div className="relative flex flex-1 flex-col overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm min-h-[36rem]">
             <div className="mb-8 flex items-center gap-2 text-foreground">
               <PlaygroundLogo className="h-7 w-7 text-primary" />
               <span className="font-bold tracking-tight">AgentStudio</span>
@@ -169,7 +169,7 @@ function BentoGridSection() {
         </div>
 
         <div className="flex flex-col gap-5 lg:col-span-1">
-          <div className="relative flex min-h-[22rem] flex-col overflow-hidden rounded-sm border border-border/40 bg-card p-6 shadow-sm">
+          <div className="relative flex min-h-[22rem] flex-col overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm">
             <h4 className="relative z-10 text-[1.1rem] font-semibold tracking-tight text-foreground">Hosting over the edge</h4>
             <p className="relative z-10 mt-2 w-[90%] text-[13px] leading-[1.6] text-muted-foreground">
               With our edge network, we host your swarm by pushing agents to every endpoint natively.
@@ -184,7 +184,7 @@ function BentoGridSection() {
             </div>
           </div>
 
-          <div className="flex flex-1 flex-col rounded-sm border border-border/40 bg-card p-6 shadow-sm">
+          <div className="flex flex-1 flex-col rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm">
             <Quote className="mb-4 h-6 w-6 text-muted-foreground/30 fill-current" />
             <p className="flex-1 pt-1 text-[15px] font-medium leading-relaxed text-foreground">
               &quot;A robust solution that fits perfectly into our workflow. It has enhanced our team&apos;s capabilities and allowed us to tackle more complex multi-agent projects.&quot;
@@ -200,7 +200,7 @@ function BentoGridSection() {
             </div>
           </div>
 
-          <div className="relative flex h-36 flex-col justify-end overflow-hidden rounded-sm border border-border/40 bg-card p-6 shadow-sm">
+          <div className="relative flex h-36 flex-col justify-end overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm">
             <div className="absolute inset-x-0 bottom-0 h-3/4 bg-grid-pattern opacity-40 mix-blend-overlay" />
             <div className="relative z-10 w-fit -rotate-3 self-center rounded-sm border border-border/50 bg-[#0a0a0c] px-4 py-2 text-center text-sm font-bold text-white shadow-xl dark:bg-zinc-800">
               Jane Smith
@@ -210,7 +210,7 @@ function BentoGridSection() {
         </div>
 
         <div className="flex flex-col gap-5 lg:col-span-2">
-          <div className="group relative flex h-[34rem] flex-col overflow-hidden rounded-sm border border-border/40 bg-[#121115] p-8 shadow-inner sm:p-10 dark:bg-zinc-900/50">
+          <div className="group relative flex h-[34rem] flex-col overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-8 shadow-inner sm:p-10 dark:bg-zinc-900/10">
             <div className="relative z-10 mb-8 flex w-full max-w-3xl items-center justify-between">
               <span className="flex items-center gap-2 text-sm font-medium text-white/90">
                 <PlaygroundLogo className="h-5 w-5 text-primary" /> Agent Playground
@@ -304,7 +304,7 @@ function BentoGridSection() {
 
           <div className="flex flex-1 grid-cols-1 flex-col gap-5 sm:grid sm:grid-cols-2">
             <div className="flex flex-col gap-5">
-              <div className="relative flex min-h-[16rem] flex-1 flex-col items-center justify-center overflow-hidden rounded-sm border border-border/40 bg-[#121115] p-6 shadow-sm dark:bg-zinc-900/40">
+              <div className="relative flex min-h-[16rem] flex-1 flex-col items-center justify-center overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm dark:bg-zinc-900/10">
                 <div className="relative z-10 mb-8 mt-2 text-center">
                   <h4 className="mb-1 text-[1.1rem] font-bold tracking-tight text-white">All over the world</h4>
                   <p className="text-[12px] text-white/50">Meet our distributed agent network.</p>
@@ -329,7 +329,7 @@ function BentoGridSection() {
                 </div>
               </div>
 
-              <div className="flex-1 rounded-sm border border-border/40 bg-card p-6 shadow-sm">
+              <div className="flex-1 rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm">
                 <h4 className="mb-1 text-[1.1rem] font-semibold tracking-tight text-foreground">Schedule seamlessly</h4>
                 <p className="mb-6 w-10/12 text-[13px] leading-relaxed text-muted-foreground">Let orchestrated jobs take over complex workflows.</p>
 
@@ -347,7 +347,7 @@ function BentoGridSection() {
               </div>
             </div>
 
-            <div className="relative flex h-full flex-col justify-end overflow-hidden rounded-sm border border-border/40 bg-card p-6 shadow-sm sm:p-8">
+            <div className="relative flex h-full flex-col justify-end overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm sm:p-8">
               <div className="absolute inset-0 z-0 bg-background/50">
                 <div className="absolute right-[-20%] top-[-10%] h-[120%] w-[120%] origin-center rotate-12 scale-125 bg-muted/20 opacity-80 mix-blend-multiply blur-3xl dark:mix-blend-screen" />
               </div>
@@ -1204,7 +1204,7 @@ function InteractiveShowcase() {
   const content = getTabContent()
 
   return (
-    <div className="overflow-hidden rounded-sm border border-border/40 bg-card/90 backdrop-blur-xl shadow-lg transition-all dark:shadow-[0_40px_120px_-70px_rgba(0,0,0,0.9)]">
+    <div className="overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md shadow-lg transition-all dark:shadow-[0_40px_120px_-70px_rgba(0,0,0,0.9)]">
       {/* Sleek Fake Browser Toolbar */}
       <div className="flex items-center gap-4 border-b border-white/[0.05] dark:border-white/[0.05] border-black/5 px-4 py-2.5 bg-muted/10 shadow-sm relative z-10">
         <div className="flex items-center gap-2 pr-3">
@@ -1221,8 +1221,8 @@ function InteractiveShowcase() {
                   <button
                     onClick={() => setActiveTab(tab)}
                     className={`group flex items-center gap-2.5 rounded-md px-3 py-1.5 text-[12.5px] font-semibold tracking-wide transition-all duration-300 ${isActive
-                        ? "bg-foreground/10 text-foreground shadow-sm ring-1 ring-border/20"
-                        : "text-muted-foreground/80 hover:bg-muted/30 hover:text-foreground"
+                      ? "bg-foreground/10 text-foreground shadow-sm ring-1 ring-border/20"
+                      : "text-muted-foreground/80 hover:bg-muted/30 hover:text-foreground"
                       }`}
                   >
                     <NavIcon type={tab} active={isActive} />
@@ -1240,7 +1240,7 @@ function InteractiveShowcase() {
 
       {/* Shell Body */}
       <div className="p-4 sm:p-5">
-        <div className="overflow-hidden rounded-sm border border-border/30 bg-surface/80 backdrop-blur-sm">
+        <div className="overflow-hidden rounded-sm border border-white/5 bg-transparent backdrop-blur-sm">
           {/* Internal Shell Header */}
           <div className="flex flex-wrap items-center gap-4 border-b border-border/20 px-4 py-4 sm:px-5">
             <div className="flex items-center gap-4">
@@ -1268,18 +1268,18 @@ function InteractiveShowcase() {
           </div>
 
           {/* Redesigned 2-pane layout (Dominant Main + Narrow Rail) */}
-          <div className="border-t border-border/20 p-4 sm:p-5 bg-card/40">
+          <div className="border-t border-white/10 p-4 sm:p-5 bg-transparent">
             <div className="flex flex-col lg:flex-row gap-5">
 
               {/* Main Dominant Scene */}
-              <div className="flex-1 min-h-[220px] rounded-sm border border-border/30 bg-card p-5 shadow-sm transition-colors hover:border-border/50 group">
+              <div className="flex-1 min-h-[220px] rounded-sm border border-white/10 bg-black/30 backdrop-blur-sm p-5 shadow-sm transition-colors hover:border-white/20 group">
                 <div className="h-full w-full opacity-90 transition-opacity group-hover:opacity-100 flex flex-col justify-center">
                   {content.mainVisual}
                 </div>
               </div>
 
               {/* Narrow Evidence Rail */}
-              <div className="w-full lg:w-[320px] min-h-[220px] rounded-sm border border-border/30 bg-muted/20 p-5 shadow-inner flex flex-col justify-center transition-colors hover:bg-muted/30 group">
+              <div className="w-full lg:w-[320px] min-h-[220px] rounded-sm border border-white/10 bg-black/10 backdrop-blur-sm p-5 shadow-inner flex flex-col justify-center transition-colors hover:bg-black/20 group">
                 <div className="h-full w-full opacity-90 transition-opacity group-hover:opacity-100 flex flex-col justify-center">
                   {content.railVisual}
                 </div>
@@ -1295,14 +1295,21 @@ function InteractiveShowcase() {
 
 export default function Home() {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background text-foreground transition-colors duration-300">
-      <div className="pointer-events-none absolute inset-0 bg-transparent" />
-      <div className="pointer-events-none absolute inset-0 bg-grid-pattern opacity-10 dark:opacity-20" />
+    <div className="relative min-h-screen overflow-hidden bg-[#0B0A10] text-foreground transition-colors duration-300">
+      {/* Premium ambient image background */}
+      {/* Premium ambient image background that scrolls with the content */}
+      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+        <div
+          className="absolute inset-x-0 -top-50 h-[4000px] bg-[url('/landing_page_bg.png')] bg-[length:100%_auto] bg-top bg-no-repeat opacity-[0.85] mix-blend-screen dark:mix-blend-lighten"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0B0A10]/5 via-[#0B0A10]/40 to-[#0B0A10]" />
+        <div className="absolute inset-0 bg-grid-pattern opacity-5 mix-blend-overlay" />
+      </div>
 
 
 
-      <div className="relative z-10 pt-20">
-        <section className="px-4 pb-12 pt-16 sm:px-10 lg:px-14">
+      <div className="relative z-10 pt-16">
+        <section className="px-4 pb-12 pt-12 sm:px-10 lg:px-14">
           <div className="mx-auto max-w-[120rem]">
             <div className="flex flex-col items-start text-left">
               <div className="max-w-4xl">

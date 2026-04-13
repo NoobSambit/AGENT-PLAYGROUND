@@ -19,6 +19,12 @@ The app now supports four runtime modes:
 
 Services own the branch between Firestore and PostgreSQL for core entities. Route-level helpers are only used where feature-specific persistence had not yet been centralized.
 
+The Phase 5 output-quality rollout stays additive across those modes:
+
+- SQL migrations add indexed quality columns without rewriting legacy payloads.
+- Services remain the authority for status transitions such as `draft -> ready -> saved/published` and `draft -> ready/blocked`.
+- Legacy rows are still readable and should surface as `legacy_unvalidated` until regenerated or backfilled.
+
 ## Design Rules
 
 - UI renders state and triggers API calls.
@@ -29,6 +35,7 @@ Services own the branch between Firestore and PostgreSQL for core entities. Rout
 - Agent chat is the canonical write point for chat-turn side effects such as trait updates, memory persistence, and stale-domain invalidation.
 - Chat-turn side effects now include structured fact extraction, canonical fact-memory upserts, emotion appraisal, and evidence-based trait analysis.
 - Chat-turn side effects now also include evidence-based learning observation capture, confirmed pattern rebuilds, adaptation refresh, and prompt-time learning policy injection.
+- Shared output-quality helpers under `src/lib/services/outputQuality/` now provide deterministic normalization, validation, status derivation, and final-gate evaluation across journal, creative, dream, profile, scenario, and chat surfaces.
 - Premium generation features follow the same inspectable pattern: session row, versioned artifact rows, pipeline trace rows, and explicit publish/save boundaries.
 - Dream V2 follows the same pattern as Creative Studio and Journal Workspace, with one extra agent-level field: `activeDreamImpression`.
 
@@ -38,6 +45,11 @@ Services own the branch between Firestore and PostgreSQL for core entities. Rout
 - `src/lib/persistence/writeMirror.ts`: mirrored writes and outbox capture.
 - `src/lib/repositories/outboxRepository.ts`: failed mirror write queue.
 - `scripts/*.mjs`: schema apply, Firestore export, Postgres import, parity verification, reset.
+- `drizzle/0008_output_quality_phase5.sql`: additive quality-state migration for the Phase 5 rollout.
+- `scripts/quality/backfill-output-quality.mjs`: dry-run-first backfill for quality columns and semantic memory fields.
+- `scripts/quality/replay-agent-output-audit.mjs`: audit-fixture replay summary.
+- `scripts/quality/run-output-benchmark.mjs`: qwen2.5:7b benchmark summary against PRD exit criteria.
+- `scripts/quality/validate-persisted-artifacts.mjs`: fixture or PostgreSQL artifact validation.
 
 ## Feature Docs
 

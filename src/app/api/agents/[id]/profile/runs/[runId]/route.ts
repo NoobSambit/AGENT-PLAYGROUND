@@ -12,7 +12,18 @@ export async function GET(
       return NextResponse.json({ error: 'Profile analysis run not found' }, { status: 404 })
     }
 
-    return NextResponse.json(detail)
+    return NextResponse.json({
+      ...detail,
+      interviewTurns: detail.interviewTurns.map((turn) => ({
+        ...turn,
+        prompt: turn.question,
+        response: turn.answer,
+      })),
+      run: {
+        ...detail.run,
+        evidenceCoverage: detail.run.evidenceCoverage,
+      },
+    })
   } catch (error) {
     console.error('Get profile run detail error:', error)
     return NextResponse.json(

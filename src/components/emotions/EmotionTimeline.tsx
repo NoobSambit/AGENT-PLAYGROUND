@@ -81,6 +81,15 @@ export function EmotionTimeline({
 function EmotionEventCard({ event }: { event: EmotionalEvent }) {
   const color = EMOTION_COLORS[event.emotion]
   const intensityPercent = (event.intensity * 100).toFixed(0)
+  const semanticThemes = Array.isArray(event.metadata?.semanticThemes)
+    ? (event.metadata?.semanticThemes as string[]).slice(0, 4)
+    : []
+  const qualityBlockers = Array.isArray(event.metadata?.qualityBlockers)
+    ? (event.metadata?.qualityBlockers as string[]).slice(0, 3)
+    : []
+  const downstreamHints = (event.downstreamHints || []).slice(0, 3)
+  const rationale = (event.rationale || []).slice(0, 3)
+  const evidenceRefs = (event.evidenceRefs || []).slice(0, 4)
 
   return (
     <div className="relative pl-10">
@@ -134,11 +143,75 @@ function EmotionEventCard({ event }: { event: EmotionalEvent }) {
           </p>
         ) : null}
 
+        {semanticThemes.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {semanticThemes.map((theme) => (
+              <span
+                key={`${event.id}_${theme}`}
+                className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-200"
+              >
+                memory: {theme}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {qualityBlockers.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {qualityBlockers.map((blocker) => (
+              <span
+                key={`${event.id}_${blocker}`}
+                className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+              >
+                gate: {blocker.replace(/_/g, ' ')}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
         <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-400">
           <span>source: {event.source.replace('_', ' ')}</span>
           <span>confidence: {(event.confidence * 100).toFixed(0)}%</span>
           {event.linkedMessageId ? <span>linked turn</span> : null}
         </div>
+
+        {rationale.length > 0 ? (
+          <div className="mt-3 space-y-1">
+            {rationale.map((item) => (
+              <div key={`${event.id}_${item}`} className="text-[11px] text-gray-500 dark:text-gray-300">
+                reason: {item}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {evidenceRefs.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {evidenceRefs.map((ref) => (
+              <span
+                key={`${event.id}_${ref}`}
+                className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300"
+              >
+                evidence: {ref}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {downstreamHints.length > 0 ? (
+          <div className="mt-3 rounded-sm border border-gray-200 bg-white/70 p-2.5 dark:border-gray-700 dark:bg-gray-900/40">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Downstream Hints
+            </div>
+            <div className="space-y-1.5">
+              {downstreamHints.map((hint) => (
+                <div key={`${event.id}_${hint.feature}`} className="text-[11px] text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold">{hint.feature}:</span> {hint.hint}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   )

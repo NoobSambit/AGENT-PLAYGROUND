@@ -17,9 +17,11 @@ export type LearningTaskType =
   | 'general_chat'
   | 'factual_help'
   | 'creative'
+  | 'dream'
   | 'emotional_support'
   | 'memory_recall'
   | 'feedback_ack'
+  | 'quality_review'
 
 export type LearningStrategySignal =
   | 'clarify_first'
@@ -98,6 +100,8 @@ export interface LearningAdaptation {
   affectedAreas: string[]
   confidence?: number
   evidenceCount?: number
+  isQualityRelated?: boolean
+  sourceObservationIds?: string[]
   evaluation?: {
     observations: number
     positive: number
@@ -124,6 +128,9 @@ export interface LearningObservation {
   agentId: string
   taskType: LearningTaskType
   category: LearningPatternType
+  observationType?: 'conversation' | 'output_quality'
+  feature?: 'chat' | 'journal' | 'creative' | 'dream' | 'profile' | 'scenario'
+  severity?: 'low' | 'medium' | 'high'
   strategies: LearningStrategySignal[]
   summary: string
   promptExcerpt: string
@@ -131,9 +138,13 @@ export interface LearningObservation {
   provisionalScore: number
   finalScore: number
   outcome: 'positive' | 'negative' | 'neutral'
+  resolvedStatus?: 'pending' | 'resolved'
   followUpStatus: 'pending' | 'resolved'
   feedbackSignal: 'positive' | 'negative' | 'neutral' | 'unseen'
   evidence: LearningObservationEvidence[]
+  evidenceRefs?: string[]
+  candidateAdaptations?: string[]
+  qualityImpact?: number
   linkedMessageIds: string[]
   createdAt: string
   evaluatedAt?: string
@@ -283,6 +294,13 @@ export interface MetaLearningState {
     priority: 'high' | 'medium' | 'low'
     relatedPatternIds?: string[]
   }>
+
+  outputQuality?: {
+    recentObservations: LearningObservation[]
+    recentAdaptations: LearningAdaptation[]
+    blockedObservationCount: number
+    highSeverityCount: number
+  }
 
   lastUpdated: string
 }

@@ -1,6 +1,8 @@
 import React, { SVGProps } from 'react'
 import { motion } from 'framer-motion'
 
+type MotionSvgProps = React.ComponentProps<typeof motion.svg>
+
 export function MemoryCoreIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
@@ -57,7 +59,7 @@ export function GeometricSyncIcon({ className, spinning = false, ...props }: SVG
       className={className}
       animate={spinning ? { rotate: 360 } : { rotate: 0 }}
       transition={spinning ? { duration: 1.5, repeat: Infinity, ease: "linear" } : {}}
-      {...(props as any)}
+      {...(props as MotionSvgProps)}
     >
       <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.5" strokeDasharray="6 4" />
       <path d="M12 4V1M12 20V23M20 12H23M4 12H1M17.6569 6.34315L19.7782 4.22183M6.34315 17.6569L4.22183 19.7782M17.6569 17.6569L19.7782 19.7782M6.34315 6.34315L4.22183 4.22183" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" />

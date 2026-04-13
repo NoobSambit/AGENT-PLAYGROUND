@@ -10,7 +10,14 @@ export async function POST(
     const { id: agentId, runId } = await params
     const providerInfo = getProviderInfoForRequest(request)
     const detail = await profileAnalysisService.executeRun(agentId, runId, providerInfo)
-    return NextResponse.json(detail)
+    return NextResponse.json({
+      ...detail,
+      interviewTurns: detail.interviewTurns.map((turn) => ({
+        ...turn,
+        prompt: turn.question,
+        response: turn.answer,
+      })),
+    })
   } catch (error) {
     console.error('Execute profile run error:', error)
     return NextResponse.json(

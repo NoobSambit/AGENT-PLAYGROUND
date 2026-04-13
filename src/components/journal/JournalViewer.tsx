@@ -19,6 +19,7 @@ import type {
   JournalFocus,
   JournalPipelineStage,
   JournalQualityDimension,
+  JournalQualityEvaluation,
   JournalSession,
   JournalSessionDetail,
 } from '@/types/database'
@@ -92,6 +93,47 @@ function artifactBadgeTone(score?: number) {
   if (score >= 85) return 'text-pastel-green'
   if (score >= 75) return 'text-pastel-yellow'
   return 'text-pastel-red'
+}
+
+interface JournalSaveBlockersPayload {
+  code: 'journal_save_blocked'
+  sessionId: string
+  entryId?: string
+  blockerReasons: string[]
+  qualityStatus?: string
+  normalizationStatus?: string
+  validation?: {
+    pass: boolean
+    hardFailureFlags: string[]
+    softWarnings: string[]
+  }
+  evaluation?: JournalQualityEvaluation
+}
+
+function toLabel(value: string) {
+  return value.replaceAll('_', ' ')
+}
+
+function canRenderEntry(entry: JournalSessionDetail['entries'][number] | null | undefined) {
+  if (!entry) return false
+  if (entry.normalizationStatus === 'legacy_unvalidated') return false
+  return Boolean(entry.validation?.pass)
+}
+
+function getEntryStateLabel(entry: JournalSessionDetail['entries'][number] | null | undefined, isFinal: boolean) {
+  if (!entry) return 'empty'
+  if (entry.status === 'saved') return 'saved'
+  if (entry.normalizationStatus === 'legacy_unvalidated') return 'legacy'
+  if (entry.validation && !entry.validation.pass) return isFinal ? 'blocked final' : 'blocked draft'
+  if (entry.status === 'repaired') return isFinal ? 'repaired final' : 'repaired'
+  return isFinal ? 'draft final' : entry.status
+}
+
+function getQualityBadgeClass(status?: string) {
+  if (status === 'passed') return 'border-pastel-green/40 bg-pastel-green/10 text-pastel-green'
+  if (status === 'failed') return 'border-pastel-red/40 bg-pastel-red/10 text-pastel-red'
+  if (status === 'legacy_unvalidated') return 'border-pastel-yellow/40 bg-pastel-yellow/10 text-pastel-yellow'
+  return 'border-border/40 bg-muted/20 text-muted-foreground'
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
@@ -225,6 +267,7 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
+  const [saveBlockers, setSaveBlockers] = useState<JournalSaveBlockersPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const stillWorking = useStillWorking(generating)
 
@@ -291,12 +334,30 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
   }, [activeSessionId, generating, loadBootstrap, loadSessionDetail])
 
   const latestEntry = useMemo(() => detail?.entries[0] || null, [detail])
+  const finalEntry = useMemo(
+    () => detail?.entries.find((entry) => entry.id === detail.session?.finalEntryId) || latestEntry,
+    [detail, latestEntry]
+  )
+  const lineageEntries = useMemo(
+    () => detail?.entries.map((entry) => ({
+      ...entry,
+      isFinal: detail?.session?.finalEntryId === entry.id,
+    })) || [],
+    [detail]
+  )
   const isReady = detail?.session?.status === 'ready'
-  const canSave = Boolean(isReady && detail?.session?.latestEvaluation?.pass && latestEntry)
+  const canSave = Boolean(
+    isReady
+    && detail?.session?.qualityStatus === 'passed'
+    && detail?.session?.latestEvaluation?.pass
+    && finalEntry
+    && canRenderEntry(finalEntry)
+  )
 
   const createSession = async () => {
     setError(null)
     setSaveStatus(null)
+    setSaveBlockers(null)
     const payload = await parseResponse<{ session: JournalSession }>(await fetch(`/api/agents/${agentId}/journal`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -313,6 +374,7 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
       setGenerating(true)
       setError(null)
       setSaveStatus(null)
+      setSaveBlockers(null)
 
       const session = regenerate && activeSessionId
         ? detail?.session || await createSession()
@@ -352,9 +414,21 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
     try {
       setSaving(true)
       setSaveStatus('Saving reviewed entry…')
-      const saved = await parseResponse<JournalSessionDetail>(await fetch(`/api/agents/${agentId}/journal/sessions/${activeSessionId}/save`, {
+      setSaveBlockers(null)
+      const response = await fetch(`/api/agents/${agentId}/journal/sessions/${activeSessionId}/save`, {
         method: 'POST',
-      }))
+      })
+      const raw = await response.text()
+      const payload = raw ? JSON.parse(raw) as ({ error?: string; saveBlockers?: JournalSaveBlockersPayload } & Partial<JournalSessionDetail>) : {}
+      if (!response.ok) {
+        if (payload.saveBlockers) {
+          setSaveBlockers(payload.saveBlockers)
+          setSaveStatus('Save blocked until normalization and quality requirements pass.')
+          return
+        }
+        throw new Error(typeof payload.error === 'string' ? payload.error : 'Failed to save journal entry')
+      }
+      const saved = payload as JournalSessionDetail
       setDetail(saved)
       setSaveStatus('Entry saved to the private archive.')
       window.setTimeout(() => {
@@ -453,6 +527,16 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
         <div className="rounded-md border border-pastel-red/30 bg-pastel-red/5 px-4 py-3 text-[13px] text-pastel-red flex items-start gap-3">
           <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
           <span>{error}</span>
+        </div>
+      ) : null}
+      {saveStatus ? (
+        <div className={`rounded-md px-4 py-3 text-[13px] flex items-start gap-3 ${
+          saveBlockers
+            ? 'border border-pastel-red/30 bg-pastel-red/5 text-pastel-red'
+            : 'border border-pastel-green/30 bg-pastel-green/5 text-pastel-green'
+        }`}>
+          {saveBlockers ? <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" /> : <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />}
+          <span>{saveStatus}</span>
         </div>
       ) : null}
 
@@ -586,6 +670,11 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
                     <span className="text-foreground">{TYPE_LABELS[session.type]}</span>
                     <span className="text-muted-foreground uppercase text-[8px]">{STAGE_LABELS[session.latestStage] || session.status}</span>
                   </div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    <span className={`rounded-sm border px-1.5 py-0.5 text-[8px] font-medium ${getQualityBadgeClass(session.qualityStatus)}`}>
+                      {toLabel(session.qualityStatus || 'legacy_unvalidated')}
+                    </span>
+                  </div>
                   <div className="text-[9px] text-muted-foreground truncate opacity-80 mt-0.5">{formatDateTime(session.updatedAt)}</div>
                 </button>
               )) : (
@@ -616,29 +705,60 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
               detail?.session ? (
                 generating || detail.session.status === 'generating' ? (
                   <DraftSkeleton stageLabel={getActiveStage(detail)} stillWorking={stillWorking} />
-                ) : latestEntry ? (
+                ) : finalEntry ? (
                   <article className="w-full space-y-8">
                     <header className="space-y-4 pb-8 border-b border-border/20">
-                      <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-4">
-                        <span className="text-pastel-blue">{TYPE_LABELS[latestEntry.type]}</span>
+                      <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-4">
+                        <span className="text-pastel-blue">{TYPE_LABELS[finalEntry.type]}</span>
                         <span className="opacity-50">/</span>
-                        <span>{latestEntry.status}</span>
+                        <span>{getEntryStateLabel(finalEntry, true)}</span>
+                        <span className={`rounded-sm border px-2 py-0.5 ${getQualityBadgeClass(finalEntry.normalizationStatus)}`}>
+                          {toLabel(finalEntry.normalizationStatus || 'unknown')}
+                        </span>
+                        <span className={`rounded-sm border px-2 py-0.5 ${getQualityBadgeClass(finalEntry.qualityStatus)}`}>
+                          {toLabel(finalEntry.qualityStatus || 'pending')}
+                        </span>
                       </div>
-                      <h1 className="text-4xl font-black text-foreground tracking-tight">
-                        {latestEntry.title}
-                      </h1>
-                      <p className="text-sm text-muted-foreground leading-relaxed italic opacity-80">
-                        {latestEntry.summary}
-                      </p>
+                      {canRenderEntry(finalEntry) ? (
+                        <>
+                          <h1 className="text-4xl font-black text-foreground tracking-tight">
+                            {finalEntry.title}
+                          </h1>
+                          <p className="text-sm text-muted-foreground leading-relaxed italic opacity-80">
+                            {finalEntry.summary}
+                          </p>
+                        </>
+                      ) : (
+                        <div className="rounded-md border border-pastel-yellow/30 bg-pastel-yellow/5 p-4 space-y-3">
+                          <div className="flex items-center gap-2 text-pastel-yellow text-sm font-bold">
+                            <AlertTriangle className="h-4 w-4" />
+                            {finalEntry.normalizationStatus === 'legacy_unvalidated' ? 'Legacy / Unvalidated Entry' : 'Blocked Journal Artifact'}
+                          </div>
+                          <p className="text-sm text-muted-foreground leading-relaxed">
+                            {finalEntry.normalizationStatus === 'legacy_unvalidated'
+                              ? 'This entry predates the Phase 1 journal contract. The original content is preserved, but it is not rendered as normalized journal prose.'
+                              : 'Normalization or validation failed. The raw draft is preserved for inspection, but it is not renderable as a journal artifact.'}
+                          </p>
+                        </div>
+                      )}
                       <div className="flex flex-wrap gap-4 text-[10px] font-bold uppercase tracking-wider text-muted-foreground mt-4">
-                        <span className="bg-muted/30 px-2 py-1 rounded-sm">{formatDateTime(latestEntry.updatedAt)}</span>
-                        <span className="bg-muted/30 px-2 py-1 rounded-sm">{latestEntry.mood.label}</span>
-                        <span className="bg-muted/30 px-2 py-1 rounded-sm">Version {latestEntry.version}</span>
+                        <span className="bg-muted/30 px-2 py-1 rounded-sm">{formatDateTime(finalEntry.updatedAt)}</span>
+                        <span className="bg-muted/30 px-2 py-1 rounded-sm">{finalEntry.mood.label}</span>
+                        <span className="bg-muted/30 px-2 py-1 rounded-sm">Version {finalEntry.version}</span>
                       </div>
                     </header>
-                    <div className="prose prose-sm prose-invert max-w-none prose-p:leading-relaxed prose-p:text-muted-foreground/90 prose-p:text-base">
-                      <ChatMessageContent content={latestEntry.content} blocks={latestEntry.render.blocks} />
-                    </div>
+                    {canRenderEntry(finalEntry) ? (
+                      <div className="prose prose-sm prose-invert max-w-none prose-p:leading-relaxed prose-p:text-muted-foreground/90 prose-p:text-base">
+                        <ChatMessageContent content={finalEntry.content} blocks={finalEntry.render.blocks} />
+                      </div>
+                    ) : (
+                      <div className="rounded-md border border-border/30 bg-muted/10 p-4 space-y-3">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Raw Draft Snapshot</div>
+                        <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-sm bg-background/60 p-3 text-xs text-muted-foreground">
+                          {finalEntry.rawModelOutput?.text || 'No raw draft captured.'}
+                        </pre>
+                      </div>
+                    )}
                   </article>
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center opacity-50 grayscale">
@@ -659,17 +779,36 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
             ) : selectedArchiveEntry ? (
                <article className="w-full space-y-8">
                 <header className="space-y-4 pb-8 border-b border-border/20">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-pastel-blue">{TYPE_LABELS[selectedArchiveEntry.type]}</div>
-                  <h1 className="text-4xl font-black text-foreground tracking-tight">
-                    {selectedArchiveEntry.title}
-                  </h1>
-                  <p className="text-sm text-muted-foreground leading-relaxed italic opacity-80">
-                    {selectedArchiveEntry.summary}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
+                    <span className="text-pastel-blue">{TYPE_LABELS[selectedArchiveEntry.type]}</span>
+                    <span className={`rounded-sm border px-2 py-0.5 ${getQualityBadgeClass(selectedArchiveEntry.normalizationStatus)}`}>
+                      {toLabel(selectedArchiveEntry.normalizationStatus || 'legacy_unvalidated')}
+                    </span>
+                  </div>
+                  {canRenderEntry(selectedArchiveEntry) ? (
+                    <>
+                      <h1 className="text-4xl font-black text-foreground tracking-tight">
+                        {selectedArchiveEntry.title}
+                      </h1>
+                      <p className="text-sm text-muted-foreground leading-relaxed italic opacity-80">
+                        {selectedArchiveEntry.summary}
+                      </p>
+                    </>
+                  ) : (
+                    <div className="rounded-md border border-pastel-yellow/30 bg-pastel-yellow/5 p-4 text-sm text-muted-foreground">
+                      This archived entry is preserved as legacy or invalid content. The original record remains inspectable, but it is not rendered as normalized journal prose.
+                    </div>
+                  )}
                 </header>
-                <div className="prose prose-sm prose-invert max-w-none prose-p:leading-relaxed prose-p:text-muted-foreground/90 prose-p:text-base">
-                  <ChatMessageContent content={selectedArchiveEntry.content} blocks={selectedArchiveEntry.render.blocks} />
-                </div>
+                {canRenderEntry(selectedArchiveEntry) ? (
+                  <div className="prose prose-sm prose-invert max-w-none prose-p:leading-relaxed prose-p:text-muted-foreground/90 prose-p:text-base">
+                    <ChatMessageContent content={selectedArchiveEntry.content} blocks={selectedArchiveEntry.render.blocks} />
+                  </div>
+                ) : (
+                  <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-sm bg-background/60 p-3 text-xs text-muted-foreground">
+                    {selectedArchiveEntry.rawModelOutput?.text || selectedArchiveEntry.content || 'No normalized content available.'}
+                  </pre>
+                )}
               </article>
             ) : (
               <div className="h-full flex flex-col items-center justify-center opacity-50 grayscale">
@@ -710,6 +849,19 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
                       </div>
                     ) : detail?.session?.latestEvaluation ? (
                       <div className="mt-3 space-y-3">
+                        <div className="flex flex-wrap gap-2">
+                          <span className={`rounded-sm border px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${getQualityBadgeClass(detail.session.qualityStatus)}`}>
+                            session {toLabel(detail.session.qualityStatus || 'pending')}
+                          </span>
+                          <span className={`rounded-sm border px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${getQualityBadgeClass(finalEntry?.normalizationStatus)}`}>
+                            normalization {toLabel(finalEntry?.normalizationStatus || 'unknown')}
+                          </span>
+                          {detail.session.promptVersion ? (
+                            <span className="rounded-sm border border-border/40 bg-muted/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                              {detail.session.promptVersion}
+                            </span>
+                          ) : null}
+                        </div>
                         <div className={detail.session.latestEvaluation.pass ? 'rounded-md border border-pastel-green/40 bg-pastel-green/5 p-4 text-center pb-5' : 'rounded-md border border-pastel-red/40 bg-pastel-red/5 p-4 text-center pb-5'}>
                           <div className={labelStyle}>Final Score</div>
                           <div className="flex justify-center items-center gap-2 mt-2">
@@ -718,6 +870,30 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
                           </div>
                           <p className="mt-3 text-[10px] opacity-80 tracking-wide font-medium leading-relaxed max-w-[200px] mx-auto text-muted-foreground">{detail.session.latestEvaluation.evaluatorSummary}</p>
                         </div>
+                        {finalEntry?.validation && !finalEntry.validation.pass ? (
+                          <div className="rounded-md border border-pastel-red/30 bg-pastel-red/5 p-4">
+                            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-pastel-red">Validation Blockers</div>
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              {finalEntry.validation.hardFailureFlags.map((flag) => (
+                                <span key={flag} className="rounded-sm border border-pastel-red/30 bg-pastel-red/10 px-2 py-0.5 text-[10px] font-medium text-pastel-red">
+                                  {toLabel(flag)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {saveBlockers ? (
+                          <div className="rounded-md border border-pastel-red/30 bg-pastel-red/5 p-4">
+                            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-pastel-red">Save Blocked</div>
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              {saveBlockers.blockerReasons.map((reason) => (
+                                <span key={reason} className="rounded-sm border border-pastel-red/30 bg-pastel-red/10 px-2 py-0.5 text-[10px] font-medium text-pastel-red">
+                                  {toLabel(reason)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                         <div className="grid grid-cols-2 gap-2 mt-2">
                           {Object.entries(detail.session.latestEvaluation.dimensions).map(([dimension, score]) => (
                             <div key={dimension} className={`${subPanel} p-2.5 hover:border-border/40 transition-colors`}>
@@ -736,13 +912,18 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
 
                   <div className="pt-2">
                     <div className={labelStyle}>Structured Insights</div>
-                    {latestEntry ? (
+                    {finalEntry ? (
                       <div className="mt-3 space-y-3 bg-muted/20 border border-border/30 rounded-sm p-4">
-                        {latestEntry.structured.insights.length > 0 && (
+                        {!canRenderEntry(finalEntry) ? (
+                          <div className="text-xs text-muted-foreground leading-relaxed">
+                            Structured extraction is blocked until normalization succeeds. Inspect the raw draft and validation blockers above.
+                          </div>
+                        ) : null}
+                        {finalEntry.structured.insights.length > 0 && (
                           <div className="space-y-1.5">
                             <div className="text-[9px] font-bold uppercase tracking-wider text-pastel-purple">Key Insights</div>
                              <ul className="space-y-1.5 list-none m-0 p-0">
-                              {latestEntry.structured.insights.slice(0, 3).map((item) => (
+                              {finalEntry.structured.insights.slice(0, 3).map((item) => (
                                 <li key={item} className="text-[11px] text-muted-foreground leading-relaxed flex items-start gap-2 m-0 p-0">
                                   <span className="mt-1.5 h-1 w-1 rounded-full shrink-0 bg-pastel-purple" />
                                   {item}
@@ -752,11 +933,11 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
                           </div>
                         )}
                         <div className="h-px bg-border/40 my-3"></div>
-                        {latestEntry.structured.nextActions.length > 0 && (
+                        {finalEntry.structured.nextActions.length > 0 && (
                           <div className="space-y-1.5">
                             <div className="text-[9px] font-bold uppercase tracking-wider text-pastel-green">Next Actions</div>
                              <ul className="space-y-1.5 list-none m-0 p-0">
-                              {latestEntry.structured.nextActions.slice(0, 3).map((item) => (
+                              {finalEntry.structured.nextActions.slice(0, 3).map((item) => (
                                 <li key={item} className="text-[11px] text-muted-foreground leading-relaxed flex items-start gap-2 m-0 p-0">
                                   <span className="mt-1.5 h-1 w-1 rounded-full shrink-0 bg-pastel-green" />
                                   {item}
@@ -775,6 +956,17 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
                  <>
                    <div className="space-y-3">
                     <div className={labelStyle}>Archive Detail</div>
+                     <div className={`${subPanel} px-3 py-3`}>
+                      <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Archive Status</div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <span className={`rounded-sm border px-2 py-0.5 text-[10px] font-medium ${getQualityBadgeClass(selectedArchiveEntry.normalizationStatus)}`}>
+                          {toLabel(selectedArchiveEntry.normalizationStatus || 'legacy_unvalidated')}
+                        </span>
+                        <span className={`rounded-sm border px-2 py-0.5 text-[10px] font-medium ${getQualityBadgeClass(selectedArchiveEntry.qualityStatus)}`}>
+                          {toLabel(selectedArchiveEntry.qualityStatus || 'legacy_unvalidated')}
+                        </span>
+                      </div>
+                    </div>
                      <div className={`${subPanel} px-3 py-3`}>
                       <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Saved At</div>
                       <div className="mt-1 text-xs font-bold text-foreground">{formatDateTime(selectedArchiveEntry.savedAt || selectedArchiveEntry.updatedAt)}</div>
@@ -825,6 +1017,23 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
                   </div>
                  </div>
                )}
+              {mode === 'compose' && lineageEntries.length ? (
+                <div className="pt-3 border-t border-border/30 space-y-2">
+                  <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Artifact Lineage</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {lineageEntries.map((entry) => (
+                      <span
+                        key={entry.id}
+                        className={`rounded-sm border px-2 py-0.5 text-[10px] font-medium ${
+                          entry.isFinal ? 'border-pastel-blue/40 bg-pastel-blue/10 text-pastel-blue' : 'border-border/40 bg-muted/20 text-muted-foreground'
+                        }`}
+                      >
+                        {getEntryStateLabel(entry, entry.isFinal)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </section>
         </div>

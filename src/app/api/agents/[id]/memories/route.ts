@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AgentService } from '@/lib/services/agentService'
+import { MemoryGraphService } from '@/lib/services/memoryGraphService'
 import { MemoryService } from '@/lib/services/memoryService'
 import type { MemoryListQuery } from '@/types/database'
 
@@ -32,10 +33,14 @@ export async function GET(
       beforeId: searchParams.get('beforeId') || undefined,
     }
 
-    const memories = await MemoryService.listConsoleMemories(agentId, query)
+    const [memories, graph] = await Promise.all([
+      MemoryService.listConsoleMemories(agentId, query),
+      MemoryGraphService.getConsoleSummary(agentId),
+    ])
 
     return NextResponse.json({
       memories,
+      graph,
     })
   } catch (error) {
     console.error('Agent memories error:', error)
