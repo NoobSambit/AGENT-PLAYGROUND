@@ -108,6 +108,17 @@ const TYPE_GUIDANCE: Record<JournalEntryType, string> = {
   idea_capture: 'Capture an emerging idea, why it matters now, what excites you, and what remains uncertain.',
 }
 
+const JOURNAL_MEMORY_TYPE_PRIORITY: Partial<Record<MemoryRecord['type'], number>> = {
+  tension_snapshot: 5,
+  preference: 4,
+  identity: 4,
+  operating_constraint: 4,
+  relationship: 3,
+  project: 3,
+  fact: 2,
+  artifact_summary: 2,
+}
+
 function clamp(value: number, min = 0, max = 100) {
   return Math.max(min, Math.min(max, value))
 }
@@ -136,6 +147,69 @@ function deriveDominantLabel(agent: AgentRecord) {
   const dominant = emotionalService.getDominantEmotion(agent.emotionalState, agent.emotionalProfile)
   if (!dominant) return 'steady'
   return dominant.replaceAll('_', ' ')
+}
+
+function isLocalBaselineProvider(providerInfo: LLMProviderInfo) {
+  return providerInfo.provider === 'ollama' && /qwen2\.5:7b|llama3\.2/i.test(providerInfo.model)
+}
+
+function tokenizeJournalQuery(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length >= 4)
+}
+
+function buildJournalMemoryQuery(input: JournalComposeInput, goalHints: string[] = []) {
+  return [
+    input.userNote,
+    TYPE_LABELS[input.type],
+    TYPE_GUIDANCE[input.type],
+    input.focus.join(' '),
+    goalHints.join(' '),
+  ].filter(Boolean).join(' ')
+}
+
+function memoryTextForJournal(memory: MemoryRecord) {
+  return `${memory.type} ${memory.summary} ${memory.content} ${memory.context} ${memory.canonicalValue || ''}`.toLowerCase()
+}
+
+function scoreJournalMemory(memory: MemoryRecord, queryWords: string[]): number {
+  const haystack = memoryTextForJournal(memory)
+  const overlap = queryWords.filter((word) => haystack.includes(word)).length
+  return (memory.importance || 0)
+    + (JOURNAL_MEMORY_TYPE_PRIORITY[memory.type] || 1)
+    + overlap * 2.5
+    + (memory.canonicalValue ? 1.25 : 0)
+}
+
+function selectJournalMemories(
+  recentMemories: MemoryRecord[],
+  relevantMemories: MemoryRecord[],
+  input: JournalComposeInput,
+  goalHints: string[] = []
+): MemoryRecord[] {
+  const queryWords = tokenizeJournalQuery(buildJournalMemoryQuery(input, goalHints))
+  const merged = [...recentMemories, ...relevantMemories]
+  const deduped = merged.filter((memory, index, list) => list.findIndex((candidate) => candidate.id === memory.id) === index)
+
+  return deduped
+    .sort((left, right) => scoreJournalMemory(right, queryWords) - scoreJournalMemory(left, queryWords))
+    .slice(0, 4)
+}
+
+function buildPriorityJournalEvidenceLines(signals: JournalContextSignal[]): string[] {
+  const prioritized = signals.filter((signal) =>
+    signal.sourceType === 'message'
+    || signal.sourceType === 'memory'
+    || signal.sourceType === 'goal'
+  )
+
+  return prioritized
+    .map((signal) => summarizeText(signal.snippet, 180))
+    .filter(Boolean)
+    .slice(0, 4)
 }
 
 function fallbackTitle(type: JournalEntryType, content: string) {
@@ -185,6 +259,30 @@ export class JournalSaveBlockedError extends Error {
 }
 
 class JournalService {
+  private isBetterJournalCandidate(
+    candidateEntry: JournalEntry,
+    candidateEvaluation: JournalQualityEvaluation,
+    currentBestEntry: JournalEntry,
+    currentBestEvaluation: JournalQualityEvaluation
+  ) {
+    const candidateValidationPass = candidateEntry.validation?.pass ? 1 : 0
+    const currentValidationPass = currentBestEntry.validation?.pass ? 1 : 0
+
+    if (candidateValidationPass !== currentValidationPass) {
+      return candidateValidationPass > currentValidationPass
+    }
+
+    if (candidateEvaluation.pass !== currentBestEvaluation.pass) {
+      return candidateEvaluation.pass
+    }
+
+    if (candidateEvaluation.overallScore !== currentBestEvaluation.overallScore) {
+      return candidateEvaluation.overallScore > currentBestEvaluation.overallScore
+    }
+
+    return (candidateEntry.validation?.hardFailureFlags.length || 0) < (currentBestEntry.validation?.hardFailureFlags.length || 0)
+  }
+
   getAllowedTypes(): JournalEntryType[] {
     return JOURNAL_TYPES
   }
@@ -405,8 +503,8 @@ class JournalService {
 
     const draftResponse = await generateText({
       providerInfo,
-      temperature: 0.85,
-      maxTokens: 2200,
+      temperature: isLocalBaselineProvider(providerInfo) ? 0.45 : 0.85,
+      maxTokens: isLocalBaselineProvider(providerInfo) ? 1500 : 2200,
       messages: [
         { role: 'system', content: this.buildGeneratorSystemPrompt(agent, session, voicePacket) },
         { role: 'user', content: this.buildDraftPrompt(session, contextPacket, voicePacket) },
@@ -466,12 +564,14 @@ class JournalService {
       },
       createdAt: new Date().toISOString(),
     })
+    let selectedEntry = finalEntry
+    let selectedEvaluation = evaluation
 
     if (!draftResult.validation.pass || !evaluation.pass) {
       const repairResponse = await generateText({
         providerInfo,
-        temperature: 0.7,
-        maxTokens: 2200,
+        temperature: isLocalBaselineProvider(providerInfo) ? 0.3 : 0.7,
+        maxTokens: isLocalBaselineProvider(providerInfo) ? 1500 : 2200,
         messages: [
           { role: 'system', content: this.buildGeneratorSystemPrompt(agent, session, voicePacket) },
           { role: 'user', content: this.buildRepairPrompt(session, voicePacket, finalEntry, evaluation) },
@@ -521,11 +621,16 @@ class JournalService {
         },
         createdAt: new Date().toISOString(),
       })
+
+      if (this.isBetterJournalCandidate(finalEntry, evaluation, selectedEntry, selectedEvaluation)) {
+        selectedEntry = finalEntry
+        selectedEvaluation = evaluation
+      }
     }
 
     const gate = applyFinalQualityGate({
-      validation: finalEntry.validation,
-      evaluation,
+      validation: selectedEntry.validation,
+      evaluation: selectedEvaluation,
       thresholds: {
         overallScoreMinimum: 80,
         dimensionFloor: 70,
@@ -536,14 +641,14 @@ class JournalService {
       ...session,
       status: gate.pass ? 'ready' : 'failed',
       latestStage: gate.pass ? 'ready' : 'failed',
-      latestEvaluation: evaluation,
-      finalEntryId: finalEntry.id,
-      rawModelOutput: finalEntry.rawModelOutput,
-      validation: finalEntry.validation,
+      latestEvaluation: selectedEvaluation,
+      finalEntryId: selectedEntry.id,
+      rawModelOutput: selectedEntry.rawModelOutput,
+      validation: selectedEntry.validation,
       qualityStatus: gate.qualityStatus,
-      repairCount: finalEntry.version > 1 ? 1 : 0,
+      repairCount: selectedEntry.version > 1 ? 1 : 0,
       promptVersion: JOURNAL_PROMPT_VERSION,
-      failureReason: gate.pass ? undefined : [evaluation.evaluatorSummary, ...gate.blockerReasons].filter(Boolean).join(' | '),
+      failureReason: gate.pass ? undefined : [selectedEvaluation.evaluatorSummary, ...gate.blockerReasons].filter(Boolean).join(' | '),
       updatedAt: new Date().toISOString(),
     }
     await this.saveSession(session)
@@ -556,10 +661,10 @@ class JournalService {
         ? 'Journal draft is ready for review and explicit save.'
         : 'Journal draft failed normalization, validation, or quality gating and requires regeneration.',
       payload: {
-        entryId: finalEntry.id,
-        evaluation,
-        validation: finalEntry.validation,
-        normalization: finalEntry.normalization,
+        entryId: selectedEntry.id,
+        evaluation: selectedEvaluation,
+        validation: selectedEntry.validation,
+        normalization: selectedEntry.normalization,
         gate,
       },
       createdAt: new Date().toISOString(),
@@ -571,10 +676,10 @@ class JournalService {
         feature: 'journal',
         description: `Journal session ${sessionId} was blocked by validation or evaluation.`,
         blockerReasons: gate.blockerReasons,
-        evidenceRefs: [sessionId, finalEntry.id],
-        rawExcerpt: finalEntry.rawModelOutput?.text,
-        outputExcerpt: finalEntry.summary,
-        qualityScore: evaluation.overallScore,
+        evidenceRefs: [sessionId, selectedEntry.id],
+        rawExcerpt: selectedEntry.rawModelOutput?.text,
+        outputExcerpt: selectedEntry.summary,
+        qualityScore: selectedEvaluation.overallScore,
         category: 'communication_style',
         candidateAdaptations: [
           'Keep journal outputs structurally valid and grounded before surfacing them as ready.',
@@ -803,13 +908,16 @@ class JournalService {
   }
 
   private async buildContextSignals(agent: AgentRecord, input: JournalComposeInput): Promise<JournalContextSignal[]> {
-    const [memories, messages, relationships, savedJournals, savedDreams] = await Promise.all([
+    const memoryQuery = buildJournalMemoryQuery(input, agent.goals.slice(0, 2))
+    const [recentMemories, relevantMemories, messages, relationships, savedJournals, savedDreams] = await Promise.all([
       MemoryService.getRecentMemories(agent.id, 10),
+      MemoryService.getRelevantMemories(agent.id, memoryQuery, 6),
       MessageService.getMessagesByAgentId(agent.id),
       RelationshipRepository.listForAgent(agent.id),
       this.listSavedEntries(agent.id, { limit: 3 }),
       FeatureContentRepository.listDreams(agent.id, 2),
     ])
+    const memories = selectJournalMemories(recentMemories, relevantMemories, input, agent.goals.slice(0, 2))
 
     const signals: JournalContextSignal[] = [
       {
@@ -893,20 +1001,38 @@ class JournalService {
 
     for (const [index, memory] of memories
       .filter((memory) => this.memoryMatchesFocus(memory, input.focus))
-      .slice(0, 4)
       .entries()) {
+      const baseWeight = memory.type === 'tension_snapshot'
+        ? 0.93
+        : memory.type === 'preference' || memory.type === 'identity' || memory.type === 'operating_constraint'
+          ? 0.89
+          : memory.type === 'relationship' || memory.type === 'project'
+            ? 0.84
+            : 0.8
       signals.push({
         id: `memory-${memory.id}`,
         sourceType: 'memory',
         label: `Memory ${index + 1}`,
         snippet: summarizeText(memory.summary || memory.content, 180),
         reason: 'Concrete memory improves grounding and specificity.',
-        weight: 0.86 - index * 0.06,
+        weight: baseWeight - index * 0.04,
         linkedEntityId: memory.id,
       })
     }
 
-    for (const [index, message] of messages.filter((message) => message.type === 'agent').slice(-3).entries()) {
+    for (const [index, message] of messages.filter((message) => message.type === 'user').slice(-3).entries()) {
+      signals.push({
+        id: `user-message-${message.id}`,
+        sourceType: 'message',
+        label: `Recent prompt ${index + 1}`,
+        snippet: summarizeText(message.content, 180),
+        reason: 'Recent user phrasing carries the sharpest concrete wording for internal tension.',
+        weight: 0.87 - index * 0.05,
+        linkedEntityId: message.id,
+      })
+    }
+
+    for (const [index, message] of messages.filter((message) => message.type === 'agent').slice(-2).entries()) {
       signals.push({
         id: `message-${message.id}`,
         sourceType: 'message',
@@ -1029,8 +1155,18 @@ class JournalService {
         ? `Recent communication fingerprint: ${voicePacket.communicationFingerprintSummary}`
         : 'Recent communication fingerprint is thin. Lean on persona and linguistic baseline instead of inventing recent evidence.',
       `Prompt version: ${JOURNAL_PROMPT_VERSION}`,
-      'Valid example: {"title":"The Pressure Is Naming Me Too Quickly","summary":"I can feel launch urgency narrowing my honesty.","content":"I kept calling it momentum today, but it was mostly fear dressed as speed...","insights":["Speed is covering fear."],"openQuestions":["What am I avoiding by shipping faster?"],"nextActions":["Name the real risk before tomorrow morning."],"gratitudes":["I still trust my own signal."],"themes":["launch pressure"],"referencedEntities":["cofounder","prototype"]}',
-      'Invalid example: ```json {"title":"title:","summary":"{\\"summary\\":\\"...\\"}","content":"```json ..."} ```',
+      '',
+      'GROUNDING RULES (critical):',
+      '- Only reference people, names, projects, meetings, events, and conversations that appear in the selected context signals below.',
+      '- Do NOT invent named people (e.g. "Alex", "Sarah") unless they appear in the evidence.',
+      '- Do NOT invent project discussions, prototypes, client meetings, or collaboration events that are not in the evidence.',
+      '- Do NOT fabricate conversations or scenarios. If the evidence is thin, write about the feelings and themes you can see, not invented scenes.',
+      '- If a "referencedEntities" value does not appear in the context signals, do not include it.',
+      '- It is better to write a shorter, honestly grounded reflection than a longer one full of fabricated details.',
+      '',
+      'Valid example: {"title":"The Fear Is More Ordinary Than The Ambition","summary":"I can see the avoidance more clearly when I stop dressing it up as complexity.","content":"What I keep calling discernment is often fear of being seen in a rough draft...","insights":["Avoidance can imitate refinement."],"openQuestions":["What would I show someone if I stopped protecting the image of talent?"],"nextActions":["Write one rough paragraph tonight and keep it visible."],"gratitudes":["I can still name the pattern honestly."],"themes":["discipline","avoidance"],"referencedEntities":["late-night writing","blunt feedback"]}',
+      'Invalid example (hallucination): {"title":"The Talk With Alex","content":"Alex and I had a breakthrough during our prototype review session...","referencedEntities":["Alex","prototype review"]} -- WRONG because Alex and prototype review are not in evidence.',
+      'Invalid example (format): ```json {"title":"title:","summary":"{\\"summary\\":\\"...\\"}","content":"```json ..."} ```',
       'Return JSON only with keys: title, summary, content, insights, openQuestions, nextActions, gratitudes, themes, referencedEntities.',
       'Content should be 180-360 words and read like a polished private reflection, not a report.',
       'Never wrap the answer in markdown fences. Never prefix fields with labels outside the JSON object.',
@@ -1041,13 +1177,29 @@ class JournalService {
     const signals = contextPacket.selectedSignals
       .map((signal, index) => `${index + 1}. ${signal.label}: ${signal.snippet} (${signal.reason})`)
       .join('\n')
+    const priorityEvidence = buildPriorityJournalEvidenceLines(contextPacket.selectedSignals)
+      .map((line, index) => `${index + 1}. ${line}`)
+      .join('\n')
 
     return [
       `Compose a ${TYPE_LABELS[session.type].toLowerCase()} journal entry.`,
       session.normalizedInput.userNote ? `Optional user note: ${session.normalizedInput.userNote}` : 'No explicit user note was provided.',
       session.normalizedInput.focus?.length ? `Focus chips: ${session.normalizedInput.focus.join(', ')}` : 'No focus chips selected.',
       `Selected context signals:\n${signals}`,
+      priorityEvidence ? `Priority evidence lines:\n${priorityEvidence}` : 'No priority evidence lines available.',
       `Voice conditioning fallback: ${voicePacket.fallbackUsed}`,
+      'Grounded entry rule: if the selected context signals do not name a concrete external event, do not invent one.',
+      'Stay in first-person reflection. Prefer naming the visible emotion, tension, and avoided action over constructing a scene with coworkers, meetings, projects, or clients.',
+      'Name at least one exact fear, self-protective move, or avoided action using language that already appears in the selected signals.',
+      'Reuse at least one sharp clause from the priority evidence lines almost verbatim when it captures the real tension better than an abstract paraphrase.',
+      'Make the entry turn on one immediate, pride-sensitive avoided move instead of a broad lesson about growth.',
+      'If the evidence names a concrete avoided move, stay with that move throughout the entry instead of switching to broader ideas.',
+      'If the evidence contains a sharp phrase for the conflict, reuse that phrase or its core wording directly instead of abstract paraphrase.',
+      'If the evidence is mostly internal tension, write the entry around that tension instead of drifting into generic commentary about creativity, growth, or process.',
+      'Internal evidence can still be specific. Specific means naming the exact self-protective story, fear, avoided draft, or pride cost, even if no external event happened.',
+      'Do not generalize into lines like "every writer faces this" or "this is part of the creative process." Stay specific to this agent and this evidence packet.',
+      'Avoid vague abstractions like "authentic exploration" or "creative process" unless the selected signals themselves use that wording.',
+      'Keep the content body between 180 and 320 words.',
     ].join('\n\n')
   }
 
@@ -1057,18 +1209,69 @@ class JournalService {
     entry: JournalEntry,
     evaluation: JournalQualityEvaluation
   ) {
+    const hardFlags = entry.validation?.hardFailureFlags || []
+    const hasGroundingFailure = hardFlags.some((flag) =>
+      flag.includes('hallucination') || flag.includes('entity')
+    )
+    const selectedSignals = session.contextPacket?.selectedSignals || []
+    const signalBlock = selectedSignals.length > 0
+      ? selectedSignals.map((signal, index) => `${index + 1}. ${signal.label}: ${signal.snippet}`).join('\n')
+      : 'No explicit context signals available.'
+    const priorityEvidence = buildPriorityJournalEvidenceLines(selectedSignals)
+      .map((line, index) => `${index + 1}. ${line}`)
+      .join('\n')
+
+    const groundingInstructions = hasGroundingFailure
+      ? [
+          'GROUNDING REPAIR (critical):',
+          '- Ignore the draft\'s unsupported concrete scenes. Rewrite from scratch from the evidence, not by lightly editing the fabricated scene.',
+          '- Remove all named people, projects, meetings, or events that do not appear in the context signals.',
+          '- Do not invent collaboration scenes, client interactions, or brainstorming sessions.',
+          '- Replace fabricated details with honest reflection on the actual themes and emotions visible in the evidence.',
+          '- Update referencedEntities to only include terms found in the context signals.',
+        ]
+      : []
+    const lowSpecificity = evaluation.dimensions.specificityGrounding.score < 75
+    const lowEmotion = evaluation.dimensions.emotionalAuthenticity.score < 75
+    const hasLengthFailure = hardFlags.includes('journal_content_too_short') || hardFlags.includes('journal_content_too_long')
+    const depthRepairInstructions = (lowSpecificity || lowEmotion)
+      ? [
+          'DEPTH REPAIR (critical):',
+          '- Replace abstract commentary with the exact fear, avoided action, or self-justifying story visible in the evidence.',
+          '- Use at least one phrase or tension that clearly comes from the allowed evidence signals.',
+          '- Reuse one sharp line from the priority evidence almost verbatim if that is the clearest way to ground the conflict.',
+          '- If there is no concrete external event in evidence, deepen the internal conflict instead of inventing a scene.',
+          '- Keep the emotion precise and embodied rather than summarizing it as a generic lesson.',
+          '- Cut broad statements about growth, creativity, or perfection whenever a more exact tension is available in the evidence.',
+          '- Replace generic nouns like "projects", "abilities", or "process" with the actual avoided move or fear named in the evidence.',
+        ]
+      : []
+    const lengthRepairInstructions = hasLengthFailure
+      ? [
+          'LENGTH REPAIR (critical):',
+          '- Keep the content body between 180 and 320 words.',
+          '- If the draft is too short, add depth by naming the exact avoided move, the self-protective story, and the concrete next action already supported by evidence.',
+          '- Do not add invented scenes just to add length.',
+        ]
+      : []
+
     return [
       `Revise this ${TYPE_LABELS[session.type].toLowerCase()} entry so it passes the quality gate.`,
       `Current title: ${entry.title}`,
       `Current summary: ${entry.summary}`,
       `Weaknesses: ${evaluation.weaknesses.join(' | ') || 'None provided'}`,
       `Repair instructions: ${evaluation.repairInstructions.join(' | ') || 'Improve specificity, continuity, and voice consistency.'}`,
+      ...groundingInstructions,
+      ...depthRepairInstructions,
+      ...lengthRepairInstructions,
       voicePacket.communicationFingerprintSummary
         ? `Recent communication fingerprint: ${voicePacket.communicationFingerprintSummary}`
         : 'Recent communication fingerprint is thin. Stay aligned to persona and linguistic baseline.',
+      `Allowed evidence signals:\n${signalBlock}`,
+      priorityEvidence ? `Priority evidence lines:\n${priorityEvidence}` : 'No priority evidence lines available.',
       `Draft content:\n${entry.content}`,
-      entry.validation?.hardFailureFlags?.length
-        ? `Validation blockers: ${entry.validation.hardFailureFlags.join(' | ')}`
+      hardFlags.length
+        ? `Validation blockers: ${hardFlags.join(' | ')}`
         : 'Validation blockers: none recorded.',
       'Return JSON only with the same keys as before.',
     ].join('\n\n')
@@ -1156,6 +1359,7 @@ class JournalService {
     const validation = this.validateEntryArtifact(entry, {
       parsedSuccessfully: hasParsedPayload,
       sourceRefs,
+      contextSignals: params.session.contextPacket?.selectedSignals || [],
     })
 
     return {
@@ -1173,8 +1377,10 @@ class JournalService {
     options: {
       parsedSuccessfully: boolean
       sourceRefs: OutputQualitySourceRef[]
+      contextSignals?: Array<{ label: string; snippet: string; reason?: string }>
     }
   ): OutputQualityValidationReport {
+    const wordCount = countWords(entry.content)
     const hardFailureFlags = [
       ...validateRequiredTextFields({
         title: entry.title,
@@ -1194,6 +1400,10 @@ class JournalService {
         : []),
       ...(/\s*```json/i.test(entry.title) ? [OUTPUT_QUALITY_FLAGS.codeFenceLeakage] : []),
       ...(!entry.summary || /^\s*[\[{]/.test(entry.summary) ? ['journal_summary_wrapper_leakage'] : []),
+      ...(wordCount < 140 ? ['journal_content_too_short'] : []),
+      ...(wordCount > 420 ? ['journal_content_too_long'] : []),
+      ...this.detectEntityHallucination(entry, options.contextSignals || []),
+      ...this.detectInventedContext(entry, options.contextSignals || []),
     ]
 
     const softWarnings = [
@@ -1207,6 +1417,125 @@ class JournalService {
       softWarnings,
       validatorVersion: JOURNAL_VALIDATOR_VERSION,
     })
+  }
+
+  /**
+   * Deterministic named-entity hallucination detection.
+   * Compares referencedEntities and content against the context signals corpus.
+   * Returns hard failure flags for invented people, projects, or events.
+   */
+  private detectEntityHallucination(
+    entry: JournalEntry,
+    contextSignals: Array<{ label: string; snippet: string; reason?: string }>
+  ): string[] {
+    if (contextSignals.length === 0) return []
+
+    const flags: string[] = []
+
+    // Build a searchable corpus from context signals
+    const signalCorpus = contextSignals
+      .map((signal) => `${signal.label} ${signal.snippet} ${signal.reason || ''}`)
+      .join(' ')
+      .toLowerCase()
+
+    // Check referencedEntities against the signal corpus
+    const referencedEntities = entry.structured.referencedEntities || []
+    const ungroundedEntities = referencedEntities.filter((entity) => {
+      const normalized = entity.toLowerCase().trim()
+      // Skip very generic terms that don't need grounding
+      if (normalized.length < 3) return false
+      if (['self', 'me', 'myself', 'time', 'work', 'life', 'writing', 'project', 'team', 'goal', 'emotion', 'feeling'].includes(normalized)) return false
+      if (signalCorpus.includes(normalized)) {
+        return false
+      }
+
+      const entityTokens = normalized
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter((token) => token.length >= 4)
+
+      if (entityTokens.length >= 2 && entityTokens.every((token) => signalCorpus.includes(token))) {
+        return false
+      }
+
+      return true
+    })
+
+    if (ungroundedEntities.length > 0) {
+      flags.push('journal_entity_hallucination')
+    }
+
+    // Only scan for person-like names in social contexts to avoid false positives
+    // on abstract title-cased concepts such as "The Tension" or "Practice".
+    const contentText = entry.content
+    const personContextPatterns = [
+      /\b(?:with|from|to|about|called|texted|emailed|messaged|argued with|spoke with|met)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)\b/g,
+      /\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)\s+(?:said|asked|told|wrote|texted|messaged|called)\b/g,
+      /\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)\s+and\s+I\b/g,
+    ]
+    const inventedNames: string[] = []
+
+    for (const pattern of personContextPatterns) {
+      let match: RegExpExecArray | null
+      while ((match = pattern.exec(contentText)) !== null) {
+        const name = match[1]
+        if (name.length < 3) continue
+        if (!signalCorpus.includes(name.toLowerCase())) {
+          inventedNames.push(name)
+        }
+      }
+    }
+
+    const uniqueInventedNames = [...new Set(inventedNames)]
+    if (uniqueInventedNames.length >= 2) {
+      flags.push('journal_named_person_hallucination')
+    } else if (uniqueInventedNames.length === 1) {
+      const singleName = uniqueInventedNames[0].toLowerCase()
+      if (referencedEntities.some((e) => e.toLowerCase().includes(singleName))) {
+        flags.push('journal_named_person_hallucination')
+      }
+    }
+
+    return flags
+  }
+
+  private detectInventedContext(
+    entry: JournalEntry,
+    contextSignals: Array<{ label: string; snippet: string; reason?: string }>
+  ): string[] {
+    if (contextSignals.length === 0) return []
+
+    const flags: string[] = []
+    const signalCorpus = contextSignals
+      .map((signal) => `${signal.label} ${signal.snippet} ${signal.reason || ''}`)
+      .join(' ')
+      .toLowerCase()
+    const contentText = `${entry.title} ${entry.summary} ${entry.content}`.toLowerCase()
+    const unsupportedScenePatterns = [
+      /\bprototype\b/,
+      /\bclient(?:s)?\b/,
+      /\bcritique session\b/,
+      /\breview session\b/,
+      /\bbrainstorm(?:ing)?\b/,
+      /\bcolleague(?:s)?\b/,
+      /\bpeer(?:s)?\b/,
+      /\bmarketable\b/,
+      /\bstakeholder(?:s)?\b/,
+      /\bmeeting\b/,
+    ]
+
+    const leakedSceneTerms = unsupportedScenePatterns.filter((pattern) => pattern.test(contentText) && !pattern.test(signalCorpus))
+    if (leakedSceneTerms.length > 0) {
+      flags.push('journal_invented_project_context')
+    }
+
+    if (/\b(conversation|discussion|exchange|session)\b/.test(contentText) && !/\b(conversation|discussion|exchange|session)\b/.test(signalCorpus)) {
+      if (/\b(colleague|peer|client|prototype|review|critique|meeting|brainstorm)\b/.test(contentText)) {
+        flags.push('journal_invented_conversation_scene')
+      }
+    }
+
+    return flags
   }
 
   private createBlockedEvaluation(validation?: OutputQualityValidationReport): JournalQualityEvaluation {
@@ -1291,6 +1620,9 @@ class JournalService {
               'Dimensions must include voiceConsistency, emotionalAuthenticity, reflectionDepth, specificityGrounding, continuity, readability.',
               'Each dimension must include score and rationale.',
               'Pass only when overallScore >= 80, every dimension >= 70, and hardFailureFlags is empty.',
+              'Do not require invented external scenes, named events, or extra characters when the evidence packet is primarily internal tension.',
+              'A journal entry can still be highly specific if it names the exact fear, self-protective story, avoided action, or pride cost from the evidence.',
+              'Reward direct reuse of sharp evidence language and penalize only when the entry drifts into broader abstraction than the evidence supports.',
             ].join('\n'),
           },
           {
@@ -1300,6 +1632,11 @@ class JournalService {
               `Journal type: ${session.type}`,
               `Compose input: ${JSON.stringify(session.normalizedInput)}`,
               `Context summary: ${session.contextPacket?.summary || 'none'}`,
+              `Selected signals: ${JSON.stringify((session.contextPacket?.selectedSignals || []).map((signal) => ({
+                label: signal.label,
+                sourceType: signal.sourceType,
+                snippet: signal.snippet,
+              })))}`,
               `Entry title: ${entry.title}`,
               `Entry summary: ${entry.summary}`,
               `Entry content:\n${entry.content}`,

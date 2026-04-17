@@ -10,6 +10,14 @@ export const OUTPUT_QUALITY_FLAGS = {
   duplicatedFieldValues: 'duplicated_field_values',
   missingSourceRef: 'missing_source_ref',
   invalidStageTransition: 'invalid_stage_transition',
+  // Chat directness flags
+  emptyChatResponse: 'empty_chat_response',
+  genericOpenerViolatesDirectness: 'generic_opener_violates_directness',
+  genericMetaRewriteResponse: 'generic_meta_rewrite_response',
+  ignoredDirectFeedbackRequest: 'ignored_direct_feedback_request',
+  selfMirroringInsteadOfAnswer: 'self_mirroring_instead_of_answer',
+  missingConcreteNextMove: 'missing_concrete_next_move',
+  broadCoachingWhenSpecificDiagnosisRequested: 'broad_coaching_when_specific_diagnosis_requested',
 } as const
 
 export type OutputQualityFlag = typeof OUTPUT_QUALITY_FLAGS[keyof typeof OUTPUT_QUALITY_FLAGS]

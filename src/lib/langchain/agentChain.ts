@@ -45,8 +45,9 @@ function deriveTurnStyleDirectives(userInput?: string): string[] {
   if (
     /\b(be|keep|stay|make it|answer)\s+(more\s+)?(direct|blunt|straight|to the point)\b/.test(text)
     || /\bno fluff\b/.test(text)
+    || /\bstop (?:being|sounding) (?:so )?(?:generic|vague)\b/.test(text)
   ) {
-    directives.push('Be direct and lead with the answer. Skip warm-up filler.')
+    directives.push('Be direct and lead with the answer. Skip warm-up filler and generic coaching.')
   }
 
   if (/\bbrief|concise|short|quick answer|tldr\b/.test(text)) {
@@ -59,6 +60,22 @@ function deriveTurnStyleDirectives(userInput?: string): string[] {
 
   if (/\bstep by step\b/.test(text)) {
     directives.push('Use a clear ordered sequence of steps.')
+  }
+
+  if (/\b(blunt|honest|real|raw|harsh|brutal|candid|frank|tough)\s+(?:feedback|criticism|critique|assessment|opinion|take|truth|answer)\b/i.test(text)) {
+    directives.push('The user wants blunt feedback that costs them pride, not validation. Name the real problem first. Do not soften the diagnosis.')
+  }
+
+  if (/\b(one (?:concrete|specific|pride[- ]costing|actual) (?:next|first)? ?(?:move|step|action|thing)|next move|next step|what should I (?:actually )?do (?:next|now|first|today))\b/i.test(text)) {
+    directives.push('End with exactly one concrete next move anchored to a specific action and timeframe. Not a list. One move.')
+  }
+
+  if (/\b(diagnos|what(?:\'?s| is) (?:really |actually )?(?:wrong|the (?:real |actual )?problem|happening|going on|blocking)|pinpoint|root cause|real issue|actual issue)\b/i.test(text)) {
+    directives.push('Provide a sharp, specific diagnosis with a root cause. Do not respond with a list of general tips or broad coaching.')
+  }
+
+  if (/\b(direct|blunt|honest|no fluff|diagnos|next move|next step)\b/i.test(text)) {
+    directives.push('Do not open with scene-setting phrases like "Picture this" or "Imagine this".')
   }
 
   return directives
@@ -307,6 +324,14 @@ export class AgentChain {
   private shouldUseTools(input: string): boolean {
     // Simple heuristic to determine when to use tools
     const lowerInput = input.toLowerCase()
+
+    // Direct/blunt diagnosis requests degrade when routed through summarizer/persona-adjuster tooling.
+    if (
+      /\b(direct|blunt|straight|no fluff|stop sugarcoating|sharper diagnosis|root cause|real issue|what am i avoiding|what's really wrong|one concrete next (?:move|step)|next move|next step|costs me some pride)\b/.test(lowerInput)
+      || /\b(blunt|honest|real|raw|harsh|brutal|candid|frank|tough)\s+(?:feedback|criticism|critique|assessment|opinion|take|truth|answer)\b/.test(lowerInput)
+    ) {
+      return false
+    }
 
     // Use tools for summarization requests
     if (this.isSummaryRequest(input)) {

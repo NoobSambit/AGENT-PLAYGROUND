@@ -62,6 +62,19 @@ async function createAgent(baseUrl, sourceAudit) {
   return created.payload.data
 }
 
+function buildAuditChatPrompts(sourceAudit) {
+  const seededPrompts = (sourceAudit.messages?.data || [])
+    .filter((message) => message.type === 'user')
+    .map((message) => message.content)
+
+  const directnessCoveragePrompts = [
+    'Be direct and no fluff. What am I probably avoiding if I keep polishing instead of shipping?',
+    'Give me blunt feedback with no hedging. Name the real problem first, then give me one concrete next move for tonight.',
+  ]
+
+  return [...new Set([...seededPrompts, ...directnessCoveragePrompts].filter(Boolean))]
+}
+
 async function runChatSeed(baseUrl, agentId, prompts, provider, model) {
   const results = []
 
@@ -226,9 +239,7 @@ async function main() {
   const sourceAudit = await readJson(sourceAuditPath)
 
   const agent = await createAgent(baseUrl, sourceAudit)
-  const prompts = (sourceAudit.messages?.data || [])
-    .filter((message) => message.type === 'user')
-    .map((message) => message.content)
+  const prompts = buildAuditChatPrompts(sourceAudit)
 
   await runChatSeed(baseUrl, agent.id, prompts, provider, model)
 

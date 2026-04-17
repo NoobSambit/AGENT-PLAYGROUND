@@ -139,6 +139,7 @@ export class ChatTurnService {
       prompt,
       response: response.response,
       llmConfig,
+      conversationHistory,
     }).catch((error) => {
       console.error('Chat turn quality gate failed:', error)
       return null
@@ -573,6 +574,18 @@ export class ChatTurnService {
       abstractions.push(entry)
     }
 
+    const splitPreferenceSegments = (value: string) => value
+      .split(/\s*,\s*|\s+(?:and|but)\s+/i)
+      .map((entry) => this.normalizeFactValue(entry))
+      .filter((entry) => entry.length >= 4 && entry.length <= 100)
+
+    const isPositivePreferenceClause = (value: string) => /\bi\s+(?:respond|prefer|need|want|work|write|create|focus)\b/i.test(value)
+    const isNarrativePreference = (value: string) => (
+      value.length > 80
+      || /\b(?:but|when|while|although|because|even though|instead of)\b/i.test(value)
+    )
+    const creativePreferenceContext = /\b(?:creative work|fiction|story|stories|art|artistic|aesthetic|theme|themes|motif|motifs|character|characters|novel|poem|film|redemption arcs|cliches|imagery)\b/i.test(normalizedPrompt)
+
     const nameMatch = normalizedPrompt.match(/\bmy name is\s+([A-Za-z][A-Za-z'-]+(?:\s+[A-Za-z][A-Za-z'-]+){0,2})/i)
     if (nameMatch) {
       const name = this.normalizeFactValue(nameMatch[1])
@@ -631,7 +644,7 @@ export class ChatTurnService {
     }
 
     const preferencePatterns: Array<{ regex: RegExp; prefix: string }> = [
-      { regex: /\bi\s+(?:prefer|want)\s+([^.!?\n]{3,100})/i, prefix: 'preference' },
+      { regex: /\bi\s+prefer\s+([^.!?\n]{3,100})/i, prefix: 'preference' },
       { regex: /\b(?:be|keep|stay|make it|answer)\s+(more\s+)?(direct|brief|concise|blunt|to the point)/i, prefix: 'style' },
       { regex: /\bno fluff\b/i, prefix: 'style' },
     ]
@@ -639,6 +652,7 @@ export class ChatTurnService {
       const match = normalizedPrompt.match(regex)
       if (!match) continue
       const preference = this.normalizeFactValue((match[2] || match[1] || match[0]).replace(/^more\s+/i, ''))
+      if (prefix === 'preference' && isNarrativePreference(preference)) continue
       pushAbstraction({
         type: 'preference',
         canonicalKey: `${prefix}:${this.slugify(preference)}`,
@@ -651,6 +665,150 @@ export class ChatTurnService {
         context: 'User preference',
         source: 'user_prompt',
       })
+    }
+
+    // Feedback style preferences (blunt feedback, honest criticism, etc.)
+    const feedbackStylePatterns: Array<{ regex: RegExp; style: string; antiStyle: string }> = [
+      { regex: /\b(?:i want|give me|i need|i prefer)\s+(?:blunt|honest|real|raw|harsh|brutal|candid|frank|tough)\s+(?:feedback|criticism|critique|assessment|truth)/i, style: 'blunt feedback over encouragement', antiStyle: 'soft encouragement' },
+      { regex: /\bdon'?t\s+(?:sugarcoat|soften|coddle|be nice about)\b/i, style: 'unfiltered directness', antiStyle: 'sugarcoating' },
+      { regex: /\b(?:calm accountability|not hype)\b/i, style: 'calm accountability over hype', antiStyle: 'hype' },
+      { regex: /\b(?:i want|give me|i need)\s+(?:encouragement|validation|support|reassurance)\b/i, style: 'encouragement and reassurance', antiStyle: 'harsh criticism' },
+    ]
+    for (const { regex, style, antiStyle } of feedbackStylePatterns) {
+      if (!regex.test(promptLower)) continue
+      const content = style.includes(' over ') || style.includes(antiStyle)
+        ? `The user explicitly prefers ${style}.`
+        : `The user explicitly prefers ${style} over ${antiStyle}.`
+      pushAbstraction({
+        type: 'preference',
+        canonicalKey: `style:feedback-style:${this.slugify(style)}`,
+        canonicalValue: style,
+        content,
+        summary: `Feedback preference: ${style}`,
+        keywords: ['feedback', 'style', 'preference', ...extractTopicsFromText(style)],
+        importance: 9,
+        confidence: 0.94,
+        context: 'User feedback style preference',
+        source: 'user_prompt',
+      })
+    }
+
+    // Anti-preferences (things the user explicitly dislikes)
+    const antiPreferencePatterns: Array<{ regex: RegExp; extractGroup: number }> = [
+      { regex: /\b(?:i (?:hate|dislike|can't stand|detest|loathe|despise))\s+([^.!?\n]{3,100})/i, extractGroup: 1 },
+      { regex: /\b(?:don'?t (?:like|want|give me|use))\s+([^.!?\n]{3,80})/i, extractGroup: 1 },
+      { regex: /\b(?:sick of|tired of|fed up with|bored (?:of|by|with))\s+([^.!?\n]{3,80})/i, extractGroup: 1 },
+      { regex: /\b(?:stop|quit|enough with|no more)\s+([^.!?\n]{3,80})/i, extractGroup: 1 },
+    ]
+    for (const { regex, extractGroup } of antiPreferencePatterns) {
+      const match = normalizedPrompt.match(regex)
+      if (!match) continue
+      const rawDislike = this.normalizeFactValue(match[extractGroup])
+      const dislikeSegments = splitPreferenceSegments(rawDislike)
+        .filter((entry) => !isPositivePreferenceClause(entry))
+      const normalizedDislikes = dislikeSegments.length > 0
+        ? dislikeSegments
+        : (isPositivePreferenceClause(rawDislike) ? [] : [rawDislike])
+
+      for (const dislike of normalizedDislikes) {
+        if (dislike.length < 4 || dislike.length > 100) continue
+        const antiPreferenceContext = creativePreferenceContext ? 'Creative/aesthetic anti-preference' : 'User anti-preference'
+        const antiPreferenceSummary = creativePreferenceContext
+          ? `Aesthetic anti-preference: dislikes ${dislike}`
+          : `Anti-preference: dislikes ${dislike}`
+        pushAbstraction({
+          type: 'preference',
+          canonicalKey: `anti-preference:${this.slugify(dislike)}`,
+          canonicalValue: `dislikes ${dislike}`,
+          content: `The user explicitly dislikes ${dislike}.`,
+          summary: antiPreferenceSummary,
+          keywords: [
+            ...extractTopicsFromText(dislike),
+            'anti-preference',
+            'dislike',
+            ...(creativePreferenceContext ? ['aesthetic', 'creative', 'taste'] : []),
+          ],
+          importance: 8,
+          confidence: 0.88,
+          context: antiPreferenceContext,
+          source: 'user_prompt',
+        })
+      }
+    }
+
+    // Work-style and productivity patterns (best writing time, work habits)
+    const workStylePatterns: Array<{ regex: RegExp; extractGroup: number; context: string }> = [
+      { regex: /\b(?:i (?:write|work|code|think|create|focus) best)\s+(?:at|in|during|late at)\s+([^.!?\n]{3,60})/i, extractGroup: 1, context: 'Best working time' },
+      { regex: /\b(?:my best (?:writing|working|creative|focus) (?:time|hours?))\s+(?:is|are)\s+([^.!?\n]{3,60})/i, extractGroup: 1, context: 'Best working time' },
+      { regex: /\b(?:late at night|early morning|in the evening|after midnight)\b/i, extractGroup: 0, context: 'Preferred work schedule' },
+    ]
+    for (const { regex, extractGroup, context } of workStylePatterns) {
+      const match = normalizedPrompt.match(regex)
+      if (!match) continue
+      const workStyle = this.normalizeFactValue(match[extractGroup])
+      pushAbstraction({
+        type: 'preference',
+        canonicalKey: `work-style:${this.slugify(workStyle)}`,
+        canonicalValue: workStyle,
+        content: `${context}: ${workStyle}.`,
+        summary: `Work style: ${workStyle}`,
+        keywords: [...extractTopicsFromText(workStyle), 'work-style', 'productivity'],
+        importance: 7,
+        confidence: 0.82,
+        context,
+        source: 'user_prompt',
+      })
+    }
+
+    // Aesthetic preferences (writing taste, creative values)
+    const aestheticPatterns: Array<{ regex: RegExp; extractGroup: number }> = [
+      { regex: /\bfor\s+(?:creative|writing|artistic)\s+work,\s*i am drawn to\s+([^.!?\n]{3,160})/i, extractGroup: 1 },
+      { regex: /\b(?:i (?:love|value|admire|appreciate|enjoy|am drawn to))\s+(?:writing|stories|fiction|art|music|design|work)\s+(?:that|which|where)\s+([^.!?\n]{3,120})/i, extractGroup: 1 },
+      { regex: /\b(?:my (?:writing|creative|artistic|aesthetic) (?:taste|preference|style|sensibility))\s+(?:is|leans|favors)\s+([^.!?\n]{3,100})/i, extractGroup: 1 },
+      { regex: /\b(?:i (?:like|prefer|lean toward|gravitate to))\s+(?:dark|messy|raw|gritty|ambiguous|quiet|loud|clean|sparse|dense)\s+([^.!?\n]{3,80})/i, extractGroup: 0 },
+    ]
+    for (const { regex, extractGroup } of aestheticPatterns) {
+      const match = normalizedPrompt.match(regex)
+      if (!match) continue
+      const aesthetic = this.normalizeFactValue(match[extractGroup])
+      if (aesthetic.length < 4) continue
+      pushAbstraction({
+        type: 'preference',
+        canonicalKey: `aesthetic:${this.slugify(aesthetic)}`,
+        canonicalValue: aesthetic,
+        content: `Aesthetic preference: ${aesthetic}.`,
+        summary: `Aesthetic: ${aesthetic}`,
+        keywords: [...extractTopicsFromText(aesthetic), 'aesthetic', 'creative', 'taste'],
+        importance: 8,
+        confidence: 0.84,
+        context: 'Creative/aesthetic preference',
+        source: 'user_prompt',
+      })
+    }
+
+    const motifMatch = normalizedPrompt.match(/\b(?:drawn to|obsessed with|keep returning to|always come back to)\s+([^.!?\n]{8,180})/i)
+    if (motifMatch) {
+      const motifs = motifMatch[1]
+        .split(/\s*,\s*|\s+and\s+/i)
+        .map((entry) => this.normalizeFactValue(entry))
+        .filter((entry) => entry.length >= 3 && entry.length <= 60)
+
+      const summarizedMotifs = motifs.slice(0, 5)
+      if (summarizedMotifs.length > 1) {
+        const motifValue = summarizedMotifs.join(', ')
+        pushAbstraction({
+          type: 'preference',
+          canonicalKey: `aesthetic:${this.slugify(motifValue)}`,
+          canonicalValue: motifValue,
+          content: `Recurring creative motifs: ${motifValue}.`,
+          summary: `Creative themes: ${motifValue}`,
+          keywords: [...summarizedMotifs.flatMap((entry) => extractTopicsFromText(entry)), 'aesthetic', 'motifs', 'creative'],
+          importance: 8,
+          confidence: 0.9,
+          context: 'Recurring creative motifs',
+          source: 'user_prompt',
+        })
+      }
     }
 
     const relationshipMatch = normalizedPrompt.match(/\bmy\s+(manager|wife|husband|partner|friend|boss|client|cofounder|co-founder|teammate|team|mentor)\b([^.!?\n]*)/i)
@@ -688,8 +846,11 @@ export class ChatTurnService {
     }
 
     const tensionPatterns = [
+      /\b(?:a real tension for me|the real tension for me|the real tension is)\s*:\s*([^.!?\n]+)/i,
       /\b(?:i'm|i am)\s+(stuck|torn|conflicted)\s+between\s+([^.!?\n]+)/i,
       /\b(?:worried|anxious|torn)\s+about\s+([^.!?\n]+)/i,
+      /\b(?:the tension between|caught between|torn between)\s+([^.!?\n]+)/i,
+      /\b(?:i want to (?:be|seem|look))\s+([^.!?\n]{3,80})\s+(?:but|yet|while|even though)\s+([^.!?\n]{3,80})/i,
     ]
     for (const pattern of tensionPatterns) {
       const match = normalizedPrompt.match(pattern)

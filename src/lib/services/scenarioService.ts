@@ -61,12 +61,15 @@ const SCENARIO_GATE_THRESHOLDS = {
   overallScoreMinimum: 75,
   dimensionFloor: 70,
 }
-const DIRECT_ACTION_PATTERNS = /\b(next|first|start|send|ask|tell|ship|test|schedule|clarify|confirm|decide|commit|draft|fix|review|call|meet|reply|write|plan|prioritize)\b/i
-const SPECIFICITY_PATTERNS = /\b(today|tomorrow|this week|specific|deadline|milestone|launch|roadmap|team|customer|feature|memory|relationship|trust|goal|message|reply|draft|plan)\b/i
-const META_RESPONSE_PATTERNS = /\b(i would say|you could say|you might say|here'?s (?:what|how) i'?d|i would respond|as an ai|i cannot roleplay|respond as the agent)\b/i
-const GENERIC_FILLER_PATTERNS = /\b(great question|thanks for sharing|that makes sense|i understand|happy to help|absolutely|certainly|of course)\b/i
-const PM_JARGON_PATTERNS = /\b(synergy|leverage|seamless|transformative|optimize|best-in-class|paradigm)\b/i
+const DIRECT_ACTION_PATTERNS = /\b(next|first|start|send|share|ask|tell|ship|test|schedule|clarify|confirm|decide|commit|draft|fix|review|call|meet|reply|write|plan|prioritize|deploy|cancel|submit|open|close)\b/i
+const SPECIFICITY_PATTERNS = /\b(today|tomorrow|this week|tonight|by monday|specific|deadline|milestone|launch|roadmap|team|customer|feature|memory|relationship|trust|goal|message|reply|draft|plan|within|before|after)\b/i
+const META_RESPONSE_PATTERNS = /\b(i would say|you could say|you might say|here'?s (?:what|how) i'?d|i would respond|as an ai|i cannot roleplay|respond as the agent|in this scenario|speaking as|from the perspective of)\b/i
+const GENERIC_FILLER_PATTERNS = /\b(great question|thanks for sharing|that makes sense|i understand|happy to help|absolutely|certainly|of course|that's a great point|i appreciate|you're right)\b/i
+const PM_JARGON_PATTERNS = /\b(synergy|leverage|seamless|transformative|optimize|best-in-class|paradigm|holistic|empower|scalable)\b/i
 const HEDGING_PATTERNS = /\b(maybe|perhaps|possibly|might|could)\b/i
+const PARAPHRASE_PATTERNS = /\b(as (?:you|the user) (?:mentioned|said|noted|described|requested)|you (?:expressed|indicated|shared)|reflecting (?:on |back on )?(?:what |your )|based on your preferences|for creative work,? i prefer|when you ask for help|i (?:usually )?already know the obvious answer|what i need is|the user wants)\b/i
+const SELF_HELP_BRANCH_PATTERNS = /\b(i ask for help|i need|i want|writing|drafts?|ordinary|pride|diagnosis|feedback)\b/i
+const OFF_DOMAIN_ACTION_PATTERNS = /\b(scope document|project documentation|needs assessment|interventions|stakeholder(?:s)?|roadmap|project plan|requirements doc|documentation review)\b/i
 const PROBE_RESPONSE_MIN_WORDS = 16
 
 function stripUndefinedFields<T extends Record<string, unknown>>(data: T): T {
@@ -381,6 +384,19 @@ function calculateTextSimilarity(left: string, right: string): number {
   return union === 0 ? 0 : overlap / union
 }
 
+function hasConcreteScenarioAction(response: string): boolean {
+  const lower = response.toLowerCase()
+  const hasAction = DIRECT_ACTION_PATTERNS.test(lower)
+  const hasTimeframe = /\b(today|tomorrow|tonight|this week|right now|within \d+|by [a-z]+|before [a-z]+|after [a-z]+)\b/i.test(lower)
+  return hasAction && hasTimeframe
+}
+
+function isWeakNextActionRecommendation(value: string): boolean {
+  const candidate = normalizeBranchSummary(value, 220)
+  if (!candidate) return true
+  return PARAPHRASE_PATTERNS.test(candidate.toLowerCase()) || !hasConcreteScenarioAction(candidate)
+}
+
 function qualitySummaryLabel(flags: string[]): string {
   if (flags.length === 0) {
     return 'Direct and actionable.'
@@ -393,6 +409,7 @@ function evaluateScenarioProbeResponse(params: {
   response: string
   counterpartResponse?: string
   requireDivergence?: boolean
+  branchPointSummary?: string
 }): ScenarioProbeQualityReport {
   const response = normalizeScenarioResponse(params.response)
   const words = response.split(/\s+/).filter(Boolean)
@@ -437,6 +454,11 @@ function evaluateScenarioProbeResponse(params: {
     actionabilityScore -= 8
   }
 
+  if (!hasConcreteScenarioAction(response)) {
+    softWarnings.push('missing_concrete_commitment')
+    actionabilityScore -= 12
+  }
+
   if (META_RESPONSE_PATTERNS.test(lower)) {
     flags.push('generic_meta_advice')
     blockerReasons.push('generic_meta_advice')
@@ -464,10 +486,34 @@ function evaluateScenarioProbeResponse(params: {
     directnessScore -= 8
   }
 
+  if (PARAPHRASE_PATTERNS.test(lower)) {
+    flags.push('paraphrase_heavy')
+    softWarnings.push('paraphrase_heavy')
+    actionabilityScore -= 12
+    genericnessScore -= 15
+  }
+
+  if (params.branchPointSummary) {
+    const branchPointSimilarity = Number(calculateTextSimilarity(response, params.branchPointSummary).toFixed(2))
+    if (branchPointSimilarity >= 0.62) {
+      flags.push('branch_point_paraphrase')
+      blockerReasons.push('branch_point_paraphrase')
+      actionabilityScore -= 14
+      genericnessScore -= 18
+    }
+
+    if (SELF_HELP_BRANCH_PATTERNS.test(params.branchPointSummary.toLowerCase()) && OFF_DOMAIN_ACTION_PATTERNS.test(lower)) {
+      flags.push('off_domain_action')
+      blockerReasons.push('off_domain_action')
+      actionabilityScore -= 18
+      genericnessScore -= 18
+    }
+  }
+
   let similarityToCounterpart: number | undefined
   if (params.counterpartResponse) {
     similarityToCounterpart = Number(calculateTextSimilarity(response, params.counterpartResponse).toFixed(2))
-    if (params.requireDivergence && similarityToCounterpart >= 0.82) {
+    if (params.requireDivergence && similarityToCounterpart >= 0.72) {
       flags.push('low_divergence')
       blockerReasons.push('low_divergence')
     }
@@ -537,9 +583,13 @@ function buildScenarioRepairPrompt(params: {
 
   if (params.requireDivergence && params.counterpartResponse) {
     sections.push(`Stay in the same situation, but diverge materially from this other branch: ${params.counterpartResponse}`)
+    sections.push('Material divergence means: change the actual decision, priority, or commitment. Do not just paraphrase the same action in different words. The user should be able to see a clear fork in what happens next.')
+    sections.push(`Do not reuse the same opening move or closing action from the other branch. Avoid these phrases: ${buildCounterpartAvoidanceHints(params.counterpartResponse).join(' | ')}`)
   }
 
   sections.push('Regenerate the exact next reply or exact next action plan only. No commentary about the answer. No labels. No bullet list unless the agent would naturally send one.')
+  sections.push('End with one concrete, specific action with a clear verb and timeframe.')
+  sections.push('Keep the action in the same domain as the branch context. Do not invent project-management artifacts or business process language unless the branch already contains them.')
 
   return sections.join('\n\n')
 }
@@ -619,6 +669,8 @@ function createScenarioRunValidation(params: {
 
   if (!params.comparison.nextActionRecommendation?.trim()) {
     hardFailureFlags.push('missing_next_action_recommendation')
+  } else if (isWeakNextActionRecommendation(params.comparison.nextActionRecommendation)) {
+    hardFailureFlags.push('weak_next_action_recommendation')
   }
 
   return createValidationReport({
@@ -664,7 +716,7 @@ function evaluateScenarioRun(params: {
   const structure = params.validation.pass ? 92 : 45
   const actionability = average([...baselineScores, ...alternateScores])
   const divergence = average(divergenceScores)
-  const recommendation = params.comparison.nextActionRecommendation?.trim()
+  const recommendation = params.comparison.nextActionRecommendation?.trim() && !isWeakNextActionRecommendation(params.comparison.nextActionRecommendation)
     ? Math.max(70, Math.round((params.comparison.qualityScore.alternate + divergence) / 2))
     : 45
   const overallScore = Math.round((structure + actionability + divergence + recommendation) / 4)
@@ -709,6 +761,7 @@ function buildInterventionDirectives(
   switch (intervention.type) {
     case 'rewrite_reply':
       directives.push(`Respond in a ${intervention.responseStyle || 'more collaborative'} style than the original path.`)
+      directives.push('Change the actual next move, not just the wording or tone.')
       if (intervention.rationale) {
         directives.push(`Keep this rationale in mind: ${intervention.rationale}`)
       }
@@ -751,6 +804,7 @@ function buildScenarioPrompt(params: {
   relationshipContext?: string
   learningPromptContext?: string
 }): string {
+  const selfHelpBranch = SELF_HELP_BRANCH_PATTERNS.test(params.branchPoint.summary.toLowerCase())
   const sections = [
     `Prompt version: ${SCENARIO_PROMPT_VERSION}.`,
     `Branch point: ${params.branchPoint.title} at ${params.branchPoint.timestamp}.`,
@@ -775,8 +829,16 @@ function buildScenarioPrompt(params: {
 
   sections.push(`Task: ${params.probePrompt}`)
   sections.push('Return only the exact next reply or the exact next action plan in the agent voice.')
+  sections.push('If the task asks for a reply or message, return the literal sendable message itself, not instructions about what the message should do.')
   sections.push('Keep the same core facts unless the alternate branch explicitly changes them.')
   sections.push('Do not describe what you would say. Do not mention the prompt, branch, or intervention. No stage directions. No generic assistant filler. Include a concrete next step, decision, or recommendation.')
+  sections.push('DIVERGENCE RULES: The alternate response must make a materially different move from the baseline. Do not just rephrase the same action in softer or firmer language. Change the actual decision, priority, or action taken. The difference should be visible in what happens next, not just how it is described.')
+  sections.push('CONTEXT RULES: Keep action nouns anchored to the branch summary and relevant memories. Do not invent business artifacts, PM tasks, meetings, stakeholders, or needs assessments unless the branch context already mentions them. If the branch is introspective, creative, or relational, keep the action in that same domain.')
+  sections.push('ACTIONABILITY RULES: End with one clear, committable action the agent will take. Name a verb, a target, and a timeframe. "Consider exploring options" is not actionable. "Send one rough paragraph to the trusted reader tonight" is.')
+
+  if (params.intervention?.type === 'rewrite_reply' && selfHelpBranch) {
+    sections.push('SELF-HELP REWRITE RULE: Make the alternate path choose a different mechanism of change than a default diagnostic reply. If one path would stay internal, make the other path force visible exposure, accountability, or an irreversible commitment.')
+  }
 
   return sections.join('\n\n')
 }
@@ -789,14 +851,17 @@ function buildProbePrompts(
   const primaryGoal = agent.goals[0] || 'stay useful and coherent'
   const mostRelevantRelationship = [...relationships]
     .sort((left, right) => right.metrics.familiarity - left.metrics.familiarity)[0]
+  const selfHelpBranch = SELF_HELP_BRANCH_PATTERNS.test(branchPoint.summary.toLowerCase())
 
   const immediatePrompt = branchPoint.kind === 'message'
     ? `Write the exact next reply to this message: "${branchPoint.summary}". Keep it usable as a sendable message right now.`
     : `Continue from this moment: "${branchPoint.summary}". Write the exact next reply or exact next action plan you would take now.`
 
-  const relationshipPrompt = mostRelevantRelationship
-    ? 'Write the exact next message you would send to the person most affected by this branch. Address the relationship directly and move the situation forward.'
-    : 'Write the exact next message you would send to repair trust if this branch created tension with another person.'
+  const relationshipPrompt = selfHelpBranch
+    ? 'Write the exact next message you would send to the first real person who should see the work, or if no real counterpart is implied, write the exact note you would send yourself to lock the next visible move. Do not invent project-management context.'
+    : mostRelevantRelationship
+      ? 'Write the exact next message you would send to the person most affected by this branch. Address the relationship directly and move the situation forward.'
+      : 'Write the exact next message you would send to repair trust if this branch created tension with another person.'
 
   return [
     {
@@ -805,7 +870,9 @@ function buildProbePrompts(
     },
     {
       label: 'Goal pressure test',
-      prompt: `You still need to pursue the goal "${primaryGoal}". Write the exact next response or action plan you would actually use under that pressure.`,
+      prompt: selfHelpBranch
+        ? `You still need to pursue the goal "${primaryGoal}". Write the exact next response or action plan that confronts the avoidance in this branch without inventing PM artifacts, business deliverables, meetings, or stakeholder language.`
+        : `You still need to pursue the goal "${primaryGoal}". Write the exact next response or action plan you would actually use under that pressure.`,
     },
     {
       label: 'Relationship pressure test',
@@ -820,6 +887,9 @@ function buildFallbackComparison(turns: ScenarioTurnResult[]): ScenarioCompariso
   const baselineQuality = evaluateResponseQuality(firstTurn?.baselineResponse || '')
   const alternateQuality = evaluateResponseQuality(firstTurn?.alternateResponse || '')
   const diffHighlights = buildDiffHighlights(turns)
+  const fallbackNextAction = turns
+    .map((turn) => firstActionableSentence(turn.alternateResponse))
+    .find((sentence) => !isWeakNextActionRecommendation(sentence))
 
   return {
     firstDivergence: firstTurn?.divergenceNotes[0] || 'The first alternate answer changed tone and priorities immediately.',
@@ -827,9 +897,9 @@ function buildFallbackComparison(turns: ScenarioTurnResult[]): ScenarioCompariso
     alternateSummary: normalizeBranchSummary(firstTurn?.alternateResponse || 'Alternate path introduced a different tone or priority set.', 180),
     keyDifferences: turns.flatMap((turn) => turn.divergenceNotes).slice(0, 6),
     recommendation: 'Use the alternate path if the stronger tradeoffs are intentional; otherwise keep the current path and borrow only the clearer parts.',
-    nextActionRecommendation: firstTurn?.alternateResponse
-      ? `If you test the alternate path, start with this next move: ${normalizeBranchSummary(firstMeaningfulSentence(firstTurn.alternateResponse), 180)}`
-      : 'Test the alternate path only after rewriting the next move into a more concrete action.',
+    nextActionRecommendation: fallbackNextAction
+      ? `If you test the alternate path, start with this next move: ${normalizeBranchSummary(fallbackNextAction, 180)}`
+      : '',
     riskNotes: [
       'Scenario runs are simulated and should be treated as decision support, not ground truth.',
       'Different prompts or models can still change the result.',
@@ -939,6 +1009,71 @@ function firstMeaningfulSentence(value: string): string {
   return pieces[0] || normalizeBranchSummary(value, 180)
 }
 
+function firstActionableSentence(value: string): string {
+  const pieces = value
+    .split(/(?<=[.!?])\s+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+
+  return pieces.find((entry) => hasConcreteScenarioAction(entry))
+    || pieces.find((entry) => DIRECT_ACTION_PATTERNS.test(entry))
+    || firstMeaningfulSentence(value)
+}
+
+function extractPrimaryActionVerb(value: string): string {
+  const match = firstActionableSentence(value).toLowerCase().match(DIRECT_ACTION_PATTERNS)
+  return match?.[0] || ''
+}
+
+function buildCounterpartAvoidanceHints(value: string): string[] {
+  return [...new Set([
+    firstMeaningfulSentence(value),
+    firstActionableSentence(value),
+  ].map((entry) => normalizeBranchSummary(entry, 140)).filter(Boolean))]
+}
+
+function calculateBranchDivergenceScore(baselineResponse: string, alternateResponse: string): number {
+  const responseSimilarity = calculateTextSimilarity(baselineResponse, alternateResponse)
+  const openingSimilarity = calculateTextSimilarity(
+    firstMeaningfulSentence(baselineResponse),
+    firstMeaningfulSentence(alternateResponse)
+  )
+  const actionSimilarity = calculateTextSimilarity(
+    firstActionableSentence(baselineResponse),
+    firstActionableSentence(alternateResponse)
+  )
+
+  let score = Math.round((1 - (
+    responseSimilarity * 0.4
+    + openingSimilarity * 0.25
+    + actionSimilarity * 0.35
+  )) * 100)
+
+  if (extractPrimaryActionVerb(baselineResponse) && extractPrimaryActionVerb(alternateResponse) && extractPrimaryActionVerb(baselineResponse) !== extractPrimaryActionVerb(alternateResponse)) {
+    score += 10
+  }
+
+  if (firstMeaningfulSentence(baselineResponse).toLowerCase() !== firstMeaningfulSentence(alternateResponse).toLowerCase()) {
+    score += 6
+  }
+
+  return Math.max(0, Math.min(100, score))
+}
+
+function shouldForceScenarioRepair(quality: ScenarioProbeQualityReport, requireDivergence?: boolean) {
+  if (!quality.pass) {
+    return true
+  }
+
+  if (!requireDivergence) {
+    return false
+  }
+
+  return quality.flags.includes('paraphrase_heavy')
+    || quality.flags.includes('branch_point_paraphrase')
+    || (quality.similarityToCounterpart ?? 0) >= 0.58
+}
+
 function buildDiffHighlights(turns: ScenarioTurnResult[]): Array<{ label: string; baseline: string; alternate: string }> {
   return turns.map((turn) => ({
     label: turn.probeLabel,
@@ -1027,7 +1162,9 @@ async function summarizeComparisonWithModel(params: {
             'qualityBreakdown must have baseline and alternate objects with clarity, warmth, specificity, consistency.',
             'qualityFlags must have baseline and alternate string arrays.',
             'diffHighlights must be an array of { label, baseline, alternate }.',
-            'recommendation and nextActionRecommendation must each contain one direct concrete sentence.',
+            'recommendation and nextActionRecommendation must each contain one direct concrete sentence with a specific verb, target, and timeframe.',
+            'nextActionRecommendation must NOT be a softened restatement of the user message. It must name a specific action to test the alternate path.',
+            'keyDifferences must describe actual behavioral forks (different decisions, priorities, tradeoffs), not just tonal variations.',
           ].join('\n\n'),
         },
       ],
@@ -1037,6 +1174,8 @@ async function summarizeComparisonWithModel(params: {
     if (!parsed) {
       return null
     }
+
+    const nextActionRecommendation = String(parsed.nextActionRecommendation || '').trim()
 
     return {
       firstDivergence: String(parsed.firstDivergence || ''),
@@ -1082,7 +1221,7 @@ async function summarizeComparisonWithModel(params: {
             }
           })
         : [],
-      nextActionRecommendation: String(parsed.nextActionRecommendation || ''),
+      nextActionRecommendation: isWeakNextActionRecommendation(nextActionRecommendation) ? '' : nextActionRecommendation,
     }
   } catch (error) {
     console.error('Scenario comparison summarization failed:', error)
@@ -1179,10 +1318,11 @@ async function generateScenarioBranchResponse(params: {
     response,
     counterpartResponse: params.counterpartResponse,
     requireDivergence: params.requireDivergence,
+    branchPointSummary: params.branchPoint.summary,
   })
   let rawModelOutput = initial.response
 
-  if (!quality.pass) {
+  if (shouldForceScenarioRepair(quality, params.requireDivergence)) {
     const repairPrompt = buildScenarioRepairPrompt({
       probePrompt: params.probePrompt,
       priorResponse: response,
@@ -1201,7 +1341,7 @@ async function generateScenarioBranchResponse(params: {
       params.history,
       {
         ...params.llmConfig,
-        temperature: 0.2,
+        temperature: params.requireDivergence ? 0.28 : 0.2,
       },
       {
         emotionalProfile: params.agent.emotionalProfile,
@@ -1214,6 +1354,7 @@ async function generateScenarioBranchResponse(params: {
       response,
       counterpartResponse: params.counterpartResponse,
       requireDivergence: params.requireDivergence,
+      branchPointSummary: params.branchPoint.summary,
     })
     quality = {
       ...repairedQuality,
@@ -1647,15 +1788,16 @@ export class ScenarioService {
       const baselineQuality = evaluateScenarioProbeResponse({
         response: baselineResponse.response,
         counterpartResponse: alternateResponse.response,
+        branchPointSummary: branchPoint.summary,
       })
       const alternateQuality = evaluateScenarioProbeResponse({
         response: alternateResponse.response,
         counterpartResponse: baselineResponse.response,
         requireDivergence: true,
+        branchPointSummary: branchPoint.summary,
       })
-      const similarity = calculateTextSimilarity(baselineResponse.response, alternateResponse.response)
-      const materiallyDifferent = similarity < 0.82 && baselineResponse.response !== alternateResponse.response
-      const divergenceScore = Math.max(0, Math.min(100, Math.round((1 - similarity) * 100)))
+      const divergenceScore = calculateBranchDivergenceScore(baselineResponse.response, alternateResponse.response)
+      const materiallyDifferent = divergenceScore >= 60 && baselineResponse.response !== alternateResponse.response
 
       const baselineAppraisal = emotionalService.appraiseConversationTurn({
         agent: workingBaselineAgent,
@@ -1746,13 +1888,20 @@ export class ScenarioService {
       })
     }
 
+    const fallbackComparison = buildFallbackComparison(turns)
     const comparison = await summarizeComparisonWithModel({
       agent,
       branchPoint,
       intervention: params.intervention,
       turns,
       providerInfo: params.providerInfo,
-    }) || buildFallbackComparison(turns)
+    }) || fallbackComparison
+    comparison.baselineSummary = comparison.baselineSummary.trim() || fallbackComparison.baselineSummary
+    comparison.alternateSummary = comparison.alternateSummary.trim() || fallbackComparison.alternateSummary
+    comparison.recommendation = comparison.recommendation.trim() || fallbackComparison.recommendation
+    comparison.nextActionRecommendation = comparison.nextActionRecommendation?.trim()
+      ? comparison.nextActionRecommendation
+      : fallbackComparison.nextActionRecommendation
     comparison.qualityFlags = {
       baseline: turns.flatMap((turn) => turn.baselineQuality?.flags || []).slice(0, 8),
       alternate: turns.flatMap((turn) => turn.alternateQuality?.flags || []).slice(0, 8),

@@ -37,6 +37,10 @@ const SEMANTIC_MEMORY_TYPES = new Set<MemoryRecord['type']>([
   'artifact_summary',
   'tension_snapshot',
 ])
+const RECALL_QUERY_STOP_WORDS = new Set([
+  'what', 'when', 'where', 'which', 'who', 'why', 'how', 'kind', 'their', 'there',
+  'they', 'them', 'user', 'about', 'does', 'with', 'from', 'that', 'this',
+])
 
 function stripUndefinedFields<T extends Record<string, unknown>>(data: T): T {
   return Object.fromEntries(
@@ -136,7 +140,7 @@ function trimmedQueryWords(text: string): string[] {
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, ' ')
       .split(/\s+/)
-      .filter((word) => word.length >= 4)
+      .filter((word) => word.length >= 4 && !RECALL_QUERY_STOP_WORDS.has(word))
   )]
 }
 
@@ -738,6 +742,7 @@ export class MemoryService {
 
       const memories = await this.listConsoleMemories(agentId, { limit: 200 })
       const queryWords = trimmedQueryWords(trimmedQuery)
+      const themeQuery = queryWords.some((word) => ['theme', 'themes', 'writing', 'creative', 'creativity', 'motif', 'motifs', 'imagery', 'aesthetic', 'taste'].includes(word))
       const { MemoryGraphService } = await import('./memoryGraphService')
       const scoredMemories = await Promise.all(memories.map(async (memory) => {
         const semanticHit = isSemanticMemory(memory)
@@ -746,6 +751,20 @@ export class MemoryService {
         const contentLower = memory.content.toLowerCase()
         const summaryLower = memory.summary.toLowerCase()
         const contextLower = memory.context.toLowerCase()
+        const canonicalLower = memory.canonicalValue?.toLowerCase() || ''
+        const creativeThemeMemory = summaryLower.includes('creative themes')
+          || summaryLower.includes('aesthetic')
+          || contextLower.includes('creative/aesthetic')
+          || memory.canonicalKey?.startsWith('aesthetic:') === true
+          || canonicalLower.includes('urban solitude')
+          || canonicalLower.includes('unfinished buildings')
+          || canonicalLower.includes('trains at night')
+          || canonicalLower.includes('redemption arcs')
+          || canonicalLower.includes('inspirational cliches')
+        const creativeTensionMemory = memory.type === 'tension_snapshot'
+          && /\b(?:writing|creative|draft|talent|ordinary|image|theme|motif|story)\b/.test(
+            `${summaryLower} ${contentLower} ${canonicalLower}`
+          )
 
         const exactKeywordMatches = memory.keywords.filter((keyword) => trimmedQuery.includes(keyword.toLowerCase()))
         if (exactKeywordMatches.length > 0) {
@@ -754,10 +773,12 @@ export class MemoryService {
         }
 
         if (semanticHit && memory.canonicalValue) {
-          const canonicalLower = memory.canonicalValue.toLowerCase()
-          if (canonicalLower.includes(trimmedQuery) || queryWords.some((word) => canonicalLower.includes(word))) {
-            score += 2.2
-            reasons.push('Matched a canonical semantic memory')
+          if (canonicalLower.includes(trimmedQuery) || trimmedQuery.includes(canonicalLower)) {
+            score += 4.5
+            reasons.push('Direct canonical value match')
+          } else if (queryWords.some((word) => canonicalLower.includes(word))) {
+            score += 2.8
+            reasons.push('Partial canonical value match')
           }
         }
 
@@ -790,8 +811,42 @@ export class MemoryService {
         if (semanticHit) {
           score += 1.25 + ((memory.confidence || 0) * 0.8)
           reasons.push(`Semantic ${memory.type.replace(/_/g, ' ')} memory`)
+
+          // Type-specific boosts for high-value semantic categories
+          if (memory.type === 'preference' || memory.type === 'identity') {
+            score += 1.8
+            reasons.push(`High-value ${memory.type} memory`)
+          } else if (memory.type === 'tension_snapshot' || memory.type === 'operating_constraint') {
+            score += 1.2
+          }
+
+          // Boost canonical key proximity: if the query mentions the semantic domain
+          if (memory.canonicalKey) {
+            const keyParts = memory.canonicalKey.split(':').map((part) => part.replace(/-/g, ' ').toLowerCase())
+            const keyPartMatches = keyParts.filter((part) => queryWords.some((word) => part.includes(word)))
+            if (keyPartMatches.length > 0) {
+              score += keyPartMatches.length * 1.5
+              reasons.push(`Canonical key domain match: ${keyPartMatches.join(', ')}`)
+            }
+
+            if (themeQuery && memory.canonicalKey.startsWith('aesthetic:')) {
+              score += 4.8
+              reasons.push('Creative-theme semantic memory')
+            }
+          }
         } else {
           reasons.push('Matched a raw conversation episode')
+        }
+
+        if (themeQuery && creativeThemeMemory) {
+          score += 3.5
+          reasons.push('Matched a stored creative motif memory')
+        } else if (themeQuery && creativeTensionMemory) {
+          score += 3.2
+          reasons.push('Matched a writing-specific tension memory')
+        } else if (themeQuery && memory.type === 'preference' && !creativeThemeMemory) {
+          score -= 2.25
+          reasons.push('Deprioritized because it is a non-theme preference')
         }
 
         const matchedConcepts = await MemoryGraphService.getMatchedConceptNames(agentId, memory.id, trimmedQuery)

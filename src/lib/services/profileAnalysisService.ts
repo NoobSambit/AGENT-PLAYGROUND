@@ -103,6 +103,52 @@ const QUALITY_THRESHOLDS = {
   rationaleCompleteness: 75,
 }
 
+function isLocalBaselineProvider(providerInfo: LLMProviderInfo) {
+  return providerInfo.provider === 'ollama' && /qwen2\.5:7b|llama3\.2/i.test(providerInfo.model)
+}
+
+function getInterviewQuestionLimit(providerInfo: LLMProviderInfo) {
+  return isLocalBaselineProvider(providerInfo) ? 1 : 2
+}
+
+function buildCompactEvidenceBlock(evidenceSignals: ProfileEvidenceSignal[], limit: number) {
+  return evidenceSignals
+    .slice(0, limit)
+    .map((signal) => `- ${signal.id} | ${signal.label} | ${summarizeText(signal.snippet, 150)}`)
+    .join('\n')
+}
+
+function buildCompactInterviewBlock(turns: ProfileInterviewTurn[], limit: number) {
+  return turns
+    .slice(-limit)
+    .map((turn, index) => [
+      `Turn ${index + 1} [${turn.stage}]`,
+      `Q: ${summarizeText(turn.question, 160)}`,
+      `A: ${summarizeText(turn.answer, 220)}`,
+      `Refs: ${(turn.evidenceRefs || []).slice(0, 5).join(', ') || 'none'}`,
+    ].join('\n'))
+    .join('\n\n')
+}
+
+function buildCompactStageFindingsBlock(stageFindings: ProfileStageFinding[]) {
+  return stageFindings
+    .map((finding, index) => {
+      const claimBlock = (finding.claims || [])
+        .slice(0, 3)
+        .map((claim) => `${summarizeText(claim.claim, 140)} [${claim.evidenceRefs.slice(0, 4).join(', ')}]`)
+        .join(' | ')
+
+      return [
+        `${index + 1}. ${finding.stage}: ${summarizeText(finding.summary, 200)}`,
+        claimBlock ? `Claims: ${claimBlock}` : '',
+        finding.communicationHints.length ? `Communication hints: ${finding.communicationHints.slice(0, 2).join(' | ')}` : '',
+        finding.mbtiHints.length ? `MBTI hints: ${finding.mbtiHints.slice(0, 2).join(' | ')}` : '',
+        finding.enneagramHints.length ? `Enneagram hints: ${finding.enneagramHints.slice(0, 2).join(' | ')}` : '',
+      ].filter(Boolean).join('\n')
+    })
+    .join('\n\n')
+}
+
 function createRawModelOutput(text: string): OutputQualityRawModelOutput {
   return {
     text,
@@ -316,6 +362,8 @@ function deriveMbti(bigFive: BigFiveProfile, scaffold: MBTIProfile): MBTIProfile
   }
 }
 
+type EvidenceDensityLevel = 'thin' | 'moderate' | 'strong'
+
 function deriveEnneagram(agent: AgentRecord, scaffold: EnneagramProfile, stageFindings: ProfileStageFinding[]): EnneagramProfile {
   const text = `${agent.persona} ${(agent.goals || []).join(' ')} ${collectFindingText(stageFindings)}`.toLowerCase()
   const scores: Record<number, number> = {
@@ -344,20 +392,64 @@ function deriveEnneagram(agent: AgentRecord, scaffold: EnneagramProfile, stageFi
   }
 }
 
-function buildSummary(agent: AgentRecord, bigFive: BigFiveProfile, mbti: MBTIProfile, enneagram: EnneagramProfile) {
+function baseMbtiTypeLabel(value: string) {
+  return value.replace(/\s*\(provisional\)/gi, '').replace(/\?+$/g, '').trim()
+}
+
+function formatMbtiLabel(mbti: MBTIProfile, evidenceDensity: EvidenceDensityLevel) {
+  const baseType = baseMbtiTypeLabel(mbti.type)
+  if (evidenceDensity === 'strong') return baseType
+  if (evidenceDensity === 'moderate') return `${baseType} (provisional)`
+  return `${baseType}?`
+}
+
+function cleanProfileSummaryText(value: string) {
+  return summarizeText(
+    value
+      .replace(/\(provisional\)\s*\(provisional\)/gi, '(provisional)')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    460
+  )
+}
+
+function buildSummary(
+  agent: AgentRecord,
+  bigFive: BigFiveProfile,
+  mbti: MBTIProfile,
+  enneagram: EnneagramProfile,
+  evidenceDensity: EvidenceDensityLevel
+) {
   const style = bigFive.extraversion >= 0.68 ? 'socially energetic' : 'measured'
   const creativity = bigFive.openness >= 0.68 ? 'inventive' : 'practical'
   const discipline = bigFive.conscientiousness >= 0.62 ? 'prototype-driven discipline' : 'looser experimentation'
   const primaryGoal = agent.goals[0] || 'turn ideas into usable experiments'
-  return `${agent.name} reads as a ${style}, ${creativity} builder who pushes ideas forward with ${discipline}. The strongest through-line is a bias toward practical usefulness, fast concept exploration, and emotionally aware directness while pursuing goals like "${primaryGoal}". The current evidence leans toward ${mbti.type} with Enneagram ${enneagram.primaryType}w${enneagram.wing}.`
+  const baseSummary = `${agent.name} reads as a ${style}, ${creativity} builder who pushes ideas forward with ${discipline}. The strongest through-line is a bias toward practical usefulness, fast concept exploration, and emotionally aware directness while pursuing goals like "${primaryGoal}".`
+  if (evidenceDensity === 'strong') {
+    return `${baseSummary} The current evidence supports ${mbti.type} with Enneagram ${enneagram.primaryType}w${enneagram.wing}.`
+  }
+  if (evidenceDensity === 'moderate') {
+    return `${baseSummary} The current evidence only supports a provisional typology read: ${formatMbtiLabel(mbti, evidenceDensity)} and a tentative Enneagram leaning toward ${enneagram.primaryType}.`
+  }
+  return `${baseSummary} The current evidence is too thin for a confident MBTI or Enneagram call, so the profile should be read primarily through the observable behavior patterns above.`
 }
 
-function buildRationales(stageFindings: ProfileStageFinding[], bigFive: BigFiveProfile, mbti: MBTIProfile, enneagram: EnneagramProfile) {
+function buildRationales(
+  stageFindings: ProfileStageFinding[],
+  bigFive: BigFiveProfile,
+  mbti: MBTIProfile,
+  enneagram: EnneagramProfile,
+  evidenceDensity: EvidenceDensityLevel
+) {
   const summaries = stageFindings.map((finding) => finding.summary).join(' ')
   return {
     bigFive: `Recent interview answers and evolution signals point to openness ${Math.round(bigFive.openness * 100)}%, conscientiousness ${Math.round(bigFive.conscientiousness * 100)}%, extraversion ${Math.round(bigFive.extraversion * 100)}%, agreeableness ${Math.round(bigFive.agreeableness * 100)}%, and neuroticism ${Math.round(bigFive.neuroticism * 100)}%. ${summaries}`.trim(),
-    mbti: `${mbti.type} fits the combined pattern of outward energy, intuition, people-aware judgment, and structured follow-through shown across the interview stages.`,
-    enneagram: `Enneagram ${enneagram.primaryType}w${enneagram.wing} is the closest fit because the evidence repeatedly emphasizes boldness, protection of what matters, practical action, and momentum under pressure.`,
+    mbti: evidenceDensity === 'strong'
+      ? `${mbti.type} fits the combined pattern of outward energy, intuition, people-aware judgment, and structured follow-through shown across the interview stages.`
+      : `${formatMbtiLabel(mbti, evidenceDensity)} is only a tentative shorthand for the current evidence pattern. It should not be treated as a firm type assignment.`,
+    enneagram: evidenceDensity === 'strong'
+      ? `Enneagram ${enneagram.primaryType}w${enneagram.wing} is the closest fit because the evidence repeatedly emphasizes boldness, protection of what matters, practical action, and momentum under pressure.`
+      : 'The Enneagram reading is provisional because the current evidence packet is still thin and uneven across the key claim groups.',
     communicationStyle: 'The communication pattern is direct, emotionally aware, and clarity-seeking, with a bias toward actionable guidance instead of abstract self-description.',
     stressPattern: 'Under tension, the agent tends to become more direct and solution-oriented rather than withdrawn, while still trying to preserve constructive dialogue.',
     motivationAndGrowth: 'The strongest recurring motivations are impact, forward motion, and turning imagination into usable experiments without losing human sensitivity.',
@@ -386,6 +478,186 @@ function buildStrengthsAndChallenges(agent: AgentRecord, bigFive: BigFiveProfile
   }
 
   return { strengths, challenges }
+}
+
+function buildFallbackStageSummary(stageTitle: string, turns: ProfileInterviewTurn[]) {
+  const highlights = turns
+    .map((turn) => summarizeText(turn.answer, 160))
+    .filter(Boolean)
+    .slice(0, 2)
+
+  if (highlights.length === 0) {
+    return `${stageTitle} findings extracted from interview and evidence.`
+  }
+
+  return summarizeText(`${stageTitle}: ${highlights.join(' ')}`, 280)
+}
+
+function getDefaultClaimCategoriesForStage(stage: ProfileAnalysisStage): string[] {
+  switch (stage) {
+    case 'social_style':
+      return ['communicationStyle', 'strengths']
+    case 'decision_style':
+      return ['motivationalProfile', 'bigFive', 'strengths']
+    case 'stress_conflict':
+      return ['triggers', 'challenges', 'communicationStyle']
+    case 'motivation_identity':
+      return ['motivationalProfile', 'growthEdges', 'enneagram']
+    case 'communication_self_awareness':
+      return ['communicationStyle', 'strengths', 'bigFive']
+    default:
+      return ['summary']
+  }
+}
+
+function buildFallbackStageClaims(stage: ProfileAnalysisStage, turns: ProfileInterviewTurn[]) {
+  const defaultCategories = getDefaultClaimCategoriesForStage(stage)
+  return turns
+    .filter((turn) => turn.answer.trim().length > 0)
+    .slice(0, 2)
+    .map((turn) => ({
+      claim: summarizeText(turn.answer, 180),
+      evidenceRefs: (turn.evidenceRefs || []).slice(0, 6),
+      categories: defaultCategories,
+    }))
+    .filter((claim) => claim.claim.length > 0 && claim.evidenceRefs.length > 0)
+}
+
+function buildFallbackProfileClaimRefs(
+  stageFindings: ProfileStageFinding[],
+  category: string,
+  fallbackClaims: string[],
+  fallbackRefs: string[]
+): ProfileClaimRef[] {
+  const fromStageClaims = stageFindings
+    .flatMap((finding) => (finding.claims || [])
+      .filter((claim) => claim.categories.includes(category))
+      .map((claim) => ({
+        claim: summarizeText(claim.claim, 220),
+        evidenceRefs: claim.evidenceRefs.slice(0, 6),
+      })))
+    .filter((claim) => claim.evidenceRefs.length > 0 && !isInterviewExcerptClaim(claim.claim))
+
+  if (fromStageClaims.length > 0) {
+    return fromStageClaims.slice(0, 4)
+  }
+
+  return fallbackClaims
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((claim) => ({
+      claim,
+      evidenceRefs: fallbackRefs.slice(0, 6),
+    }))
+}
+
+function isInterviewExcerptClaim(value: string) {
+  const trimmed = value.trim()
+  return /^(when (?:someone|i)|i (?:try|tend|often|usually|aim|strive|want|need|find|am|would)|in my work|how would|what tends|what communication habits)/i.test(trimmed)
+    || trimmed.includes('?')
+}
+
+function shouldUseFallbackClaimRefs(claims: ProfileClaimRef[], minimumCount = 2) {
+  if (claims.length < minimumCount) {
+    return true
+  }
+
+  const excerptLikeClaims = claims.filter((claim) => isInterviewExcerptClaim(claim.claim)).length
+  return excerptLikeClaims >= Math.ceil(claims.length / 2)
+}
+
+function polishProfileClaimGroups(
+  profile: PsychologicalProfile,
+  agent: AgentRecord,
+  stageFindings: ProfileStageFinding[],
+  evidenceSignals: ProfileEvidenceSignal[]
+): PsychologicalProfile {
+  const fallbackClaimRefs = Array.from(new Set(stageFindings.flatMap((finding) => finding.evidenceRefs || []))).slice(0, 6)
+  const resolvedFallbackRefs = fallbackClaimRefs.length > 0
+    ? fallbackClaimRefs
+    : evidenceSignals.slice(0, 6).map((signal) => signal.id)
+  const derivedStrengthsAndChallenges = buildStrengthsAndChallenges(agent, profile.bigFive)
+  const nextClaimEvidence: ProfileClaimEvidenceMap = {
+    summary: profile.claimEvidence?.summary || resolvedFallbackRefs,
+    communicationStyle: profile.claimEvidence?.communicationStyle || resolvedFallbackRefs,
+    motivationalProfile: profile.claimEvidence?.motivationalProfile || resolvedFallbackRefs,
+    bigFive: profile.claimEvidence?.bigFive || {
+      openness: resolvedFallbackRefs,
+      conscientiousness: resolvedFallbackRefs,
+      extraversion: resolvedFallbackRefs,
+      agreeableness: resolvedFallbackRefs,
+      neuroticism: resolvedFallbackRefs,
+    },
+    mbti: profile.claimEvidence?.mbti || resolvedFallbackRefs,
+    enneagram: profile.claimEvidence?.enneagram || resolvedFallbackRefs,
+    strengths: profile.claimEvidence?.strengths || [],
+    challenges: profile.claimEvidence?.challenges || [],
+    triggers: profile.claimEvidence?.triggers || [],
+    growthEdges: profile.claimEvidence?.growthEdges || [],
+  }
+
+  if (shouldUseFallbackClaimRefs(nextClaimEvidence.strengths, 2)) {
+    nextClaimEvidence.strengths = buildFallbackProfileClaimRefs(
+      stageFindings,
+      'strengths',
+      derivedStrengthsAndChallenges.strengths,
+      resolvedFallbackRefs
+    )
+  }
+
+  if (shouldUseFallbackClaimRefs(nextClaimEvidence.challenges, 2)) {
+    nextClaimEvidence.challenges = buildFallbackProfileClaimRefs(
+      stageFindings,
+      'challenges',
+      derivedStrengthsAndChallenges.challenges,
+      resolvedFallbackRefs
+    )
+  }
+
+  if (shouldUseFallbackClaimRefs(nextClaimEvidence.triggers, 2)) {
+    nextClaimEvidence.triggers = buildFallbackProfileClaimRefs(
+      stageFindings,
+      'triggers',
+      buildDerivedTriggerClaims(agent),
+      resolvedFallbackRefs
+    )
+  }
+
+  if (shouldUseFallbackClaimRefs(nextClaimEvidence.growthEdges, 2)) {
+    nextClaimEvidence.growthEdges = buildFallbackProfileClaimRefs(
+      stageFindings,
+      'growthEdges',
+      buildDerivedGrowthEdges(),
+      resolvedFallbackRefs
+    )
+  }
+
+  return {
+    ...profile,
+    summary: cleanProfileSummaryText(profile.summary),
+    strengths: extractClaimTexts(nextClaimEvidence.strengths),
+    challenges: extractClaimTexts(nextClaimEvidence.challenges),
+    triggers: extractClaimTexts(nextClaimEvidence.triggers),
+    growthEdges: extractClaimTexts(nextClaimEvidence.growthEdges),
+    claimEvidence: nextClaimEvidence,
+  }
+}
+
+function buildDerivedTriggerClaims(agent: AgentRecord): string[] {
+  const primaryGoal = agent.goals[0] || 'useful progress'
+  return [
+    'Vagueness and surface-level advice create friction quickly.',
+    'Pressure rises when practical progress stalls and the real issue stays unnamed.',
+    `Momentum drops when the work stops feeling connected to ${primaryGoal.toLowerCase()}.`,
+  ]
+}
+
+function buildDerivedGrowthEdges(): string[] {
+  return [
+    'Name the real avoidance pattern earlier instead of circling it with explanation.',
+    'Preserve directness under pressure without defaulting to generic coaching.',
+    'Turn reflection into one visible next move faster.',
+  ]
 }
 
 function stripCodeFences(value: string) {
@@ -652,6 +924,7 @@ export class ProfileAnalysisService {
       let turnOrder = 1
       let interviewHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
       let stageFindings: ProfileStageFinding[] = []
+      const questionLimit = getInterviewQuestionLimit(resolvedProvider)
 
       for (const stageConfig of INTERVIEW_STAGES) {
         run = await this.saveRun({
@@ -661,7 +934,7 @@ export class ProfileAnalysisService {
         })
 
         const stageTurns: ProfileInterviewTurn[] = []
-        for (const question of stageConfig.questions) {
+        for (const question of stageConfig.questions.slice(0, questionLimit)) {
           const answer = await this.askAgentInterviewQuestion(agent, question, interviewHistory, evidenceSignals, resolvedProvider)
           const turn: ProfileInterviewTurn = {
             id: generateId('profile_turn'),
@@ -756,7 +1029,7 @@ export class ProfileAnalysisService {
         { evaluation, validation, evidenceCoverage }
       )))
 
-      if (!validation.pass || !evaluation.pass) {
+      if ((!validation.pass || !evaluation.pass) && !this.shouldSkipRepair(evidenceCoverage, validation, evidenceSignals, stageFindings)) {
         run = await this.saveRun({
           ...run,
           latestStage: 'repair',
@@ -796,6 +1069,18 @@ export class ProfileAnalysisService {
           qualityStatus: validation.pass && evaluation.pass ? 'pending' : 'failed',
           updatedAt: new Date().toISOString(),
         })
+      } else if (!validation.pass || !evaluation.pass) {
+        pipelineEvents.push(await this.savePipelineEvent(agentId, makePipelineEvent(
+          run.id,
+          'repair',
+          'skipped',
+          'Skipped repair because the failure is dominated by thin or missing evidence rather than repairable wording issues.',
+          {
+            validation,
+            evaluation,
+            evidenceCoverage,
+          }
+        )))
       }
 
       const completedAt = new Date().toISOString()
@@ -1157,8 +1442,8 @@ export class ProfileAnalysisService {
     const result = await generateText({
       providerInfo,
       temperature: 0.45,
-      maxTokens: 220,
-      timeoutMs: 45000,
+      maxTokens: 140,
+      timeoutMs: 20000,
       messages: [
         {
           role: 'system',
@@ -1166,7 +1451,7 @@ export class ProfileAnalysisService {
         },
         {
           role: 'user',
-          content: `${historyBlock ? `Recent interview context:\n${historyBlock}\n\n` : ''}Evidence packet:\n${evidencePacket}\n\nQuestion: ${question}\n\nAnswer in 3-5 sentences. Use the evidence packet; do not invent unsupported details.`,
+          content: `${historyBlock ? `Recent interview context:\n${historyBlock}\n\n` : ''}Evidence packet:\n${evidencePacket}\n\nQuestion: ${question}\n\nAnswer in 2-4 sentences. Use the evidence packet; do not invent unsupported details.`,
         },
       ],
     })
@@ -1195,8 +1480,8 @@ export class ProfileAnalysisService {
     const result = await generateText({
       providerInfo,
       temperature: 0.2,
-      maxTokens: 500,
-      timeoutMs: 40000,
+      maxTokens: 380,
+      timeoutMs: 25000,
       messages: [
         { role: 'system', content: 'Extract structured evidence conservatively. Return valid JSON only.' },
         { role: 'user', content: prompt },
@@ -1205,25 +1490,29 @@ export class ProfileAnalysisService {
 
     const parsed = safeJsonParse<Record<string, unknown>>(result.content)
     const fallbackRefs = turns.flatMap((turn) => turn.evidenceRefs || []).slice(0, 6)
+    const fallbackClaims = buildFallbackStageClaims(stage, turns)
+    const normalizedClaims = Array.isArray(parsed?.claims)
+      ? parsed.claims
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return null
+          const record = entry as Record<string, unknown>
+          const claim = typeof record.claim === 'string' ? summarizeText(record.claim, 220) : ''
+          const evidenceRefs = normalizeEvidenceRefList(record.evidenceRefs, knownRefs, fallbackRefs)
+          const categories = Array.isArray(record.categories)
+            ? record.categories.filter((category): category is string => typeof category === 'string')
+            : []
+          if (!claim || evidenceRefs.length === 0) return null
+          return { claim, evidenceRefs, categories }
+        })
+        .filter((entry): entry is NonNullable<ProfileStageFinding['claims']>[number] => Boolean(entry))
+      : []
     return {
       stage,
-      summary: typeof parsed?.summary === 'string' ? parsed.summary : `${stageTitle} findings extracted from interview and evidence.`,
+      summary: typeof parsed?.summary === 'string' && parsed.summary.trim().length > 0
+        ? summarizeText(parsed.summary, 280)
+        : buildFallbackStageSummary(stageTitle, turns),
       evidenceRefs: normalizeEvidenceRefList(parsed?.evidenceRefs, knownRefs, fallbackRefs),
-      claims: Array.isArray(parsed?.claims)
-        ? parsed.claims
-          .map((entry) => {
-            if (!entry || typeof entry !== 'object') return null
-            const record = entry as Record<string, unknown>
-            const claim = typeof record.claim === 'string' ? summarizeText(record.claim, 220) : ''
-            const evidenceRefs = normalizeEvidenceRefList(record.evidenceRefs, knownRefs, fallbackRefs)
-            const categories = Array.isArray(record.categories)
-              ? record.categories.filter((category): category is string => typeof category === 'string')
-              : []
-            if (!claim || evidenceRefs.length === 0) return null
-            return { claim, evidenceRefs, categories }
-          })
-          .filter((entry): entry is NonNullable<ProfileStageFinding['claims']>[number] => Boolean(entry))
-        : [],
+      claims: normalizedClaims.length > 0 ? normalizedClaims : fallbackClaims,
       bigFiveSignals: asRecordOfStringArrays(parsed?.bigFiveSignals),
       mbtiHints: ensureArray(parsed?.mbtiHints),
       enneagramHints: ensureArray(parsed?.enneagramHints),
@@ -1245,7 +1534,11 @@ export class ProfileAnalysisService {
   }> {
     const scaffold = psychologicalProfileService.generateProfile(agent)
     const knownRefs = new Set(evidenceSignals.map((signal) => signal.id))
-    const prompt = `You are synthesizing a production-ready psychological profile for an inspectable AI agent.\nReturn strict JSON only.\n\nAgent name: ${agent.name}\nPersona: ${summarizeText(agent.persona, 280)}\nGoals: ${(agent.goals || []).slice(0, 4).join(' | ') || 'none'}\n\nUse this deterministic scaffold only as a shape fallback, not as your narrative source of truth:\n${JSON.stringify({
+    const evidenceDensity = this.computeEvidenceDensity(evidenceSignals, stageFindings)
+    const compactStageFindings = buildCompactStageFindingsBlock(stageFindings)
+    const compactInterviewTurns = buildCompactInterviewBlock(interviewTurns, isLocalBaselineProvider(providerInfo) ? 5 : 8)
+    const compactEvidenceBlock = buildCompactEvidenceBlock(evidenceSignals, isLocalBaselineProvider(providerInfo) ? 10 : 12)
+    const prompt = `You are synthesizing a production-ready psychological profile for an inspectable AI agent.\nReturn strict JSON only.\n\nAgent name: ${agent.name}\nPersona: ${summarizeText(agent.persona, 280)}\nGoals: ${(agent.goals || []).slice(0, 4).join(' | ') || 'none'}\n\nEvidence density: ${evidenceDensity.level} (${evidenceDensity.totalSignals} signals, ${evidenceDensity.stageClaimCount} stage claims)\n\nUse this deterministic scaffold only as a shape fallback, not as your narrative source of truth:\n${JSON.stringify({
       bigFive: scaffold.bigFive,
       mbti: scaffold.mbti,
       enneagram: scaffold.enneagram,
@@ -1253,13 +1546,13 @@ export class ProfileAnalysisService {
       attachmentStyle: scaffold.attachmentStyle,
       cognitiveStyle: scaffold.cognitiveStyle,
       motivationalProfile: scaffold.motivationalProfile,
-    }, null, 2)}\n\nStage findings:\n${JSON.stringify(stageFindings, null, 2)}\n\nRecent interview transcript:\n${JSON.stringify(interviewTurns.slice(-8), null, 2)}\n\nEvidence sample:\n${JSON.stringify(evidenceSignals.slice(0, 16), null, 2)}\n\nReturn JSON with keys:\n- bigFive\n- mbti\n- enneagram\n- communicationStyle\n- attachmentStyle\n- cognitiveStyle\n- emotionalIntelligence\n- motivationalProfile\n- summary\n- strengths\n- challenges\n- triggers\n- growthEdges\n- confidence\n- rationales\n- claimEvidence\n\nclaimEvidence must contain:\n- summary: evidence ids\n- communicationStyle: evidence ids\n- motivationalProfile: evidence ids\n- bigFive: object of trait -> evidence ids\n- mbti: evidence ids\n- enneagram: evidence ids\n- strengths: array of { claim, evidenceRefs }\n- challenges: array of { claim, evidenceRefs }\n- triggers: array of { claim, evidenceRefs }\n- growthEdges: array of { claim, evidenceRefs }\n\nRules:\n- Every top-level claim group must cite evidence ids that exist in the evidence sample or stage findings.\n- Keep the language evidence-led and specific. Avoid generic descriptor stacks.\n- strengths, challenges, triggers, and growthEdges must each have 2-4 items.\n- rationales must include bigFive, mbti, enneagram, communicationStyle, stressPattern, motivationAndGrowth.\n- Confidence must be 0-1.`
+    }, null, 2)}\n\nStage findings:\n${compactStageFindings}\n\nRecent interview transcript:\n${compactInterviewTurns}\n\nEvidence sample:\n${compactEvidenceBlock}\n\nReturn JSON with keys:\n- bigFive\n- mbti\n- enneagram\n- communicationStyle\n- attachmentStyle\n- cognitiveStyle\n- emotionalIntelligence\n- motivationalProfile\n- summary\n- strengths\n- challenges\n- triggers\n- growthEdges\n- confidence\n- rationales\n- claimEvidence\n\nclaimEvidence must contain:\n- summary: evidence ids\n- communicationStyle: evidence ids\n- motivationalProfile: evidence ids\n- bigFive: object of trait -> evidence ids\n- mbti: evidence ids\n- enneagram: evidence ids\n- strengths: array of { claim, evidenceRefs }\n- challenges: array of { claim, evidenceRefs }\n- triggers: array of { claim, evidenceRefs }\n- growthEdges: array of { claim, evidenceRefs }\n\nRules:\n- Every top-level claim group must cite evidence ids that exist in the evidence sample or stage findings.\n- Keep the language evidence-led and specific. Avoid generic descriptor stacks.\n- strengths, challenges, triggers, and growthEdges must each have 2-4 items.\n- strengths, challenges, triggers, and growthEdges must be short third-person claim summaries, not copied first-person interview answers.\n- rationales must include bigFive, mbti, enneagram, communicationStyle, stressPattern, motivationAndGrowth.\n- Confidence must be 0-1.\n- IMPORTANT: If evidence density is low or thin, do NOT make strong typology claims. Use tentative language like "leans toward" or "provisional" for MBTI and Enneagram. Only present them as firm when evidence coverage is strong.\n- Do NOT assert a specific MBTI type or Enneagram type with high confidence unless 3+ distinct evidence signals support it.\n- Summaries should describe observable patterns, not typology category membership.`
 
     const result = await generateText({
       providerInfo,
       temperature: 0.3,
-      maxTokens: 1600,
-      timeoutMs: 50000,
+      maxTokens: isLocalBaselineProvider(providerInfo) ? 900 : 1200,
+      timeoutMs: isLocalBaselineProvider(providerInfo) ? 45000 : 35000,
       messages: [
         { role: 'system', content: 'You create inspectable structured profiles. Return valid JSON only.' },
         { role: 'user', content: prompt },
@@ -1286,11 +1579,15 @@ export class ProfileAnalysisService {
       neuroticism: llmBigFive?.neuroticism ?? derivedBigFive.neuroticism,
     }
 
-    const mbti = deriveMbti(bigFive, scaffold.mbti)
+    const derivedMbti = deriveMbti(bigFive, scaffold.mbti)
+    const mbti = {
+      ...derivedMbti,
+      type: formatMbtiLabel(derivedMbti, evidenceDensity.level),
+    }
     const enneagram = deriveEnneagram(agent, scaffold.enneagram, stageFindings)
     const derivedStrengthsAndChallenges = buildStrengthsAndChallenges(agent, bigFive)
     const rationales = {
-      ...buildRationales(stageFindings, bigFive, mbti, enneagram),
+      ...buildRationales(stageFindings, bigFive, mbti, enneagram, evidenceDensity.level),
       ...(typeof parsed?.rationales === 'object' && parsed.rationales ? parsed.rationales as Record<string, string> : {}),
     }
     const claimEvidenceInput = parsed?.claimEvidence && typeof parsed.claimEvidence === 'object'
@@ -1315,14 +1612,59 @@ export class ProfileAnalysisService {
       triggers: normalizeProfileClaimRefs(claimEvidenceInput.triggers, knownRefs, fallbackStageRefs),
       growthEdges: normalizeProfileClaimRefs(claimEvidenceInput.growthEdges, knownRefs, fallbackStageRefs),
     }
+    const fallbackClaimRefs = fallbackStageRefs.length > 0
+      ? fallbackStageRefs
+      : evidenceSignals.slice(0, 6).map((signal) => signal.id)
+    const fallbackStrengthRefs = buildFallbackProfileClaimRefs(
+      stageFindings,
+      'strengths',
+      derivedStrengthsAndChallenges.strengths,
+      fallbackClaimRefs
+    )
+    const fallbackChallengeRefs = buildFallbackProfileClaimRefs(
+      stageFindings,
+      'challenges',
+      derivedStrengthsAndChallenges.challenges,
+      fallbackClaimRefs
+    )
+    const fallbackTriggerRefs = buildFallbackProfileClaimRefs(
+      stageFindings,
+      'triggers',
+      buildDerivedTriggerClaims(agent),
+      fallbackClaimRefs
+    )
+    const fallbackGrowthEdgeRefs = buildFallbackProfileClaimRefs(
+      stageFindings,
+      'growthEdges',
+      buildDerivedGrowthEdges(),
+      fallbackClaimRefs
+    )
+
+    if (claimEvidence.strengths.length === 0 || shouldUseFallbackClaimRefs(claimEvidence.strengths, 2)) {
+      claimEvidence.strengths = fallbackStrengthRefs
+    }
+    if (claimEvidence.challenges.length === 0 || shouldUseFallbackClaimRefs(claimEvidence.challenges, 2)) {
+      claimEvidence.challenges = fallbackChallengeRefs
+    }
+    if (claimEvidence.triggers.length === 0 || shouldUseFallbackClaimRefs(claimEvidence.triggers, 2)) {
+      claimEvidence.triggers = fallbackTriggerRefs
+    }
+    if (claimEvidence.growthEdges.length === 0 || shouldUseFallbackClaimRefs(claimEvidence.growthEdges, 2)) {
+      claimEvidence.growthEdges = fallbackGrowthEdgeRefs
+    }
     const strengths = extractClaimTexts(claimEvidence.strengths)
     const challenges = extractClaimTexts(claimEvidence.challenges)
     const triggers = extractClaimTexts(claimEvidence.triggers)
     const growthEdges = extractClaimTexts(claimEvidence.growthEdges)
-    const summary = typeof parsed?.summary === 'string' ? summarizeText(parsed.summary, 460) : buildSummary(agent, bigFive, mbti, enneagram)
+    const modelSummary = typeof parsed?.summary === 'string' ? cleanProfileSummaryText(parsed.summary) : ''
+    const summary = cleanProfileSummaryText(
+      evidenceDensity.level === 'strong'
+        ? (modelSummary || buildSummary(agent, bigFive, mbti, enneagram, evidenceDensity.level))
+        : buildSummary(agent, bigFive, mbti, enneagram, evidenceDensity.level)
+    )
 
     return {
-      profile: normalizePsychologicalProfile({
+      profile: normalizePsychologicalProfile(polishProfileClaimGroups({
         ...scaffold,
       bigFive,
       mbti,
@@ -1362,13 +1704,13 @@ export class ProfileAnalysisService {
       challenges: challenges.length > 0 ? challenges : derivedStrengthsAndChallenges.challenges,
       triggers,
       growthEdges,
-      confidence: clamp(typeof parsed?.confidence === 'number' ? parsed.confidence : 0.74),
+      confidence: this.computeProfileConfidence(parsed, evidenceDensity),
       rationales,
       claimEvidence,
       source: 'analysis_run',
       qualityStatus: 'pending',
       profileVersion: PROFILE_VERSION,
-    }, {
+    }, agent, stageFindings, evidenceSignals), {
       source: 'analysis_run',
       qualityStatus: 'pending',
       profileVersion: PROFILE_VERSION,
@@ -1385,14 +1727,14 @@ export class ProfileAnalysisService {
     providerInfo: LLMProviderInfo
   ): Promise<ProfileQualityEvaluation> {
     const evidenceCoverage = computeEvidenceCoverage(profile)
-    const prompt = `Evaluate this psychological profile for an inspectable AI agent. Return strict JSON only.\n\nAgent: ${agent.name}\nProfile:\n${JSON.stringify(profile, null, 2)}\n\nStage findings:\n${JSON.stringify(stageFindings, null, 2)}\n\nEvidence sample:\n${JSON.stringify(evidenceSignals.slice(0, 12), null, 2)}\n\nEvidence coverage summary:\n${JSON.stringify(evidenceCoverage, null, 2)}\n\nReturn JSON with keys: overallScore, pass, dimensions, strengths, weaknesses, repairInstructions, evaluatorSummary, hardFailureFlags.\nDimensions must include evidenceGrounding, consistency, distinctiveness, communicationUsefulness, rationaleCompleteness, each with score and rationale.\nSet pass true only if overallScore >= ${PROFILE_OVERALL_SCORE_MINIMUM}, every dimension >= ${PROFILE_DIMENSION_FLOOR}, evidence coverage >= ${PROFILE_EVIDENCE_COVERAGE_MINIMUM} percent, and there are no hard failure flags.`
+    const prompt = `Evaluate this psychological profile for an inspectable AI agent. Return strict JSON only.\n\nAgent: ${agent.name}\nProfile:\n${JSON.stringify(profile, null, 2)}\n\nStage findings:\n${buildCompactStageFindingsBlock(stageFindings)}\n\nEvidence sample:\n${buildCompactEvidenceBlock(evidenceSignals, 10)}\n\nEvidence coverage summary:\n${JSON.stringify(evidenceCoverage, null, 2)}\n\nReturn JSON with keys: overallScore, pass, dimensions, strengths, weaknesses, repairInstructions, evaluatorSummary, hardFailureFlags.\nDimensions must include evidenceGrounding, consistency, distinctiveness, communicationUsefulness, rationaleCompleteness, each with score and rationale.\nSet pass true only if overallScore >= ${PROFILE_OVERALL_SCORE_MINIMUM}, every dimension >= ${PROFILE_DIMENSION_FLOOR}, evidence coverage >= ${PROFILE_EVIDENCE_COVERAGE_MINIMUM} percent, and there are no hard failure flags.`
 
     try {
-      const result = await generateText({
-        providerInfo,
-        temperature: 0.15,
-        maxTokens: 700,
-        timeoutMs: 35000,
+    const result = await generateText({
+      providerInfo,
+      temperature: 0.15,
+      maxTokens: 480,
+      timeoutMs: 22000,
         messages: [
           { role: 'system', content: 'You are a strict evaluator. Return valid JSON only.' },
           { role: 'user', content: prompt },
@@ -1465,13 +1807,13 @@ export class ProfileAnalysisService {
     profile: PsychologicalProfile
     rawModelOutput: OutputQualityRawModelOutput
   }> {
-    const prompt = `Repair this psychological profile once. Return strict JSON only.\n\nAgent: ${agent.name}\nCurrent profile:\n${JSON.stringify(profile, null, 2)}\n\nEvaluation:\n${JSON.stringify(evaluation, null, 2)}\n\nStage findings:\n${JSON.stringify(stageFindings, null, 2)}\n\nEvidence sample:\n${JSON.stringify(evidenceSignals.slice(0, 12), null, 2)}\n\nKeep the same schema. Improve evidence coverage, distinctiveness, and rationale clarity without becoming verbose. Do not remove claimEvidence.`
+    const prompt = `Repair this psychological profile once. Return strict JSON only.\n\nAgent: ${agent.name}\nCurrent profile:\n${JSON.stringify(profile, null, 2)}\n\nEvaluation:\n${JSON.stringify(evaluation, null, 2)}\n\nStage findings:\n${buildCompactStageFindingsBlock(stageFindings)}\n\nEvidence sample:\n${buildCompactEvidenceBlock(evidenceSignals, 10)}\n\nKeep the same schema. Improve evidence coverage, distinctiveness, and rationale clarity without becoming verbose. Do not remove claimEvidence. Convert any copied first-person interview excerpts in strengths, challenges, triggers, or growthEdges into concise third-person claim summaries. Avoid duplicate provisional wording in the summary.`
 
     const result = await generateText({
       providerInfo,
       temperature: 0.25,
-      maxTokens: 1000,
-      timeoutMs: 35000,
+      maxTokens: 560,
+      timeoutMs: 22000,
       messages: [
         { role: 'system', content: 'Repair the profile. Return valid JSON only.' },
         { role: 'user', content: prompt },
@@ -1480,14 +1822,17 @@ export class ProfileAnalysisService {
 
     const parsed = safeJsonParse<PsychologicalProfile>(result.content)
     return {
-      profile: parsed ? normalizePsychologicalProfile({
-        ...profile,
-        ...parsed,
-      }, {
-        source: 'analysis_run',
-        qualityStatus: 'pending',
-        profileVersion: PROFILE_VERSION,
-      }) : profile,
+      profile: parsed ? normalizePsychologicalProfile(
+        polishProfileClaimGroups({
+          ...profile,
+          ...parsed,
+        }, agent, stageFindings, evidenceSignals),
+        {
+          source: 'analysis_run',
+          qualityStatus: 'pending',
+          profileVersion: PROFILE_VERSION,
+        }
+      ) : profile,
       rawModelOutput: createRawModelOutput(result.content),
     }
   }
@@ -1572,6 +1917,66 @@ export class ProfileAnalysisService {
       evaluatorSummary: blockerMessage,
       hardFailureFlags: validation?.hardFailureFlags || ['profile_validation_blocked_evaluation'],
     }
+  }
+
+  /**
+   * Classify evidence density as thin, moderate, or strong.
+   * This drives confidence downgrading and tentative typology labeling.
+   */
+  private computeEvidenceDensity(
+    evidenceSignals: ProfileEvidenceSignal[],
+    stageFindings: ProfileStageFinding[]
+  ): { level: EvidenceDensityLevel; totalSignals: number; stageClaimCount: number } {
+    const totalSignals = evidenceSignals.length
+    const stageClaimCount = stageFindings.reduce((count, finding) => count + (finding.claims?.length || 0), 0)
+
+    // Strong: >= 20 evidence signals AND >= 8 stage claims
+    if (totalSignals >= 20 && stageClaimCount >= 8) {
+      return { level: 'strong', totalSignals, stageClaimCount }
+    }
+    // Moderate: >= 10 evidence signals AND >= 4 stage claims
+    if (totalSignals >= 10 && stageClaimCount >= 4) {
+      return { level: 'moderate', totalSignals, stageClaimCount }
+    }
+    // Thin: everything else
+    return { level: 'thin', totalSignals, stageClaimCount }
+  }
+
+  /**
+   * Compute profile confidence, downgrading when evidence is thin.
+   * Prevents models from asserting strong typology claims on sparse data.
+   */
+  private computeProfileConfidence(
+    parsed: Record<string, unknown> | null,
+    evidenceDensity: { level: EvidenceDensityLevel }
+  ): number {
+    const modelConfidence = typeof parsed?.confidence === 'number' ? parsed.confidence : 0.74
+    const densityCap: Record<string, number> = {
+      thin: 0.48,
+      moderate: 0.72,
+      strong: 1.0,
+    }
+    const cap = densityCap[evidenceDensity.level] ?? 0.72
+    return clamp(Math.min(modelConfidence, cap))
+  }
+
+  private shouldSkipRepair(
+    evidenceCoverage: ProfileEvidenceCoverageSummary,
+    validation: OutputQualityValidationReport,
+    evidenceSignals: ProfileEvidenceSignal[],
+    stageFindings: ProfileStageFinding[]
+  ): boolean {
+    const evidenceDensity = this.computeEvidenceDensity(evidenceSignals, stageFindings)
+    if (evidenceDensity.level !== 'thin') {
+      return false
+    }
+
+    return evidenceCoverage.blockedGroups.length >= 3
+      || validation.hardFailureFlags.some((flag) => flag.includes('evidence'))
+      || validation.hardFailureFlags.some((flag) => flag.includes('strengths_missing'))
+      || validation.hardFailureFlags.some((flag) => flag.includes('challenges_missing'))
+      || validation.hardFailureFlags.some((flag) => flag.includes('triggers_missing'))
+      || validation.hardFailureFlags.some((flag) => flag.includes('growth_edges_missing'))
   }
 }
 

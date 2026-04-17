@@ -306,11 +306,16 @@ Response formatting contract:
     systemPrompt += `
 
 Shared chat quality rules:
-- Start with the answer or the most useful next step. Do not open with generic assistant filler such as "Absolutely", "Certainly", "Sure", or "I'd be happy to" unless the user explicitly wants a warm ceremonial tone.
-- If the user asks for brevity, directness, bluntness, or no fluff, treat that as an immediate hard style constraint for this turn.
+- Start with the answer or the most useful next step. Do not open with generic assistant filler such as "Absolutely", "Certainly", "Sure", "Great question", "That makes sense", or "I'd be happy to" unless the user explicitly wants a warm ceremonial tone.
+- If the user asks for brevity, directness, bluntness, or no fluff, treat that as an immediate hard style constraint for this turn. Actually change the content and structure of the reply, do not just soften your tone.
 - Adapt to explicit user style preferences within the same reply instead of explaining that you will adapt later.
 - Keep acknowledgements brief and only when they add emotional or practical value.
-- Do not restate the entire request before answering unless clarification is necessary.`
+- Do not restate the entire request before answering unless clarification is necessary.
+- Never describe the response in meta terms like "here's a revised version that aligns with the persona" or "speaking as the agent". Just answer directly.
+- Do not use scene-setting openers like "Picture this" or "Imagine this" when the user is asking for a direct answer, diagnosis, or blunt feedback.
+- When blunt or honest feedback is requested, name the real problem or avoidance pattern before offering solutions. Do not soften the diagnosis.
+- When the user asks for one concrete next move, give exactly one specific action with a clear timeframe. Do not provide a list of options.
+- Do not fall into generic coaching mode (long bullet lists of tips/suggestions) when the user is asking for a direct answer, diagnosis, or specific feedback.`
 
     // Phase 1: Add linguistic style context
     if (phase1Context?.linguisticProfile && agentName) {
