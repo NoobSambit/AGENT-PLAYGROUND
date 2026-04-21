@@ -90,26 +90,30 @@ export function LLMProviderToggle({ compact = false, className }: LLMProviderTog
               disabled={disabled}
               onClick={() => setProvider(option)}
               className={cn(
-                'inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition-all',
-                compact ? 'h-9 text-xs' : 'h-10',
+                'inline-flex items-center justify-center gap-2 rounded-sm border transition-all font-bold',
+                compact ? 'flex-1 h-9 text-[11px] px-2' : 'h-10 px-4 text-[12px]',
                 isActive
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border/70 bg-card/[0.62] text-foreground hover:border-primary/25',
+                  ? (compact ? 'border-pastel-purple/40 bg-pastel-purple/10 text-foreground' : 'border-primary bg-primary/10 text-primary')
+                  : 'border-border/30 bg-muted/5 text-muted-foreground hover:text-foreground',
                 disabled && 'cursor-not-allowed opacity-50'
               )}
             >
               <span>{LLM_PROVIDER_LABELS[option]}</span>
-              {option === 'ollama' ? <span className="text-[10px] uppercase tracking-[0.16em]">local</span> : null}
+              {option === 'ollama' ? <span className="text-[9px] uppercase tracking-[0.2em] opacity-80">local</span> : null}
             </button>
           )
         })}
       </div>
 
-      <div className={cn('flex flex-wrap gap-2 text-xs text-muted-foreground', compact && 'gap-1.5')}>
-        <span className="soft-pill capitalize">provider: {LLM_PROVIDER_LABELS[provider]}</span>
-        <span className="soft-pill">model: {currentModel}</span>
+      <div className={cn('flex flex-wrap items-center gap-1.5 text-muted-foreground', compact ? 'text-[10px] uppercase tracking-[0.1em]' : 'text-[11px]')}>
+        <span>{LLM_PROVIDER_LABELS[provider]}</span>
+        <span className="opacity-40">•</span>
+        <span className="truncate max-w-[140px]">{currentModel}</span>
         {!currentStatus?.available && provider !== 'ollama' ? (
-          <span className="soft-pill">server credentials required for this provider</span>
+          <>
+            <span className="opacity-40">•</span>
+            <span className="text-pastel-red font-bold">Needs API Key</span>
+          </>
         ) : null}
       </div>
     </div>
