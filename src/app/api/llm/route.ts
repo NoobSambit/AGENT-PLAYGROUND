@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { AgentChain } from '@/lib/langchain/agentChain'
+import { resolveOllamaModel, resolveProviderInfoModel } from '@/lib/llm/ollama'
 import {
   getLLMProviderOptions,
   getOllamaBaseUrl,
@@ -18,12 +19,19 @@ interface LLMRequest {
 }
 
 export async function GET(request: NextRequest) {
-  const providerInfo = getProviderInfoForRequest(request)
+  const providerInfo = await getProviderInfo(request)
+  const providers = await Promise.all(
+    getLLMProviderOptions().map(async (option) => (
+      option.provider === 'ollama'
+        ? { ...option, model: await resolveOllamaModel(option.model) }
+        : option
+    ))
+  )
 
   return new Response(JSON.stringify({
     activeProvider: providerInfo?.provider ?? null,
     activeModel: providerInfo?.model ?? null,
-    providers: getLLMProviderOptions(),
+    providers,
   }), {
     headers: { 'Content-Type': 'application/json' }
   })
@@ -57,8 +65,13 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function getProviderInfo(request: NextRequest): LLMProviderInfo | null {
-  return getProviderInfoForRequest(request)
+async function getProviderInfo(request: NextRequest): Promise<LLMProviderInfo | null> {
+  const providerInfo = getProviderInfoForRequest(request)
+  if (!providerInfo) {
+    return null
+  }
+
+  return resolveProviderInfoModel(providerInfo)
 }
 
 function extractTokens(payload: unknown, provider: LLMProvider): string[] {
@@ -314,7 +327,7 @@ function normalizeOllamaStream(response: Response, providerInfo: LLMProviderInfo
 async function handleLangChainResponse(request: NextRequest, body: LLMRequest): Promise<Response> {
   try {
     const agentChain = AgentChain.getInstance(body.agentId!)
-    const providerInfo = getProviderInfo(request)
+    const providerInfo = await getProviderInfo(request)
 
     if (!providerInfo) {
       return new Response(JSON.stringify({
@@ -421,7 +434,7 @@ async function handleLangChainResponse(request: NextRequest, body: LLMRequest): 
 // Fallback to direct API response for backward compatibility
 async function handleDirectAPIResponse(request: NextRequest, body: LLMRequest): Promise<Response> {
   try {
-    const providerInfo = getProviderInfo(request)
+    const providerInfo = await getProviderInfo(request)
 
     if (!providerInfo) {
       return new Response(JSON.stringify({ error: 'LLM provider not configured' }), {

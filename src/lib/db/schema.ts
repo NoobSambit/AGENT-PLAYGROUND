@@ -13,6 +13,8 @@ import {
 } from 'drizzle-orm/pg-core'
 import type {
   AgentRecord,
+  ArenaEvent,
+  ArenaRun,
   AgentRelationship,
   AgentStats,
   CreativeArtifact,
@@ -568,6 +570,47 @@ export const mentorships = pgTable('mentorships', {
   index('mentorships_status_idx').on(table.status),
 ])
 
+export const arenaRuns = pgTable('arena_runs', {
+  id: text('id').primaryKey(),
+  status: text('status').notNull(),
+  latestStage: text('latest_stage').notNull(),
+  participantIds: text('participant_ids').array().notNull().default(sql`'{}'::text[]`),
+  sandboxed: boolean('sandboxed').notNull().default(true),
+  cancellationRequested: boolean('cancellation_requested').notNull().default(false),
+  roundCount: integer('round_count').notNull().default(10),
+  currentRound: integer('current_round').notNull().default(0),
+  eventCount: integer('event_count').notNull().default(0),
+  winnerAgentId: text('winner_agent_id'),
+  provider: text('provider'),
+  model: text('model'),
+  failureReason: text('failure_reason'),
+  createdAt,
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true, mode: 'string' }),
+  payload: jsonb('payload').$type<ArenaRun>().notNull(),
+}, (table) => [
+  index('arena_runs_status_created_idx').on(table.status, table.createdAt),
+  index('arena_runs_stage_created_idx').on(table.latestStage, table.createdAt),
+  index('arena_runs_created_idx').on(table.createdAt),
+])
+
+export const arenaEvents = pgTable('arena_events', {
+  id: text('id').primaryKey(),
+  runId: text('run_id').notNull().references(() => arenaRuns.id, { onDelete: 'cascade' }),
+  sequence: integer('sequence').notNull(),
+  stage: text('stage').notNull(),
+  kind: text('kind').notNull(),
+  speakerType: text('speaker_type').notNull(),
+  speakerAgentId: text('speaker_agent_id'),
+  round: integer('round'),
+  createdAt,
+  payload: jsonb('payload').$type<ArenaEvent>().notNull(),
+}, (table) => [
+  uniqueIndex('arena_events_run_sequence_unique_idx').on(table.runId, table.sequence),
+  index('arena_events_run_created_idx').on(table.runId, table.createdAt),
+  index('arena_events_kind_created_idx').on(table.kind, table.createdAt),
+])
+
 export const simulations = pgTable('simulations', {
   id: text('id').primaryKey(),
   agentIds: text('agent_ids').array().notNull().default(sql`'{}'::text[]`),
@@ -642,6 +685,8 @@ export const schema = {
   conflicts,
   challenges,
   mentorships,
+  arenaRuns,
+  arenaEvents,
   simulations,
   scenarioRuns,
   migrationOutbox,

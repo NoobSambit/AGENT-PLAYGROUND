@@ -40,6 +40,8 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - `conflicts`
 - `challenges`
 - `mentorships`
+- `arena_runs`
+- `arena_events`
 - `simulations`
 - `scenario_runs`
 - `migration_outbox`
@@ -70,6 +72,9 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - `journal_entries` now represent V2 session artifacts. Only rows with `saved=true` count toward archive history, counters, timeline visibility, and downstream context reuse.
 - Store scenario branch experiments in `scenario_runs` rather than overloading `simulations`, because branch experiments and primary simulation runs have different product meaning and lifecycle.
 - `scenario_runs` now also index `quality_status`, `quality_score`, `failure_reason`, and `prompt_version`.
+- Store arena debates in `arena_runs` and `arena_events` rather than overloading `simulations`, because arena drafts, append-only event feeds, score snapshots, and final verdict reports have a different lifecycle from the legacy simulation record.
+- `arena_runs` index execution state (`status`, `latest_stage`, `participant_ids`, `round_count`, `current_round`, `event_count`, `winner_agent_id`, `provider`, `model`, `failure_reason`) while the full arena contract remains in payload.
+- `arena_events` index append-only feed state (`run_id`, `sequence`, `stage`, `kind`, `speaker_type`, `speaker_agent_id`, `round`) while preserving the full renderable event payload.
 - Legacy rows are intentionally preserved. If the new quality fields are absent, services and route serializers should treat them as `legacy_unvalidated` rather than rewriting historical payloads in place.
 
 ## Detailed References

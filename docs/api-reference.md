@@ -47,9 +47,18 @@
 - `GET|POST /api/mentorship`
 - `GET|POST /api/challenges`
 
-## Simulation
+## Arena
 
-- `GET|POST /api/simulation`
+- `GET /api/arena/runs`
+- `POST /api/arena/runs`
+- `GET /api/arena/runs/[runId]`
+- `PUT /api/arena/runs/[runId]`
+- `POST /api/arena/runs/[runId]/execute`
+- `POST /api/arena/runs/[runId]/cancel`
+
+Legacy simulation compatibility routes still exist:
+
+- `GET /api/simulations`
 - `POST /api/multiagent`
 
 ## Scenarios
@@ -93,6 +102,11 @@
 - `POST /api/agents/[id]/profile/runs/[runId]/execute` runs the evidence -> interview -> synthesis -> validation -> evaluation -> bounded repair -> final-gate workflow using the current provider/model request headers.
 - `GET /api/agents/[id]/profile/runs/[runId]` returns one stored profile analysis run with transcript turns, compatibility aliases (`prompt` and `response`), pipeline trace events, additive quality metadata, and evidence coverage summary.
 - Profile runs now keep `question` and `answer` as the canonical transcript contract, require evidence refs in stage findings plus top-level profile claim groups, and refuse to update `agents.psychologicalProfile` unless the run passes validation and evaluation.
+- `POST /api/arena/runs` creates a sandboxed draft arena run with generated seat briefs and no model calls.
+- `PUT /api/arena/runs/[runId]` is draft-only and updates the topic, objective, round budget, response budget, reference brief, and user-edited seat fields.
+- `POST /api/arena/runs/[runId]/execute` runs the head-led debate using one shared provider/model request preference for the entire run.
+- `GET /api/arena/runs/[runId]` returns one arena run plus its append-only event feed for live polling or replay.
+- `POST /api/arena/runs/[runId]/cancel` requests cooperative cancellation; the active executor stops at the next safe boundary and persists a cancellation event.
 - `GET /api/scenarios` returns branch point options, intervention templates, and recent saved runs for one agent.
 - `GET /api/scenarios` also returns `analytics` with best interventions, common quality flags, and playbook notes.
 - `POST /api/scenarios` requires `agentId`, `branchPointId`, `branchPointKind`, and `intervention`, then returns a saved `scenarioRun`.

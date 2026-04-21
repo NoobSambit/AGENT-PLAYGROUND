@@ -494,11 +494,30 @@ Expected behavior:
    - updates emotional state
    - makes the entry visible to timeline and downstream consumers
 
-## Run Multi-Agent Simulation
+## Run Arena Debate
 
 1. Open `/simulation`.
-2. Choose agents and a prompt.
-3. The server generates turns, updates relationships, captures conflicts and broadcasts, then stores the final simulation record.
+2. Prepare a draft arena run with 2-4 agents, a topic, an objective, a 10-12 round budget, and a response budget.
+3. `POST /api/arena/runs` creates a sandboxed draft and generates editable seat briefs.
+4. The user optionally edits those seats through `PUT /api/arena/runs/[runId]`.
+5. `POST /api/arena/runs/[runId]/execute` runs the head-led debate on one shared provider/model.
+6. The server persists append-only arena events for head directives, debater turns, round summaries, score updates, and the final report.
+7. The client polls `GET /api/arena/runs/[runId]` while the run is active and replays the final event feed once complete.
+
+### What Updates
+
+- `arena_runs`
+- `arena_events`
+
+### What Does Not Update
+
+Arena v1 is intentionally sandboxed. It does not mutate:
+
+- `memories`
+- `agent_relationships`
+- `collective_broadcasts`
+- `agents.emotional_state`
+- long-term agent counters
 
 ## Firestore To PostgreSQL Cutover
 

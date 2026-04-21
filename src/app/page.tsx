@@ -32,12 +32,12 @@ const railTabs = [
   'Agent Memory',
   'Emotion Engine',
   'Relationship Atlas',
-  'Simulation Lab',
+  'Arena Workspace',
   'Planning Loop',
   'Knowledge Layer',
 ]
 
-const showcaseNavLinks = ['Identity', 'Memory', 'Emotion', 'Relationships', 'Planning', 'Simulation']
+const showcaseNavLinks = ['Identity', 'Memory', 'Emotion', 'Relationships', 'Planning', 'Arena']
 
 const showcaseSignals = [
   {
@@ -73,7 +73,7 @@ const heroCards: Array<{
       span: 'lg:col-span-3',
     },
     {
-      title: 'Simulation lab',
+      title: 'Arena workspace',
       description: 'Run multi-agent debates, planning sessions, and collaboration loops.',
       icon: Users,
       span: 'lg:col-span-4',
@@ -1131,7 +1131,7 @@ function NavIcon({ type, active }: { type: string, active: boolean }) {
         <rect x="13" y="16" width="4" height="4" rx="1" className={`fill-current ${o2} transition-opacity`} />
       </svg>
     )
-    case 'Simulation': return (
+    case 'Arena': return (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="shrink-0">
         <rect x="3" y="4" width="18" height="16" rx="3" className={`stroke-current ${o1} transition-opacity`} strokeWidth="1.5" />
         <path d="M10 9l5 3-5 3v-6z" className={`fill-current ${o2} transition-opacity`} />
@@ -1145,7 +1145,7 @@ function InteractiveShowcase() {
   const [activeTab, setActiveTab] = useState('Identity')
 
   // 1. Reduced to 6 cleaner narrative tabs
-  const featureTabs = ['Identity', 'Memory', 'Emotion', 'Relationships', 'Planning', 'Simulation']
+  const featureTabs = ['Identity', 'Memory', 'Emotion', 'Relationships', 'Planning', 'Arena']
 
   const getTabContent = () => {
     switch (activeTab) {
@@ -1184,7 +1184,7 @@ function InteractiveShowcase() {
         mainVisual: <PlanningDAGVisual />,
         railVisual: <ExecutionStateVisual />
       }
-      case 'Simulation': return {
+      case 'Arena': return {
         pill: "Interactive Sandboxes",
         title: "Run whole teams inside one arena",
         subtitle: "Stage debates, workflows, and what-if scenarios with every state exposed",
@@ -1317,7 +1317,7 @@ export default function Home() {
                   <Sparkles className="h-3 w-3" />
                   <span className="uppercase text-primary/80">Alpha Release</span>
                   <span className="h-3 w-[1px] bg-primary/20 mx-1" />
-                  <span className="text-primary/60">Personality & Simulation Lab</span>
+                  <span className="text-primary/60">Personality & Arena Workspace</span>
                 </div>
 
                 <h1 className="mt-8 max-w-4xl text-[clamp(2.5rem,5.5vw,4.2rem)] font-bold leading-[1.05] tracking-[-0.035em] text-foreground">

@@ -13,7 +13,7 @@ const navItems = [
   { href: '/', label: 'Home' },
   { href: '/agents', label: 'Agents' },
   { href: '/dashboard', label: 'Dashboard' },
-  { href: '/simulation', label: 'Simulation' },
+  { href: '/simulation', label: 'Arena' },
 ]
 
 export function Navigation() {

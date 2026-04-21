@@ -1,8 +1,9 @@
 import {
   getConfiguredLLMProvider,
-  getOllamaBaseUrl,
   type LLMProviderInfo,
 } from '@/lib/llmConfig'
+import { getOllamaBaseUrl } from '@/lib/llmConfig'
+import { resolveProviderInfoModel } from '@/lib/llm/ollama'
 
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant'
@@ -40,7 +41,8 @@ export async function generateText({
   timeoutMs = 60000,
   providerInfo: providerOverride = null,
 }: GenerateTextOptions): Promise<{ content: string; providerInfo: LLMProviderInfo }> {
-  const providerInfo = providerOverride || requireConfiguredProvider()
+  const requestedProviderInfo = providerOverride || requireConfiguredProvider()
+  const providerInfo = await resolveProviderInfoModel(requestedProviderInfo)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(new Error(`LLM request timed out after ${timeoutMs}ms`)), timeoutMs)
 

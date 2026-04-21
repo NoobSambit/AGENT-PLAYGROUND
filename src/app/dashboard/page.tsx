@@ -166,7 +166,7 @@ export default function Dashboard() {
                   Operate your agent system from one surface.
                 </h1>
                 <p className="page-intro mt-4">
-                  Use this page to check roster health, jump into active agents, and decide whether the next step is training, simulation, or another creation pass.
+                  Use this page to check roster health, jump into active agents, and decide whether the next step is training, arena debate, or another creation pass.
                 </p>
               </div>
 
@@ -188,7 +188,7 @@ export default function Dashboard() {
                   onClick={() => router.push('/simulation')}
                   className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-border/70 bg-card/[0.62] px-5 text-sm font-semibold text-foreground backdrop-blur-xl transition-all hover:border-primary/20 hover:bg-card/[0.82]"
                 >
-                  Open simulation lab
+                  Open arena workspace
                   <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
@@ -204,7 +204,7 @@ export default function Dashboard() {
                   title: 'Best next action',
                   detail: agents.length > 0
                     ? 'Open an agent workspace to inspect memory, learning, and relationship state.'
-                    : 'Create the first agent, then return here for oversight and simulations.',
+                    : 'Create the first agent, then return here for oversight and arena runs.',
                 },
               ].map((item) => (
                 <div key={item.title} className="rounded-sm border border-border/70 bg-background/40 p-5 backdrop-blur-xl">
@@ -223,7 +223,7 @@ export default function Dashboard() {
           className="grid gap-5 md:grid-cols-2 xl:grid-cols-4"
         >
           <StatCard icon={PlaygroundLogo} label="Roster size" value={stats.totalAgents} detail="All personalities created in the workspace." accent="purple" />
-          <StatCard icon={Zap} label="Active agents" value={stats.activeAgents} detail="Agents ready for direct chat, planning, and simulation." accent="cyan" />
+          <StatCard icon={Zap} label="Active agents" value={stats.activeAgents} detail="Agents ready for direct chat, planning, and arena work." accent="cyan" />
           <StatCard icon={MessageCircle} label="Conversation volume" value={stats.totalMessages.toLocaleString()} detail="A quick signal for system usage and agent activity." accent="pink" />
           <StatCard icon={Brain} label="Stored memories" value={stats.totalMemories.toLocaleString()} detail="Long-term context accumulated across the roster." accent="purple" />
         </motion.section>
@@ -308,9 +308,9 @@ export default function Dashboard() {
                     onClick: () => router.push('/agents/new'),
                   },
                   {
-                    title: 'Run a simulation',
-                    text: 'Select multiple agents, set the topic, and review the generated conversation.',
-                    action: 'Open simulation',
+                    title: 'Open the arena',
+                    text: 'Prepare a debate roster, edit seats, and review the head-led live event feed.',
+                    action: 'Open arena',
                     onClick: () => router.push('/simulation'),
                   },
                   {
@@ -347,9 +347,9 @@ export default function Dashboard() {
                       <Users className="h-5 w-5" />
                     </div>
                     <div>
-                      <div className="text-sm font-medium text-foreground">Simulation ready</div>
+                      <div className="text-sm font-medium text-foreground">Arena ready</div>
                       <div className="text-sm text-muted-foreground">
-                        {Math.max(agents.length, 0)} agents available for multi-agent scenarios.
+                        {Math.max(agents.length, 0)} agents available for arena debates.
                       </div>
                     </div>
                   </div>

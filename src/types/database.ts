@@ -445,6 +445,195 @@ export interface SimulationRecord {
 
 export type SimulationDocument = Omit<SimulationRecord, 'id'>
 
+export type ArenaRunStatus = 'draft' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type ArenaStage =
+  | 'prepare'
+  | 'seat_generation'
+  | 'opening'
+  | 'crossfire'
+  | 'narrowing'
+  | 'closing'
+  | 'report'
+  | 'completed'
+export type ArenaResponseBudget = 'tight' | 'balanced' | 'expanded'
+export type ArenaSpeakerType = 'head' | 'debater' | 'system'
+export type ArenaEventKind =
+  | 'run_prepared'
+  | 'seat_generated'
+  | 'phase_started'
+  | 'head_directive'
+  | 'debater_turn'
+  | 'head_intervention'
+  | 'round_summary'
+  | 'score_update'
+  | 'phase_completed'
+  | 'report_published'
+  | 'run_cancelled'
+  | 'run_failed'
+
+export interface ArenaSeatOverride {
+  agentId: string
+  seatLabel?: string
+  stanceBrief?: string
+  winCondition?: string
+}
+
+export interface ArenaConfig {
+  topic: string
+  objective: string
+  participantIds: string[]
+  roundCount: number
+  responseBudget: ArenaResponseBudget
+  sandboxed: boolean
+  mode: 'debate_v1'
+  provider?: string
+  model?: string
+  referenceBrief?: string
+  seatOverrides?: ArenaSeatOverride[]
+}
+
+export interface ArenaParticipant {
+  id: string
+  name: string
+  persona: string
+  goals: string[]
+}
+
+export interface ArenaSeat {
+  agentId: string
+  agentName: string
+  seatLabel: string
+  stanceBrief: string
+  winCondition: string
+  orderIndex: number
+  source: 'auto' | 'manual'
+}
+
+export interface ArenaScorecard {
+  agentId: string
+  agentName: string
+  clarity: number
+  pressure: number
+  responsiveness: number
+  consistency: number
+  total: number
+  summary: string
+}
+
+export interface ArenaParticipantNotebook {
+  agentId: string
+  commitments: string[]
+  attacksToAnswer: string[]
+  concessions: string[]
+  nextPressurePoints: string[]
+  lastUpdatedAt: string
+}
+
+export interface ArenaLedgerRound {
+  round: number
+  phase: ArenaStage
+  focusQuestion: string
+  claimHighlights: Array<{
+    agentId: string
+    agentName: string
+    claim: string
+  }>
+  unresolvedThreads: string[]
+  scoreSnapshot: ArenaScorecard[]
+  summary: string
+}
+
+export interface ArenaLedger {
+  rounds: ArenaLedgerRound[]
+  unresolvedThreads: string[]
+  latestDirective?: string
+  latestFocusQuestion?: string
+}
+
+export interface ArenaDecisiveMoment {
+  eventId: string
+  round: number
+  title: string
+  summary: string
+  agentId?: string
+  agentName?: string
+}
+
+export interface ArenaReport {
+  winnerAgentId: string
+  winnerAgentName: string
+  verdictSummary: string
+  scorecards: ArenaScorecard[]
+  decisiveMoments: ArenaDecisiveMoment[]
+  headInterventionSummary: string[]
+  unresolvedQuestions: string[]
+  improvementNotes: string[]
+  createdAt: string
+}
+
+export interface ArenaEvent {
+  id: string
+  runId: string
+  sequence: number
+  stage: ArenaStage
+  kind: ArenaEventKind
+  speakerType: ArenaSpeakerType
+  speakerAgentId?: string
+  speakerName?: string
+  round?: number
+  title: string
+  content: string
+  summary: string
+  payload?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface ArenaRun {
+  id: string
+  status: ArenaRunStatus
+  latestStage: ArenaStage
+  currentRound: number
+  eventCount: number
+  participantIds: string[]
+  participants: ArenaParticipant[]
+  config: ArenaConfig
+  seats: ArenaSeat[]
+  scorecardSnapshot: ArenaScorecard[]
+  ledger: ArenaLedger
+  participantNotebooks: ArenaParticipantNotebook[]
+  finalReport?: ArenaReport
+  winnerAgentId?: string
+  sandboxed: boolean
+  cancellationRequested: boolean
+  provider?: string
+  model?: string
+  failureReason?: string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
+export interface ArenaRunSummary {
+  id: string
+  status: ArenaRunStatus
+  latestStage: ArenaStage
+  topic: string
+  objective: string
+  participantNames: string[]
+  roundCount: number
+  currentRound: number
+  winnerAgentName?: string
+  eventCount: number
+  provider?: string
+  model?: string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
+export type ArenaRunDocument = Omit<ArenaRun, 'id'>
+export type ArenaEventDocument = Omit<ArenaEvent, 'id'>
+
 export type ScenarioBranchPointKind = 'message' | 'memory' | 'relationship_event' | 'simulation_turn'
 
 export interface ScenarioBranchPoint {

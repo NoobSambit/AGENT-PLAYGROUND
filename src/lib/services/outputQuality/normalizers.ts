@@ -69,9 +69,43 @@ export function safeParseJsonWithExtraction<T>(value: string): {
 }
 
 export function normalizeStringList(value: unknown, limit = 8): string[] {
+  const extractObjectString = (entry: Record<string, unknown>): string => {
+    const preferredKeys = [
+      'summary',
+      'question',
+      'title',
+      'text',
+      'content',
+      'note',
+      'reason',
+      'label',
+      'claim',
+      'verdict',
+      'message',
+    ]
+
+    for (const key of preferredKeys) {
+      if (typeof entry[key] === 'string' && entry[key].trim()) {
+        return entry[key].trim()
+      }
+    }
+
+    return ''
+  }
+
   if (Array.isArray(value)) {
     return value
-      .map((entry) => String(entry).trim())
+      .map((entry) => {
+        if (typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean') {
+          return String(entry).trim()
+        }
+
+        if (entry && typeof entry === 'object') {
+          return extractObjectString(entry as Record<string, unknown>)
+        }
+
+        return ''
+      })
       .filter(Boolean)
       .slice(0, limit)
   }
