@@ -49,7 +49,6 @@ type ArenaDetailResponse = {
 }
 
 const premiumPanel = 'rounded-md border border-border/40 bg-card/40 backdrop-blur-md shadow-sm'
-const subPanel = 'rounded-sm border border-border/30 bg-muted/20'
 const labelStyle = 'text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80'
 
 const accentPairs = [
@@ -768,10 +767,12 @@ export default function SimulationPage() {
                       return (
                         <div key={roundNum}>
                           {roundNum > 0 && (
-                            <div className="flex items-center gap-3 py-4" role="separator">
-                              <div className="h-px flex-1 bg-border/40" />
-                              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-pastel-purple">Round {roundNum}</span>
-                              <div className="h-px flex-1 bg-border/40" />
+                            <div className="flex items-center gap-3 py-4 my-1" role="separator">
+                              <div className="h-px flex-1 bg-gradient-to-r from-transparent to-pastel-purple/30" />
+                              <span className="inline-flex items-center gap-2 rounded-full border border-pastel-purple/20 bg-pastel-purple/5 px-3 py-1 text-[9px] font-bold uppercase tracking-[0.2em] text-pastel-purple shadow-sm">
+                                <Swords className="h-3 w-3" /> Round {roundNum}
+                              </span>
+                              <div className="h-px flex-1 bg-gradient-to-l from-transparent to-pastel-purple/30" />
                             </div>
                           )}
                           {events.map((event) => (
@@ -795,43 +796,77 @@ export default function SimulationPage() {
 
               {/* Final Report inline at bottom of transcript */}
               {selectedRun.finalReport && (
-                <section className={`${premiumPanel} border-l-2 border-l-pastel-yellow/40 overflow-hidden`} aria-label="Final report">
-                  <div className="border-b border-border/40 bg-pastel-yellow/[0.04] px-6 py-4 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Crown className="h-4 w-4 text-pastel-yellow" />
-                      <span className="text-[12px] font-bold uppercase tracking-[0.2em]">Final Verdict</span>
+                <section className={`${premiumPanel} border-l-4 border-l-pastel-yellow/60 overflow-hidden relative shadow-md`} aria-label="Final report">
+                  <div className="absolute -right-12 -top-12 opacity-[0.03] pointer-events-none">
+                    <Crown className="w-64 h-64 text-pastel-yellow" />
+                  </div>
+                  <div className="absolute inset-0 bg-gradient-to-br from-pastel-yellow/[0.03] to-transparent pointer-events-none" />
+                  
+                  <div className="border-b border-pastel-yellow/20 bg-pastel-yellow/[0.06] px-6 py-5 flex items-center justify-between relative z-10">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-pastel-yellow/20 p-2 rounded-md shadow-sm border border-pastel-yellow/30">
+                        <Crown className="h-4 w-4 text-pastel-yellow" />
+                      </div>
+                      <span className="text-[13px] font-black uppercase tracking-[0.25em] text-pastel-yellow drop-shadow-sm">Final Verdict</span>
                     </div>
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-pastel-yellow/30 bg-pastel-yellow/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-pastel-yellow">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-pastel-yellow/40 bg-pastel-yellow/15 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-pastel-yellow shadow-sm">
                       <Crown className="h-3 w-3" />{selectedRun.finalReport.winnerAgentName}
                     </span>
                   </div>
-                  <div className="p-6 space-y-5">
-                    <div className="rounded-sm border border-pastel-yellow/20 bg-pastel-yellow/[0.06] p-4">
-                      <div className={labelStyle}>Verdict Summary</div>
-                      <p className="mt-2 text-[13px] leading-relaxed text-foreground/90">{selectedRun.finalReport.verdictSummary}</p>
+                  
+                  <div className="p-6 space-y-6 relative z-10">
+                    <div className="rounded-lg border border-pastel-yellow/30 bg-gradient-to-r from-pastel-yellow/[0.08] to-pastel-yellow/[0.02] p-5 shadow-sm relative overflow-hidden">
+                      <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                        <Sparkles className="w-16 h-16 text-pastel-yellow" />
+                      </div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Sparkles className="h-4 w-4 text-pastel-yellow" />
+                        <div className={`${labelStyle} text-pastel-yellow`}>Verdict Summary</div>
+                      </div>
+                      <p className="text-[14px] leading-relaxed text-foreground/95 font-medium">{selectedRun.finalReport.verdictSummary}</p>
                     </div>
 
                     {selectedRun.finalReport.decisiveMoments.length > 0 && (
                       <div>
-                        <div className={labelStyle}>Decisive Moments</div>
-                        <div className="mt-2 grid gap-3 lg:grid-cols-2">
+                        <div className={`${labelStyle} flex items-center gap-2 mb-3.5 text-pastel-blue`}>
+                          <Target className="h-4 w-4" /> Decisive Moments
+                        </div>
+                        <div className="grid gap-4 lg:grid-cols-2">
                           {selectedRun.finalReport.decisiveMoments.map((m) => (
-                            <div key={m.eventId} className={`${subPanel} p-3.5`}>
-                              <div className="text-[12px] font-bold text-foreground">{m.title}</div>
-                              <div className="mt-0.5 text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
+                            <div key={m.eventId} className="rounded-md border border-pastel-blue/20 bg-pastel-blue/[0.03] p-4 shadow-sm transition-all hover:bg-pastel-blue/[0.05] hover:border-pastel-blue/30 hover:shadow-md group">
+                              <div className="text-[13px] font-bold text-foreground group-hover:text-pastel-blue transition-colors">{m.title}</div>
+                              <div className="mt-1 text-[9px] uppercase tracking-[0.18em] text-pastel-blue/80">
                                 round {m.round || 0}{m.agentName ? ` · ${m.agentName}` : ''}
                               </div>
-                              <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{m.summary}</p>
+                              <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">{m.summary}</p>
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    <div className="grid gap-5 lg:grid-cols-3">
-                      <ReportListCard title="Head Interventions" items={selectedRun.finalReport.headInterventionSummary} emptyCopy="No intervention summary." />
-                      <ReportListCard title="Unresolved Questions" items={selectedRun.finalReport.unresolvedQuestions} emptyCopy="No major unresolved questions." />
-                      <ReportListCard title="Improvement Notes" items={selectedRun.finalReport.improvementNotes} emptyCopy="No improvement notes." />
+                    <div className="grid gap-5 lg:grid-cols-3 pt-2">
+                      <ReportListCard 
+                        title="Head Interventions" 
+                        items={selectedRun.finalReport.headInterventionSummary} 
+                        emptyCopy="No intervention summary." 
+                        accent="yellow" 
+                        icon={<Shield className="h-3.5 w-3.5 text-pastel-yellow" />} 
+                      />
+                      <ReportListCard 
+                        title="Unresolved Questions" 
+                        items={selectedRun.finalReport.unresolvedQuestions} 
+                        emptyCopy="No major unresolved questions." 
+                        accent="red" 
+                        icon={<AlertTriangle className="h-3.5 w-3.5 text-pastel-red" />} 
+                      />
+                      <ReportListCard 
+                        title="Improvement Notes" 
+                        items={selectedRun.finalReport.improvementNotes} 
+                        emptyCopy="No improvement notes." 
+                        accent="green" 
+                        icon={<Activity className="h-3.5 w-3.5 text-pastel-green" />} 
+                      />
                     </div>
                   </div>
                 </section>
@@ -1132,6 +1167,41 @@ function ArenaEventCard({ event, seats, seat, seatIndex, isExpanded, onToggleExp
     )
   }
 
+  // 4. Customized Milestone Event: Phase / Run Milestones
+  if (event.kind === 'phase_started' || event.kind === 'phase_completed' || event.kind === 'run_prepared') {
+    const isError = event.kind === 'run_failed' || event.kind === 'run_cancelled'
+    const tone = EVENT_KIND_META[event.kind]?.color || 'text-muted-foreground'
+    const borderTone = isError ? 'border-pastel-red/30' : 'border-border/30'
+    const bgTone = isError ? 'bg-pastel-red/5' : 'bg-muted/10'
+
+    return (
+      <div className={`mb-2.5 flex items-center justify-between rounded-sm border ${borderTone} ${bgTone} px-5 py-3 shadow-sm`}>
+        <div className="flex items-center gap-3">
+          <div className={`rounded-sm bg-background/50 p-1.5 border border-border/20 shadow-sm ${tone}`}>
+            {event.kind === 'phase_started' ? <Zap className="h-3.5 w-3.5" /> 
+             : event.kind === 'phase_completed' ? <Activity className="h-3.5 w-3.5" /> 
+             : <Orbit className="h-3.5 w-3.5" />}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className={`text-[9px] font-bold uppercase tracking-[0.18em] ${tone}`}>{EVENT_KIND_META[event.kind]?.label || event.kind}</span>
+            </div>
+            <div className="mt-0.5 text-[11.5px] font-medium text-foreground/80">{event.content}</div>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-4 shrink-0">
+          {event.summary && event.summary !== event.content && (
+            <div className="hidden sm:block max-w-[200px] truncate text-[10px] text-muted-foreground italic">
+              {event.summary}
+            </div>
+          )}
+          <span className="text-[9px] text-muted-foreground whitespace-nowrap">{formatTimeShort(event.createdAt)}</span>
+        </div>
+      </div>
+    )
+  }
+
   // --- STANDARD EVENT RENDERER (Debater turns, Head directives, etc.) ---
   const accent = participantAccent(seatIndex >= 0 ? seatIndex : 0)
   const isHead = event.speakerType === 'head'
@@ -1253,14 +1323,27 @@ function ScorecardPanel({ scorecard, seats, isWinner, maxTotal, compact = false 
   )
 }
 
-function ReportListCard({ title, items, emptyCopy }: { title: string; items: string[]; emptyCopy: string }) {
+const ACCENT_MAP = {
+  yellow: { border: 'border-pastel-yellow/30', bg: 'bg-pastel-yellow/5', text: 'text-pastel-yellow', itemBorder: 'border-pastel-yellow/20', itemBg: 'bg-pastel-yellow/[0.02]', itemText: 'text-foreground/80' },
+  red: { border: 'border-pastel-red/30', bg: 'bg-pastel-red/5', text: 'text-pastel-red', itemBorder: 'border-pastel-red/20', itemBg: 'bg-pastel-red/[0.02]', itemText: 'text-foreground/80' },
+  green: { border: 'border-pastel-green/30', bg: 'bg-pastel-green/5', text: 'text-pastel-green', itemBorder: 'border-pastel-green/20', itemBg: 'bg-pastel-green/[0.02]', itemText: 'text-foreground/80' },
+  blue: { border: 'border-pastel-blue/30', bg: 'bg-pastel-blue/5', text: 'text-pastel-blue', itemBorder: 'border-pastel-blue/20', itemBg: 'bg-pastel-blue/[0.02]', itemText: 'text-foreground/80' },
+  border: { border: 'border-border/30', bg: 'bg-muted/10', text: 'text-muted-foreground', itemBorder: 'border-border/20', itemBg: 'bg-background/40', itemText: 'text-muted-foreground' }
+}
+
+function ReportListCard({ title, items, emptyCopy, accent = 'border', icon }: { title: string; items: string[]; emptyCopy: string; accent?: 'yellow' | 'red' | 'green' | 'blue' | 'border'; icon?: React.ReactNode }) {
+  const styles = ACCENT_MAP[accent]
+
   return (
-    <div>
-      <div className={labelStyle}>{title}</div>
-      <div className="mt-1.5 space-y-1.5">
+    <div className={`rounded-md border ${styles.border} ${styles.bg} p-4 shadow-sm flex flex-col h-full`}>
+      <div className={`${labelStyle} flex items-center gap-2 mb-3`}>
+        {icon}
+        <span className={styles.text}>{title}</span>
+      </div>
+      <div className="space-y-2 flex-1">
         {items.length === 0 ? <EmptyPanel copy={emptyCopy} compact />
           : items.map((item) => (
-            <div key={item} className="rounded-sm border border-border/30 bg-muted/10 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">{item}</div>
+            <div key={item} className={`rounded-sm border ${styles.itemBorder} ${styles.itemBg} px-3 py-2.5 text-[11.5px] leading-relaxed ${styles.itemText} shadow-sm transition-colors hover:bg-card/40`}>{item}</div>
           ))}
       </div>
     </div>
