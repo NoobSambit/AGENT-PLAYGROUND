@@ -2,12 +2,13 @@ import { eq, or } from 'drizzle-orm'
 import { getDb } from '@/lib/db/client'
 import { agentRelationships } from '@/lib/db/schema'
 import { asIsoString, relationshipPairId, sortedPair } from '@/lib/db/utils'
+import { normalizeRelationship } from '@/lib/relationships/model'
 import type { AgentRelationship } from '@/types/database'
 
 type RelationshipRow = typeof agentRelationships.$inferSelect
 
 function mapRelationshipRow(row: RelationshipRow): AgentRelationship {
-  return {
+  return normalizeRelationship({
     ...row.payload,
     id: row.id,
     relationshipTypes: (row.relationshipTypes || []) as AgentRelationship['relationshipTypes'],
@@ -17,13 +18,14 @@ function mapRelationshipRow(row: RelationshipRow): AgentRelationship {
     createdAt: asIsoString(row.createdAt),
     updatedAt: asIsoString(row.updatedAt),
     significantEvents: row.significantEvents || [],
-  }
+  })
 }
 
 function toRow(record: AgentRelationship): typeof agentRelationships.$inferInsert {
+  const materialized = normalizeRelationship(record)
   const [left, right] = sortedPair(record.agentId1, record.agentId2)
   const normalized: AgentRelationship = {
-    ...record,
+    ...materialized,
     agentId1: left,
     agentId2: right,
     id: relationshipPairId(left, right),
@@ -47,6 +49,13 @@ function toRow(record: AgentRelationship): typeof agentRelationships.$inferInser
 }
 
 export class RelationshipRepository {
+  static async getById(id: string): Promise<AgentRelationship | null> {
+    const row = await getDb().query.agentRelationships.findFirst({
+      where: eq(agentRelationships.id, id),
+    })
+    return row ? mapRelationshipRow(row) : null
+  }
+
   static async getPair(agentId1: string, agentId2: string): Promise<AgentRelationship | null> {
     const id = relationshipPairId(agentId1, agentId2)
     const row = await getDb().query.agentRelationships.findFirst({

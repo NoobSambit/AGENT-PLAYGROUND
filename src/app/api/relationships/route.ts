@@ -1,101 +1,23 @@
-/**
- * Relationships API Route - Phase 2
- *
- * Handles agent-to-agent relationships.
- * Zero API cost - relationships update during simulations.
- */
-
 import { NextRequest, NextResponse } from 'next/server'
-import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
-import { getPersistenceMode, readsFromPostgres } from '@/lib/db/persistence'
-import { runMirroredWrite } from '@/lib/persistence/writeMirror'
-import { RelationshipRepository } from '@/lib/repositories/relationshipRepository'
-import { relationshipPairId } from '@/lib/db/utils'
+import { relationshipOrchestrator } from '@/lib/services/relationshipOrchestrator'
 import { relationshipService } from '@/lib/services/relationshipService'
-import { agentProgressService } from '@/lib/services/agentProgressService'
-import { AgentService } from '@/lib/services/agentService'
-import { AgentRelationship } from '@/types/database'
+import type { RelationshipSignalKind, RelationshipSourceKind } from '@/types/database'
 
-async function getRelationshipsFromFirestore(agentId: string): Promise<AgentRelationship[]> {
-  const relationshipsRef = collection(db, 'agents', agentId, 'relationships')
-  const snapshot = await getDocs(relationshipsRef)
-
-  return snapshot.docs.map((snapshotDoc) => ({
-    id: snapshotDoc.id,
-    ...snapshotDoc.data(),
-  })) as AgentRelationship[]
-}
-
-async function getRelationshipPair(agentId1: string, agentId2: string): Promise<AgentRelationship | null> {
-  if (readsFromPostgres(getPersistenceMode())) {
-    return RelationshipRepository.getPair(agentId1, agentId2)
-  }
-
-  const relationshipDoc = doc(collection(db, 'agents', agentId1, 'relationships'), agentId2)
-  const existingSnap = await getDoc(relationshipDoc)
-  if (!existingSnap.exists()) {
-    return null
-  }
-
-  return { id: relationshipPairId(agentId1, agentId2), ...existingSnap.data() } as AgentRelationship
-}
-
-async function persistRelationshipToFirestore(relationship: AgentRelationship): Promise<void> {
-  const { id, ...relationshipData } = relationship
-  void id
-  await Promise.all([
-    setDoc(doc(collection(db, 'agents', relationship.agentId1, 'relationships'), relationship.agentId2), relationshipData),
-    setDoc(doc(collection(db, 'agents', relationship.agentId2, 'relationships'), relationship.agentId1), relationshipData),
-  ])
-}
-
-async function persistRelationship(relationship: AgentRelationship): Promise<void> {
-  const mode = getPersistenceMode()
-
-  if (mode === 'firestore') {
-    await persistRelationshipToFirestore(relationship)
-    return
-  }
-
-  if (mode === 'dual-write-firestore-read') {
-    await runMirroredWrite({
-      entityType: 'relationship',
-      entityId: relationship.id,
-      operation: 'upsert',
-      payload: relationship as unknown as Record<string, unknown>,
-      primary: async () => {
-        await persistRelationshipToFirestore(relationship)
-        return true
-      },
-      secondary: async () => {
-        await RelationshipRepository.upsert(relationship)
-      },
-    })
-    return
-  }
-
-  await runMirroredWrite({
-    entityType: 'relationship',
-    entityId: relationship.id,
-    operation: 'upsert',
-    payload: relationship as unknown as Record<string, unknown>,
-    primary: async () => {
-      await RelationshipRepository.upsert(relationship)
-      return true
-    },
-    secondary: mode === 'dual-write-postgres-read'
-      ? async () => {
-          await persistRelationshipToFirestore(relationship)
-        }
-      : undefined,
-  })
+function legacyEventTypeToSignal(eventType: string): RelationshipSignalKind {
+  if (eventType === 'guidance') return 'guidance'
+  if (eventType === 'help') return 'support'
+  if (eventType === 'conflict' || eventType === 'betrayal') return 'conflict'
+  if (eventType === 'agreement') return 'agreement'
+  if (eventType === 'reconciliation') return 'repair'
+  if (eventType === 'disagreement') return 'constructive_disagreement'
+  return 'support'
 }
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const agentId = searchParams.get('agentId')
+    const pairId = searchParams.get('pairId') || undefined
 
     if (!agentId) {
       return NextResponse.json(
@@ -104,39 +26,20 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const relationships = readsFromPostgres(getPersistenceMode())
-      ? await RelationshipRepository.listForAgent(agentId)
-      : await getRelationshipsFromFirestore(agentId)
-
-    const stats = relationshipService.calculateNetworkStats(relationships)
-
-    const agentIds = new Set<string>()
-    for (const rel of relationships) {
-      agentIds.add(rel.agentId1)
-      agentIds.add(rel.agentId2)
-    }
-
-    const agents = await Promise.all(
-      [...agentIds].map(async (id) => {
-        const agent = await AgentService.getAgentById(id)
-        return agent ? { id, name: agent.name } : null
-      })
-    )
-
-    const graphData = relationshipService.generateNetworkGraphData(
-      relationships,
-      agents.filter(Boolean) as Array<{ id: string; name: string }>
-    )
-
+    const bootstrap = await relationshipOrchestrator.buildWorkspaceBootstrap(agentId, pairId)
     return NextResponse.json({
-      relationships,
-      stats,
-      graphData,
+      ...bootstrap,
+      relationships: bootstrap.selectedPair ? [bootstrap.selectedPair.relationship] : [],
+      stats: {
+        totalRelationships: bootstrap.networkSummary.totalRelationships,
+        strongBonds: bootstrap.networkSummary.strongBonds,
+        averageTrust: bootstrap.networkSummary.averageTrust,
+      },
     })
   } catch (error) {
     console.error('Get relationships error:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch relationships' },
+      { error: error instanceof Error ? error.message : 'Failed to fetch relationships' },
       { status: 500 }
     )
   }
@@ -145,56 +48,98 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { agentId1, agentId2, action, interactionType, context } = body
+    const { action } = body
 
-    if (!agentId1 || !agentId2) {
-      return NextResponse.json(
-        { error: 'agentId1 and agentId2 are required' },
-        { status: 400 }
+    if (action === 'add_manual_checkpoint') {
+      const { agentId1, agentId2, summary, signalKind, valence, confidence, weight, metadata } = body
+      if (!agentId1 || !agentId2 || !summary) {
+        return NextResponse.json(
+          { error: 'agentId1, agentId2, and summary are required' },
+          { status: 400 }
+        )
+      }
+
+      const result = await relationshipOrchestrator.addManualCheckpoint({
+        agentId1,
+        agentId2,
+        summary,
+        signalKind,
+        valence,
+        confidence,
+        weight,
+        metadata,
+      })
+
+      return NextResponse.json({ success: true, result })
+    }
+
+    if (action === 'recompute_pair') {
+      if (!body.pairId) {
+        return NextResponse.json(
+          { error: 'pairId is required' },
+          { status: 400 }
+        )
+      }
+
+      const result = await relationshipOrchestrator.recomputePair(body.pairId)
+      return NextResponse.json({ success: true, result })
+    }
+
+    if (action === 'rebuild_from_source') {
+      if (!body.sourceKind || !body.sourceId) {
+        return NextResponse.json(
+          { error: 'sourceKind and sourceId are required' },
+          { status: 400 }
+        )
+      }
+
+      const result = await relationshipOrchestrator.rebuildFromSource(
+        body.sourceKind as RelationshipSourceKind,
+        body.sourceId
       )
+      return NextResponse.json({ success: true, result })
     }
 
-    let relationship = await getRelationshipPair(agentId1, agentId2)
-    const isNewRelationship = !relationship
+    // Legacy compatibility path: convert the old direct update contract into a manual checkpoint.
+    if (action === 'update') {
+      const { agentId1, agentId2, context } = body
+      if (!agentId1 || !agentId2) {
+        return NextResponse.json(
+          { error: 'agentId1 and agentId2 are required' },
+          { status: 400 }
+        )
+      }
 
-    if (!relationship) {
-      relationship = relationshipService.createRelationship(agentId1, agentId2)
-    }
-
-    if (action === 'update' && interactionType) {
       const interaction = relationshipService.analyzeInteraction(
         context?.agent1Message || '',
         context?.agent2Message || ''
       )
 
-      relationship = relationshipService.updateRelationship(relationship, {
-        ...interaction,
-        context: context?.summary || 'Interaction occurred',
+      const result = await relationshipOrchestrator.addManualCheckpoint({
+        agentId1,
+        agentId2,
+        summary: context?.summary || 'Legacy relationship update',
+        signalKind: legacyEventTypeToSignal(interaction.eventType),
+        valence: interaction.type === 'positive' ? 0.18 : interaction.type === 'negative' ? -0.18 : 0.04,
+        confidence: 0.6,
+        weight: Math.max(0.34, interaction.intensity),
+        metadata: {
+          legacy: true,
+          eventType: interaction.eventType,
+        },
       })
+
+      return NextResponse.json({ success: true, result })
     }
 
-    await persistRelationship(relationship)
-
-    if (isNewRelationship) {
-      await Promise.all([
-        agentProgressService.recordRelationship(agentId1),
-        agentProgressService.recordRelationship(agentId2)
-      ])
-    }
-
-    const summary = relationshipService.getRelationshipSummary(relationship)
-    const trend = relationshipService.getRelationshipTrend(relationship)
-
-    return NextResponse.json({
-      success: true,
-      relationship,
-      summary,
-      trend,
-    })
+    return NextResponse.json(
+      { error: 'Invalid action' },
+      { status: 400 }
+    )
   } catch (error) {
     console.error('Relationship update error:', error)
     return NextResponse.json(
-      { error: 'Failed to update relationship' },
+      { error: error instanceof Error ? error.message : 'Failed to update relationship' },
       { status: 500 }
     )
   }

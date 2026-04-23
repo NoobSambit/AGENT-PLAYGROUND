@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
-import { MemoryRecord, MessageRecord, AgentRecord, AgentRelationship, ScenarioAnalyticsSummary, ScenarioBranchPoint, ScenarioIntervention, ScenarioRunRecord, EMOTION_COLORS, EmotionType, MessageRenderBlock, TimelineEvent, JournalEntry } from '@/types/database'
+import { MemoryRecord, MessageRecord, AgentRecord, ScenarioAnalyticsSummary, ScenarioBranchPoint, ScenarioIntervention, ScenarioRunRecord, EMOTION_COLORS, EmotionType, MessageRenderBlock, TimelineEvent, JournalEntry } from '@/types/database'
 import { ArrowLeft, Send, User, MessageCircle, Brain, TrendingUp, Heart, Clock, Palette, Moon, BookOpen, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles, LayoutDashboard } from 'lucide-react'
 import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { motion } from 'framer-motion'
@@ -27,8 +27,7 @@ import { JournalViewer } from '@/components/journal/JournalViewer'
 import { ProfileViewer } from '@/components/profile/ProfileViewer'
 import { MemoryConsole } from '@/components/memory/MemoryConsole'
 import { ChallengeHub } from '@/components/challenges/ChallengeHub'
-import { RelationshipGraph } from '@/components/relationships/RelationshipGraph'
-import { RelationshipCard } from '@/components/relationships/RelationshipCard'
+import { RelationshipWorkspace } from '@/components/relationships/RelationshipWorkspace'
 import { MetaLearningDashboard } from '@/components/learning/MetaLearningDashboard'
 
 import { ParallelRealityExplorer } from '@/components/parallel/ParallelRealityExplorer'
@@ -40,7 +39,6 @@ import { KnowledgeGraph } from '@/components/knowledge/KnowledgeGraph'
 import { SharedKnowledgeLibrary } from '@/components/knowledge/SharedKnowledgeLibrary'
 import { MentorshipHub } from '@/components/mentorship/MentorshipHub'
 import { CollectiveIntelligencePanel } from '@/components/collective/CollectiveIntelligencePanel'
-import { ConflictResolutionPanel } from '@/components/relationships/ConflictResolutionPanel'
 import { NeuralActivityView } from '@/components/neural/NeuralActivityView'
 import { LLMProviderToggle } from '@/components/llm/LLMProviderToggle'
 import { buildLLMPreferenceHeaders, getClientModelForProvider, LLM_PROVIDER_LABELS } from '@/lib/llm/clientPreference'
@@ -70,16 +68,6 @@ type TabType =
   | 'knowledge-library'
   | 'collective'
   | 'mentorship'
-
-interface RelationshipApiStats {
-  totalRelationships: number
-  strongBonds: number
-  averageTrust: number
-  averageRespect: number
-  averageAffection: number
-  brokenBonds: number
-  mostConnectedAgent: string | null
-}
 
 function formatEmotionLabel(emotion: string | null | undefined): string {
   if (!emotion) {
@@ -129,10 +117,6 @@ export default function AgentDetail() {
   const [activeTab, setActiveTab] = useState<TabType>('overview')
   const [agentResolved, setAgentResolved] = useState(false)
   const [memories, setMemories] = useState<MemoryRecord[]>([])
-  const [relationships, setRelationships] = useState<AgentRelationship[]>([])
-  const [relationshipAgents, setRelationshipAgents] = useState<Array<{ id: string; name: string }>>([])
-  const [relationshipStats, setRelationshipStats] = useState<RelationshipApiStats | null>(null)
-  const [loadingRelationships, setLoadingRelationships] = useState(false)
   const [learningState, setLearningState] = useState<MetaLearningState | null>(null)
   const [learningSkills, setLearningSkills] = useState<SkillProgression[]>([])
   const [loadingLearning, setLoadingLearning] = useState(false)
@@ -161,7 +145,6 @@ export default function AgentDetail() {
     Object.entries(agentEmotionalProfile.temperament)
       .sort((a, b) => b[1] - a[1])
   ), [agentEmotionalProfile])
-  const activeTabConfig = TAB_CONFIG.find((tab) => tab.id === activeTab) || TAB_CONFIG[0]
   const activeProviderModel = useMemo(() => {
     const latestModelForProvider = [...messages]
       .reverse()
@@ -237,37 +220,6 @@ export default function AgentDetail() {
     } catch (error) {
       console.error('Failed to load memories:', error)
       return []
-    }
-  }
-
-  const loadRelationships = async () => {
-    if (!currentAgent) {
-      return []
-    }
-
-    setLoadingRelationships(true)
-    try {
-      const response = await fetch(`/api/relationships?agentId=${encodeURIComponent(currentAgent.id)}`)
-      if (!response.ok) {
-        return []
-      }
-
-      const data = await response.json()
-      const loadedRelationships = (data.relationships || []) as AgentRelationship[]
-      const loadedAgents = (data.graphData?.nodes || []).map((node: { id: string; name: string }) => ({
-        id: node.id,
-        name: node.name
-      }))
-
-      setRelationships(loadedRelationships)
-      setRelationshipAgents(loadedAgents)
-      setRelationshipStats(data.stats || null)
-      return loadedRelationships
-    } catch (error) {
-      console.error('Failed to load relationships:', error)
-      return []
-    } finally {
-      setLoadingRelationships(false)
     }
   }
 
@@ -384,9 +336,6 @@ export default function AgentDetail() {
     }
     if (tab === 'timeline' && timelineEvents.length === 0 && currentAgent) {
       void loadTimelineEvents()
-    }
-    if (tab === 'relationships' && relationships.length === 0) {
-      void loadRelationships()
     }
     if (tab === 'learning' && !learningState) {
       void loadLearningData()
@@ -1179,87 +1128,11 @@ export default function AgentDetail() {
                 </CardContent>
               </Card>
             ) : activeTab === 'relationships' ? (
-              <div className="space-y-6">
-                <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                  <CardHeader className="space-y-4">
-                    <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 rounded-sm bg-emerald-500/10">
-                        <Users className="h-6 w-6 text-emerald-500" />
-                      </div>
-                      Relationship Network
-                    </CardTitle>
-                    <CardDescription>
-                      Social dynamics, trust, and long-term bonds for {currentAgent.name}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {loadingRelationships ? (
-                      <div className="flex items-center justify-center py-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                      </div>
-                    ) : relationships.length === 0 ? (
-                      <div className="rounded-sm border border-dashed border-border/60 p-8 text-center text-muted-foreground">
-                        No persistent relationships yet. Run simulations, challenges, or mentorship sessions to build this network.
-                      </div>
-                    ) : (
-                      <>
-                        <div className="grid gap-4 md:grid-cols-3">
-                          <div className="rounded-sm bg-emerald-500/10 p-4">
-                            <div className="text-sm text-muted-foreground">Connections</div>
-                            <div className="mt-2 text-3xl font-bold text-emerald-400">
-                              {relationshipStats?.totalRelationships || relationships.length}
-                            </div>
-                          </div>
-                          <div className="rounded-sm bg-violet-500/10 p-4">
-                            <div className="text-sm text-muted-foreground">Strong Bonds</div>
-                            <div className="mt-2 text-3xl font-bold text-violet-400">
-                              {relationshipStats?.strongBonds || 0}
-                            </div>
-                          </div>
-                          <div className="rounded-sm bg-cyan-500/10 p-4">
-                            <div className="text-sm text-muted-foreground">Average Trust</div>
-                            <div className="mt-2 text-3xl font-bold text-cyan-400">
-                              {Math.round((relationshipStats?.averageTrust || 0) * 100)}%
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="overflow-x-auto rounded-sm border border-border/50 bg-background/45 p-4">
-                          <RelationshipGraph
-                            relationships={relationships}
-                            agents={relationshipAgents.length > 0 ? relationshipAgents : [{ id: currentAgent.id, name: currentAgent.name }]}
-                            currentAgentId={currentAgent.id}
-                          />
-                        </div>
-
-                        <div className="grid gap-4 md:grid-cols-2">
-                          {relationships.map((relationship) => {
-                            const otherAgentId = relationship.agentId1 === currentAgent.id
-                              ? relationship.agentId2
-                              : relationship.agentId1
-                            const otherAgentName = relationshipAgents.find(agent => agent.id === otherAgentId)?.name
-                              || agents.find(agent => agent.id === otherAgentId)?.name
-                              || 'Unknown agent'
-
-                            return (
-                              <RelationshipCard
-                                key={relationship.id}
-                                relationship={relationship}
-                                otherAgentName={otherAgentName}
-                              />
-                            )
-                          })}
-                        </div>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <ConflictResolutionPanel
-                  currentAgent={currentAgent as AgentRecord}
-                  agents={agents as unknown as AgentRecord[]}
-                />
-              </div>
+              <RelationshipWorkspace
+                agentId={currentAgent.id}
+                agentName={currentAgent.name}
+                agents={agents.map((agent) => ({ id: agent.id, name: agent.name }))}
+              />
             ) : activeTab === 'learning' ? (
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">

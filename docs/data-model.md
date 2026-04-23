@@ -10,6 +10,9 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - `agent_personality_events`
 - `memory_graphs`
 - `agent_relationships`
+- `relationship_evidence`
+- `relationship_revisions`
+- `relationship_synthesis_runs`
 
 ## Agent-Owned Feature Tables
 
@@ -53,6 +56,9 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - Keep nested, high-variance payloads in `jsonb`.
 - Keep query-critical fields typed and indexed beside the payload column.
 - Keep relationship pairs normalized to one row per sorted agent pair.
+- Treat `agent_relationships` as the fast projection, not the full relationship history.
+- Store raw social observations in `relationship_evidence`, applied long-term changes in `relationship_revisions`, and every synthesis attempt in `relationship_synthesis_runs`.
+- Keep relationship evidence and revision data append-only so the Relationships workspace can explain why a tie changed instead of only showing the latest metrics.
 - Output-quality rollout is additive. Top-level indexed state such as `quality_status`, `normalization_status`, `quality_score`, `repair_count`, and `prompt_version` is stored beside payload contracts that still carry `rawModelOutput`, `validation`, `evaluation`, `sourceRefs`, and feature-specific normalized content.
 - Store raw conversation turns as bounded episode rows in `memories`, then store durable semantic abstractions in parallel `memories` rows using top-level canonical fields: `canonicalKey`, `canonicalValue`, `confidence`, `evidenceRefs`, `supersedes`, and `lastConfirmedAt`.
 - Use semantic memory types such as `preference`, `project`, `relationship`, `identity`, `operating_constraint`, `artifact_summary`, and `tension_snapshot` so downstream prompts do not depend only on transcript recall.

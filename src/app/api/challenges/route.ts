@@ -14,6 +14,7 @@ import { ChallengeRepository } from '@/lib/repositories/challengeRepository'
 import { challengeService } from '@/lib/services/challengeService'
 import { agentProgressService } from '@/lib/services/agentProgressService'
 import { AgentService } from '@/lib/services/agentService'
+import { relationshipOrchestrator } from '@/lib/services/relationshipOrchestrator'
 import { Challenge, ChallengeStatus, AgentRecord } from '@/types/database'
 import { generateText } from '@/lib/llm/provider'
 import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
@@ -112,6 +113,17 @@ async function applyCompletedChallengeRewards(previous: Challenge, next: Challen
       next.status === 'completed'
     )
   }
+}
+
+async function applyRelationshipOutcome(previous: Challenge, next: Challenge): Promise<void> {
+  const wasTerminal = ['completed', 'failed', 'abandoned'].includes(previous.status)
+  const isTerminal = ['completed', 'failed'].includes(next.status)
+
+  if (wasTerminal || !isTerminal) {
+    return
+  }
+
+  await relationshipOrchestrator.applyChallengeOutcome(next)
 }
 
 export async function GET(request: NextRequest) {
@@ -246,6 +258,7 @@ export async function POST(request: NextRequest) {
       const updatedChallenge = challengeService.advanceRound(challenge)
       const savedChallenge = await saveChallenge(updatedChallenge)
       await applyCompletedChallengeRewards(challenge, savedChallenge)
+      await applyRelationshipOutcome(challenge, savedChallenge)
 
       return NextResponse.json({
         success: true,
@@ -274,6 +287,7 @@ export async function POST(request: NextRequest) {
       const updatedChallenge = challengeService.completeChallenge(challenge)
       const savedChallenge = await saveChallenge(updatedChallenge)
       await applyCompletedChallengeRewards(challenge, savedChallenge)
+      await applyRelationshipOutcome(challenge, savedChallenge)
 
       return NextResponse.json({
         success: true,

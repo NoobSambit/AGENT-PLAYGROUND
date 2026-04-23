@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AgentService } from '@/lib/services/agentService'
 import { MentorshipService } from '@/lib/services/mentorshipService'
+import { relationshipOrchestrator } from '@/lib/services/relationshipOrchestrator'
 import { AgentRecord, MentorshipFocus } from '@/types/database'
 import { generateText } from '@/lib/llm/provider'
 import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
@@ -189,6 +190,10 @@ export async function POST(request: NextRequest) {
       }
 
       const updatedMentorship = await MentorshipService.getMentorshipById(mentorshipId)
+      if (updatedMentorship) {
+        const completedSession = updatedMentorship.sessions.find((session) => session.id === sessionId)
+        await relationshipOrchestrator.applyMentorshipOutcome(updatedMentorship, completedSession)
+      }
       return NextResponse.json({
         success: true,
         mentorship: updatedMentorship

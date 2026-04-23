@@ -105,6 +105,16 @@ Legacy simulation compatibility routes still exist:
 - `POST /api/arena/runs` creates a sandboxed draft arena run with generated seat briefs and no model calls.
 - `PUT /api/arena/runs/[runId]` is draft-only and updates the topic, objective, round budget, response budget, reference brief, and user-edited seat fields.
 - `POST /api/arena/runs/[runId]/execute` runs the head-led debate using one shared provider/model request preference for the entire run.
+- `GET /api/relationships?agentId=...&pairId=...` now returns the Relationships workspace bootstrap: network summary, roster, optional selected pair detail, graph data, and recent revisions.
+- `POST /api/relationships` no longer accepts direct metric mutation as the primary contract. Supported actions are:
+  - `add_manual_checkpoint`
+  - `recompute_pair`
+  - `rebuild_from_source`
+  - legacy `update` compatibility requests, which are converted into manual evidence before synthesis
+- `POST /api/conflicts` action `analyze` remains read-only. Action `resolve` now saves the conflict result, then emits relationship evidence and runs synthesis instead of mutating pair metrics inline.
+- `POST /api/challenges` terminal transitions now emit relationship evidence when a challenge completes or fails.
+- `POST /api/mentorship` action `complete_session` now emits mentorship relationship evidence after the session is persisted.
+- `POST /api/arena/runs/[runId]/execute` now also triggers post-run relationship evidence and synthesis for qualifying participant pairs.
 - `GET /api/arena/runs/[runId]` returns one arena run plus its append-only event feed for live polling or replay.
 - `POST /api/arena/runs/[runId]/cancel` requests cooperative cancellation; the active executor stops at the next safe boundary and persists a cancellation event.
 - `GET /api/scenarios` returns branch point options, intervention templates, and recent saved runs for one agent.

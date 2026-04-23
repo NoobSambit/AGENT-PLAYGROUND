@@ -969,13 +969,24 @@ export interface UpdateRoomData {
 // ============================================
 
 export type RelationshipType =
+  | 'acquaintance'
+  | 'collaborator'
   | 'friendship'
+  | 'alliance'
   | 'rivalry'
+  | 'adversarial'
   | 'mentorship'
   | 'professional'
-  | 'acquaintance'
+  | 'strained'
+  | 'estranged'
 
-export type RelationshipStatus = 'growing' | 'stable' | 'declining' | 'broken'
+export type RelationshipStatus =
+  | 'forming'
+  | 'growing'
+  | 'stable'
+  | 'strained'
+  | 'declining'
+  | 'broken'
 
 export type RelationshipEventType =
   | 'first_meeting'
@@ -986,12 +997,91 @@ export type RelationshipEventType =
   | 'bonding'
   | 'betrayal'
   | 'reconciliation'
+  | 'guidance'
+  | 'competition'
+  | 'support'
+  | 'alliance_shift'
 
 export interface RelationshipMetrics {
   trust: number        // 0-1: Reliability and honesty
   respect: number      // 0-1: Admiration and regard
   affection: number    // 0-1: Emotional closeness
   familiarity: number  // 0-1: How well they know each other
+}
+
+export type RelationshipSourceKind =
+  | 'arena'
+  | 'challenge'
+  | 'conflict'
+  | 'mentorship'
+  | 'manual'
+  | 'simulation'
+
+export type RelationshipSignalKind =
+  | 'support'
+  | 'agreement'
+  | 'constructive_disagreement'
+  | 'dismissal'
+  | 'conflict'
+  | 'repair'
+  | 'follow_through'
+  | 'betrayal'
+  | 'guidance'
+  | 'admiration'
+  | 'coalition'
+  | 'competition'
+  | 'mediation'
+
+export type RelationshipAlertFlag =
+  | 'trust_asymmetry'
+  | 'high_tension'
+  | 'recent_drop'
+  | 'mentor_dependency'
+  | 'repair_window'
+  | 'stalled_relationship'
+
+export interface RelationshipDirectionalState {
+  agentId: string
+  trust: number
+  respect: number
+  affection: number
+  alignment: number
+  reliance: number
+  grievance: number
+  summary: string
+  sensitivities: string[]
+  levers: string[]
+}
+
+export interface RelationshipDerivedState {
+  tension: number
+  reciprocity: number
+  volatility: number
+  bondStrength: number
+  momentum: number
+  interactionVelocity: number
+}
+
+export interface RelationshipPromptGuidanceSide {
+  agentId: string
+  speakerSummary: string
+  doMoreOf: string[]
+  avoid: string[]
+}
+
+export interface RelationshipPromptGuidance {
+  sharedSummary: string
+  promptWindowSummary: string
+  sides: RelationshipPromptGuidanceSide[]
+}
+
+export interface RelationshipSourceStats {
+  arena: { count: number; latestAt?: string }
+  challenge: { count: number; latestAt?: string }
+  conflict: { count: number; latestAt?: string }
+  mentorship: { count: number; latestAt?: string }
+  manual: { count: number; latestAt?: string }
+  simulation: { count: number; latestAt?: string }
 }
 
 export interface RelationshipEvent {
@@ -1001,6 +1091,93 @@ export interface RelationshipEvent {
   impactOnMetrics: Partial<RelationshipMetrics>
   timestamp: string
   context?: string // Conversation snippet
+}
+
+export interface RelationshipEvidence {
+  id: string
+  pairId: string
+  agentId1: string
+  agentId2: string
+  sourceKind: RelationshipSourceKind
+  sourceId: string
+  sourceStage?: string
+  actorAgentId?: string
+  targetAgentId?: string
+  signalKind: RelationshipSignalKind
+  valence: number
+  weight: number
+  confidence: number
+  summary: string
+  excerptRefs: string[]
+  metadata?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface RelationshipDirectionalDelta {
+  trust?: number
+  respect?: number
+  affection?: number
+  alignment?: number
+  reliance?: number
+  grievance?: number
+}
+
+export interface RelationshipProjectionDelta {
+  shared: Partial<RelationshipMetrics>
+  left: RelationshipDirectionalDelta
+  right: RelationshipDirectionalDelta
+}
+
+export interface RelationshipRevision {
+  id: string
+  pairId: string
+  agentId1: string
+  agentId2: string
+  summary: string
+  confidence: number
+  sourceKind: RelationshipSourceKind
+  sourceId: string
+  synthesisRunId: string
+  supportingEvidenceIds: string[]
+  delta: RelationshipProjectionDelta
+  changedTypes: RelationshipType[]
+  changedAlerts: RelationshipAlertFlag[]
+  beforeSnapshot: AgentRelationship
+  afterSnapshot: AgentRelationship
+  createdAt: string
+}
+
+export type RelationshipSynthesisRunStatus = 'applied' | 'skipped' | 'failed'
+
+export interface RelationshipSynthesisRun {
+  id: string
+  pairId: string
+  agentId1: string
+  agentId2: string
+  triggerSourceKind: RelationshipSourceKind
+  triggerSourceId: string
+  status: RelationshipSynthesisRunStatus
+  evidenceWindow: {
+    since?: string
+    until: string
+    evidenceIds: string[]
+  }
+  promptVersion: string
+  provider?: string
+  model?: string
+  rawOutput?: Record<string, unknown>
+  validatorResult: {
+    passed: boolean
+    reasons: string[]
+  }
+  applyResult?: {
+    applied: boolean
+    reason?: string
+    revisionId?: string
+  }
+  failureReason?: string
+  createdAt: string
+  updatedAt: string
 }
 
 export interface AgentRelationship {
@@ -1016,11 +1193,79 @@ export interface AgentRelationship {
   lastInteraction: string
   firstMeeting: string
 
-  // Track only last 10 significant events (storage limit)
+  directional: {
+    [agentId: string]: RelationshipDirectionalState
+  }
+  derived: RelationshipDerivedState
+  guidance: RelationshipPromptGuidance
+  sourceStats: RelationshipSourceStats
+  alertFlags: RelationshipAlertFlag[]
+  lastRevisionAt?: string
+  latestRevisionSummary?: string
+
+  // Cached recent events for fast reads. Full history lives in evidence and revisions.
   significantEvents: RelationshipEvent[]
 
   createdAt: string
   updatedAt: string
+}
+
+export interface RelationshipRosterItem {
+  pairId: string
+  otherAgentId: string
+  otherAgentName: string
+  status: RelationshipStatus
+  relationshipTypes: RelationshipType[]
+  metrics: RelationshipMetrics
+  derived: RelationshipDerivedState
+  alertFlags: RelationshipAlertFlag[]
+  latestRevisionSummary?: string
+  lastInteraction: string
+}
+
+export interface RelationshipNetworkSummary {
+  totalRelationships: number
+  strongBonds: number
+  tenseRelationships: number
+  averageTrust: number
+  recentShifts: number
+  networkRole: 'isolated' | 'connector' | 'ally_builder' | 'volatile' | 'balanced'
+}
+
+export interface RelationshipWorkspaceDetail {
+  relationship: AgentRelationship
+  otherAgent: {
+    id: string
+    name: string
+    persona?: string
+  }
+  recentEvidence: RelationshipEvidence[]
+  recentRevisions: RelationshipRevision[]
+  synthesisRuns: RelationshipSynthesisRun[]
+  relatedConflicts: string[]
+}
+
+export interface RelationshipWorkspaceBootstrap {
+  agent: {
+    id: string
+    name: string
+  }
+  networkSummary: RelationshipNetworkSummary
+  networkAlerts: RelationshipAlertFlag[]
+  roster: RelationshipRosterItem[]
+  selectedPairId?: string
+  selectedPair?: RelationshipWorkspaceDetail
+  graphData: {
+    nodes: Array<{ id: string; name: string }>
+    edges: Array<{
+      source: string
+      target: string
+      strength: number
+      tension: number
+      types: RelationshipType[]
+    }>
+  }
+  recentRevisions: RelationshipRevision[]
 }
 
 // ============================================

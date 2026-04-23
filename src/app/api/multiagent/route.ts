@@ -12,9 +12,9 @@ import { AgentChain } from '@/lib/langchain/agentChain'
 import { getProviderInfoForRequest } from '@/lib/llm/requestPreference'
 import { AgentService } from '@/lib/services/agentService'
 import { KnowledgeService } from '@/lib/services/knowledgeService'
-import { agentProgressService } from '@/lib/services/agentProgressService'
 import { collectiveIntelligenceService } from '@/lib/services/collectiveIntelligenceService'
 import { conflictResolutionService } from '@/lib/services/conflictResolutionService'
+import { relationshipOrchestrator } from '@/lib/services/relationshipOrchestrator'
 import { relationshipService } from '@/lib/services/relationshipService'
 import { AgentRecord, AgentRelationship, SimulationRecord } from '@/types/database'
 import {
@@ -74,12 +74,6 @@ function stripUndefinedFields<T extends Record<string, unknown>>(value: T): T {
   ) as T
 }
 
-function relationshipToFirestoreDoc(relationship: AgentRelationship): Record<string, unknown> {
-  const { id, ...data } = relationship
-  void id
-  return stripUndefinedFields(data)
-}
-
 function conflictToFirestoreDoc(conflict: ConflictAnalysis): Record<string, unknown> {
   const { id, ...data } = conflict
   void id
@@ -104,17 +98,16 @@ function firestoreRelationshipDocToRecord(
   docSnap: { id: string; data: () => Record<string, unknown> }
 ): AgentRelationship {
   const data = docSnap.data()
-  return {
+  return relationshipService.normalizeRelationship({
     id: relationshipPairId(agentId1, agentId2),
     agentId1: (data.agentId1 as string) || agentId1,
     agentId2: (data.agentId2 as string) || agentId2,
-    status: (data.status as AgentRelationship['status']) || 'neutral',
+    status: (data.status as AgentRelationship['status']) || 'forming',
     metrics: (data.metrics as AgentRelationship['metrics']) || {
-      trust: 0.5,
-      respect: 0.5,
-      affection: 0.5,
-      familiarity: 0,
-      conflict: 0,
+      trust: 0.32,
+      respect: 0.34,
+      affection: 0.12,
+      familiarity: 0.1,
     },
     relationshipTypes: (data.relationshipTypes as AgentRelationship['relationshipTypes']) || [],
     interactionCount: (data.interactionCount as number) || 0,
@@ -123,7 +116,7 @@ function firestoreRelationshipDocToRecord(
     significantEvents: (data.significantEvents as AgentRelationship['significantEvents']) || [],
     createdAt: (data.createdAt as string) || new Date().toISOString(),
     updatedAt: (data.updatedAt as string) || new Date().toISOString(),
-  }
+  })
 }
 
 function clampRounds(rounds: number | undefined): number {
@@ -264,55 +257,6 @@ async function getRelationship(agentId1: string, agentId2: string): Promise<Agen
   }
 
   return firestoreRelationshipDocToRecord(agentId1, agentId2, snapshot)
-}
-
-async function writeRelationshipToFirestore(relationship: AgentRelationship): Promise<void> {
-  await Promise.all([
-    setDoc(
-      doc(collection(db, 'agents', relationship.agentId1, 'relationships'), relationship.agentId2),
-      relationshipToFirestoreDoc(relationship)
-    ),
-    setDoc(
-      doc(collection(db, 'agents', relationship.agentId2, 'relationships'), relationship.agentId1),
-      relationshipToFirestoreDoc(relationship)
-    ),
-  ])
-}
-
-async function persistRelationship(relationship: AgentRelationship): Promise<AgentRelationship> {
-  const mode = getPersistenceMode()
-
-  if (mode === 'firestore') {
-    await writeRelationshipToFirestore(relationship)
-    return relationship
-  }
-
-  if (mode === 'dual-write-firestore-read') {
-    return runMirroredWrite({
-      entityType: 'relationship',
-      entityId: relationship.id,
-      operation: 'upsert',
-      payload: relationshipToFirestoreDoc(relationship),
-      primary: async () => {
-        await writeRelationshipToFirestore(relationship)
-        return relationship
-      },
-      secondary: async () => RelationshipRepository.upsert(relationship),
-    })
-  }
-
-  return runMirroredWrite({
-    entityType: 'relationship',
-    entityId: relationship.id,
-    operation: 'upsert',
-    payload: relationshipToFirestoreDoc(relationship),
-    primary: async () => RelationshipRepository.upsert(relationship),
-    secondary: mode === 'dual-write-postgres-read'
-      ? async () => {
-          await writeRelationshipToFirestore(relationship)
-        }
-      : undefined,
-  })
 }
 
 async function getRecentBroadcasts(limitCount: number = 8): Promise<KnowledgeBroadcast[]> {
@@ -591,22 +535,37 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        const priorRelationship = relationship
-        const nextRelationship = relationshipService.updateRelationship(
-          relationship || relationshipService.createRelationship(previousMessage.agentId, agent.id),
-          {
-            ...relationshipService.analyzeInteraction(previousMessage.content, message.content),
-            context: `Simulation exchange on "${initialPrompt.slice(0, 120)}"`,
-          }
-        )
+        const interaction = relationshipService.analyzeInteraction(previousMessage.content, message.content)
+        const [relationshipResult] = await relationshipOrchestrator.applySourceEvidence({
+          sourceKind: 'simulation',
+          sourceId: simulationId,
+          evidence: [{
+            agentId1: previousMessage.agentId,
+            agentId2: agent.id,
+            actorAgentId: previousMessage.agentId,
+            targetAgentId: agent.id,
+            signalKind: interaction.type === 'positive'
+              ? interaction.eventType === 'guidance'
+                ? 'guidance'
+                : interaction.eventType === 'agreement'
+                  ? 'agreement'
+                  : 'support'
+              : interaction.type === 'negative'
+                ? interaction.eventType === 'conflict'
+                  ? 'conflict'
+                  : 'constructive_disagreement'
+                : 'support',
+            valence: interaction.type === 'positive' ? 0.12 : interaction.type === 'negative' ? -0.14 : 0.03,
+            confidence: 0.58,
+            weight: Math.max(0.28, interaction.intensity * 0.7),
+            summary: `Simulation exchange on "${initialPrompt.slice(0, 120)}"`,
+            excerptRefs: [previousMessage.id, message.id],
+            createdAt: message.timestamp,
+          }],
+        })
 
-        relationships.set(activePairKey, await persistRelationship(nextRelationship))
-
-        if (!priorRelationship) {
-          await Promise.all([
-            agentProgressService.recordRelationship(previousMessage.agentId),
-            agentProgressService.recordRelationship(agent.id),
-          ])
+        if (relationshipResult?.relationship) {
+          relationships.set(activePairKey, relationshipResult.relationship)
         }
 
         if (!shouldAnalyzeConflict(previousMessage.content, message.content)) {

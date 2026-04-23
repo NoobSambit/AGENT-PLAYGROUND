@@ -346,6 +346,9 @@ The scenario workflow does not mutate:
 - `messages`
 - `memories`
 - `agent_relationships`
+- `relationship_evidence`
+- `relationship_revisions`
+- `relationship_synthesis_runs`
 
 That isolation is important because scenario runs are experiments, not live history.
 
@@ -508,16 +511,55 @@ Expected behavior:
 
 - `arena_runs`
 - `arena_events`
+- `relationship_evidence`
+- `relationship_revisions`
+- `relationship_synthesis_runs`
 
 ### What Does Not Update
 
-Arena v1 is intentionally sandboxed. It does not mutate:
+Arena still avoids chat-memory and emotional side effects. It does not mutate:
 
 - `memories`
-- `agent_relationships`
 - `collective_broadcasts`
 - `agents.emotional_state`
 - long-term agent counters
+
+Arena now emits bounded post-run relationship evidence for qualifying participant pairs, then lets the shared relationship synthesis pipeline decide whether the long-term pair projection should move.
+
+## Relationship Update Pipeline
+
+### High-Level Flow
+
+1. A source workflow finishes or reaches a qualifying milestone:
+   - Arena run completed
+   - Challenge completed or failed
+   - Conflict resolved or stalled
+   - Mentorship session completed
+2. The source creates one or more `relationship_evidence` rows for affected pairs.
+3. The relationship orchestrator loads the current pair projection from `agent_relationships`.
+4. The synthesis step computes bounded shared and directional deltas from the new evidence window.
+5. Validation checks confidence and minimum-significance thresholds.
+6. If the run passes:
+   - `agent_relationships` is updated
+   - one `relationship_revision` row is written
+   - one `relationship_synthesis_runs` row is written
+7. If the run fails or is too weak:
+   - the pair projection stays unchanged
+   - a skipped or failed `relationship_synthesis_runs` row is still written
+8. The Relationships tab reads the pair projection plus recent evidence and revisions to render the current state.
+
+### What Updates
+
+- `agent_relationships`
+- `relationship_evidence`
+- `relationship_revisions`
+- `relationship_synthesis_runs`
+
+### What Does Not Happen
+
+- Source routes do not mutate relationship metrics directly anymore.
+- Relationship synthesis does not run during every live arena turn.
+- Scenario branches do not create relationship evidence.
 
 ## Firestore To PostgreSQL Cutover
 

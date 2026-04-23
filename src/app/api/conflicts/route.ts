@@ -1,85 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AgentService } from '@/lib/services/agentService'
-import { conflictResolutionService } from '@/lib/services/conflictResolutionService'
-import { relationshipService } from '@/lib/services/relationshipService'
-import { AgentRelationship } from '@/types/database'
-import { ConflictAnalysis } from '@/types/enhancements'
+import { collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
 import { getPersistenceMode, readsFromPostgres } from '@/lib/db/persistence'
 import { runMirroredWrite } from '@/lib/persistence/writeMirror'
 import { ConflictRepository } from '@/lib/repositories/conflictRepository'
 import { RelationshipRepository } from '@/lib/repositories/relationshipRepository'
-import { collection, doc, getDoc, getDocs, orderBy, query, setDoc, limit } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
-import { relationshipPairId } from '@/lib/db/utils'
+import { conflictResolutionService } from '@/lib/services/conflictResolutionService'
+import { AgentService } from '@/lib/services/agentService'
+import { relationshipOrchestrator } from '@/lib/services/relationshipOrchestrator'
+import { AgentRelationship } from '@/types/database'
+import { ConflictAnalysis } from '@/types/enhancements'
 
 const CONFLICTS_COLLECTION = 'conflicts'
 
 async function getRelationship(agentId1: string, agentId2: string): Promise<AgentRelationship | null> {
-  if (readsFromPostgres(getPersistenceMode())) {
-    return RelationshipRepository.getPair(agentId1, agentId2)
-  }
-
-  const relationshipDoc = doc(collection(db, 'agents', agentId1, 'relationships'), agentId2)
-  const snapshot = await getDoc(relationshipDoc)
-
-  if (!snapshot.exists()) {
-    return null
-  }
-
-  return {
-    id: relationshipPairId(agentId1, agentId2),
-    ...snapshot.data(),
-  } as AgentRelationship
-}
-
-async function persistRelationshipToFirestore(relationship: AgentRelationship): Promise<void> {
-  const { id, ...relationshipData } = relationship
-  void id
-  await Promise.all([
-    setDoc(doc(collection(db, 'agents', relationship.agentId1, 'relationships'), relationship.agentId2), relationshipData),
-    setDoc(doc(collection(db, 'agents', relationship.agentId2, 'relationships'), relationship.agentId1), relationshipData),
-  ])
-}
-
-async function persistRelationship(relationship: AgentRelationship): Promise<void> {
-  const mode = getPersistenceMode()
-  if (mode === 'firestore') {
-    await persistRelationshipToFirestore(relationship)
-    return
-  }
-
-  if (mode === 'dual-write-firestore-read') {
-    await runMirroredWrite({
-      entityType: 'relationship',
-      entityId: relationship.id,
-      operation: 'upsert',
-      payload: relationship as unknown as Record<string, unknown>,
-      primary: async () => {
-        await persistRelationshipToFirestore(relationship)
-        return true
-      },
-      secondary: async () => {
-        await RelationshipRepository.upsert(relationship)
-      },
-    })
-    return
-  }
-
-  await runMirroredWrite({
-    entityType: 'relationship',
-    entityId: relationship.id,
-    operation: 'upsert',
-    payload: relationship as unknown as Record<string, unknown>,
-    primary: async () => {
-      await RelationshipRepository.upsert(relationship)
-      return true
-    },
-    secondary: mode === 'dual-write-postgres-read'
-      ? async () => {
-          await persistRelationshipToFirestore(relationship)
-        }
-      : undefined,
-  })
+  return RelationshipRepository.getPair(agentId1, agentId2)
 }
 
 async function listConflicts(limitCount: number): Promise<ConflictAnalysis[]> {
@@ -234,22 +169,6 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      const [left, right] = conflict.participants
-
-      let relationship = await getRelationship(left.agentId, right.agentId)
-      if (!relationship) {
-        relationship = relationshipService.createRelationship(left.agentId, right.agentId)
-      }
-
-      const updatedRelationship = relationshipService.updateRelationship(relationship, {
-        type: conflict.resolutionStyle === 'agree_to_disagree' ? 'neutral' : 'positive',
-        context: `Conflict resolution on ${conflict.topic}`,
-        intensity: Math.max(0.35, 1 - conflict.tension),
-        eventType: conflict.resolutionStyle === 'agree_to_disagree' ? 'disagreement' : 'reconciliation',
-      })
-
-      await persistRelationship(updatedRelationship)
-
       const nextConflict: ConflictAnalysis = {
         ...conflict,
         status: conflict.resolutionStyle === 'agree_to_disagree' ? 'stalemate' : 'resolved',
@@ -257,10 +176,13 @@ export async function POST(request: NextRequest) {
       }
       await saveConflict(nextConflict)
 
+      const relationshipResults = await relationshipOrchestrator.applyConflictOutcome(nextConflict)
+
       return NextResponse.json({
         success: true,
-        relationship: updatedRelationship,
         status: nextConflict.status,
+        conflict: nextConflict,
+        relationship: relationshipResults[0]?.relationship,
       })
     }
 

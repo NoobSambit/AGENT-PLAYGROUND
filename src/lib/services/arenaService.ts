@@ -16,6 +16,7 @@ import {
 } from '@/lib/arena/firestoreStore'
 import { resolveProviderInfoModel } from '@/lib/llm/ollama'
 import { AgentService } from '@/lib/services/agentService'
+import { relationshipOrchestrator } from '@/lib/services/relationshipOrchestrator'
 import { generateText } from '@/lib/llm/provider'
 import type { LLMProviderInfo } from '@/lib/llmConfig'
 import { detectTextLeakage } from '@/lib/services/outputQuality/flags'
@@ -112,6 +113,7 @@ interface FinalReportResult {
 
 type ArenaAlignmentTag = 'support' | 'oppose' | 'hybrid' | 'skeptic'
 type DebateMoveType = 'thesis' | 'rebuttal' | 'example' | 'tradeoff' | 'closing'
+type ArenaScoreDimension = 'clarity' | 'pressure' | 'responsiveness' | 'consistency'
 
 const SEAT_ARCHETYPES: Record<number, Array<{ label: string; lens: string; win: string }>> = {
   2: [
@@ -166,6 +168,14 @@ const SEAT_ARCHETYPES: Record<number, Array<{ label: string; lens: string; win: 
     },
   ],
 }
+
+const SEAT_LEAKAGE_PATTERNS = [
+  /\bvision driver argues that\b/i,
+  /\bsystems builder argues that\b/i,
+  /\bhuman reality check argues that\b/i,
+  /\bstress test argues that\b/i,
+  /\bforward thesis argues that\b/i,
+]
 
 function clampRoundCount(value?: number): number {
   if (!value || Number.isNaN(value)) {
@@ -282,10 +292,13 @@ function cleanPressureCore(value: string): string {
     previous = cleaned
     cleaned = cleaned
       .replace(/^[^:]{1,80}\s+(?:must|should|needs to|has to|will)\s+(?:press\s+for\s+)?/i, '')
+      .replace(/^(?:answer|respond)\s+(?:directly|clearly|plainly)\s*:\s*/i, '')
       .replace(/^(?:provide|show|demonstrate|address|answer)\s+/i, '')
       .replace(/^(?:with one concrete mechanism or failure mode:\s*)+/i, '')
+      .replace(/^(?:with one concrete example or failure mode:\s*)+/i, '')
       .replace(/^(?:directly:\s*)+/i, '')
       .replace(/^(?:resolve the decisive tradeoff(?: around)?\s*)+/i, '')
+      .replace(/^(?:the head should weigh it against\s*)+/i, '')
       .replace(/^[\s:;,-]+/, '')
       .trim()
   }
@@ -685,18 +698,72 @@ function detectRoleBleed(value: string, currentSpeaker: ArenaParticipant, partic
     failures.push('generic assistant opener')
   }
 
+  if (SEAT_LEAKAGE_PATTERNS.some((pattern) => pattern.test(value))) {
+    failures.push('seat label leakage')
+  }
+
   return failures
 }
 
-function scoreTurn(result: DebaterTurnResult, speaker: ArenaParticipant, participants: ArenaParticipant[], previousNotebook: ArenaParticipantNotebook | undefined): ArenaScorecard {
-  const clarity = result.claimSummary.length >= 18 ? 3 : 2
-  const pressure = result.targetAgentIds.length > 0 ? 3 : 2
-  const responsiveness = result.concedes.length > 0 || result.targetAgentIds.length > 0 ? 3 : 2
-  const priorCommitments = new Set(previousNotebook?.commitments || [])
-  const consistency = priorCommitments.has(result.claimSummary) ? 1 : 2
+function findMentionedParticipantName(value: string, participants: ArenaParticipant[]): string | null {
+  for (const participant of participants) {
+    const escaped = participant.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (new RegExp(`\\b${escaped}\\b`, 'i').test(value)) {
+      return participant.name
+    }
+  }
+
+  return null
+}
+
+function hasConcreteDebateSignal(value: string): boolean {
+  return /(?:for example|for instance|specifically|because|if |when |workflow|review cycle|approval|handoff|incident|release|rollback|queue|owner|threshold|policy|checklist|slack|latency|operator|audit|debug|failure mode|mechanism|\d)/i.test(value)
+}
+
+function scoreTurn(params: {
+  result: DebaterTurnResult
+  speaker: ArenaParticipant
+  participants: ArenaParticipant[]
+  previousNotebook?: ArenaParticipantNotebook
+  requiredTargetId?: string | null
+}): ArenaScorecard {
+  const { result, speaker, participants, previousNotebook, requiredTargetId } = params
+  const fullText = cleanOutput(`${result.claimSummary} ${result.message}`)
+  const priorSimilarities = (previousNotebook?.commitments || []).map((commitment) => claimSimilarity(commitment, result.claimSummary))
+  const maxSimilarity = priorSimilarities.length > 0 ? Math.max(...priorSimilarities) : 0
+  const answeredAttack = Boolean(previousNotebook?.attacksToAnswer[0]) && claimSimilarity(
+    previousNotebook?.attacksToAnswer[0] || '',
+    fullText
+  ) >= 0.14
+  const concrete = hasConcreteDebateSignal(fullText)
+  const targetedRequired = requiredTargetId
+    ? result.targetAgentIds.includes(requiredTargetId)
+    : result.targetAgentIds.length > 0
+
+  let clarity = result.claimSummary.length >= 30 && result.claimSummary.length <= 220 ? 3 : 2
+  if (concrete) clarity += 1
+  if (SEAT_LEAKAGE_PATTERNS.some((pattern) => pattern.test(fullText))) clarity -= 1
+  clarity = Math.max(1, Math.min(4, clarity))
+
+  let pressure = targetedRequired ? 3 : result.targetAgentIds.length > 0 ? 2 : 1
+  if (concrete && cleanPressureCore(result.nextPressurePoint).length >= 22) pressure += 1
+  pressure = Math.max(1, Math.min(4, pressure))
+
+  let responsiveness = previousNotebook?.attacksToAnswer.length
+    ? (answeredAttack ? 4 : 2)
+    : (targetedRequired ? 3 : 2)
+  if (result.concedes.length > 0 && targetedRequired) {
+    responsiveness = Math.min(4, responsiveness + 1)
+  }
+
+  let consistency = 3
+  if (maxSimilarity >= 0.86) consistency = 1
+  else if (maxSimilarity >= 0.74) consistency = 2
+  else if (maxSimilarity <= 0.35 && concrete) consistency = 4
+
   const total = clarity + pressure + responsiveness + consistency
   const summary = [
-    `${speaker.name} pushed ${result.claimSummary.toLowerCase()}.`,
+    `${speaker.name} pushed ${result.claimSummary.replace(/\.+$/, '').toLowerCase()}.`,
     result.targetAgentIds.length > 0
       ? `Pressure landed on ${result.targetAgentIds.map((id) => participants.find((participant) => participant.id === id)?.name || id).join(', ')}.`
       : 'Pressure stayed broad rather than targeted.',
@@ -757,6 +824,161 @@ function cleanOutput(value: unknown): string {
   return normalizeWhitespace(String(value)).replace(/\s+/g, ' ').trim()
 }
 
+function stripSeatLeakage(value: string): string {
+  return cleanOutput(value)
+    .replace(/^(?:the )?(?:vision driver|systems builder|human reality check|stress test|forward thesis)\s+argues that\s+/i, '')
+    .replace(/^the arena should (?:endorse|reject|take a conditional path on)\s+/i, '')
+    .replace(/^yes[:,]?\s*/i, '')
+    .replace(/^no[:,]?\s*/i, '')
+    .replace(/^conditional(?:ly)?[:,]?\s*/i, '')
+    .replace(/^"|"$/g, '')
+    .trim()
+}
+
+function normalizeDebateSentence(value: string): string {
+  const cleaned = stripSeatLeakage(value)
+  if (!cleaned) {
+    return ''
+  }
+
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
+}
+
+function extractLeadSentence(value: string): string {
+  const cleaned = normalizeDebateSentence(value)
+  if (!cleaned) {
+    return ''
+  }
+
+  const match = cleaned.match(/^(.+?[.!?])(?:\s|$)/)
+  return cleanOutput(match?.[1] || cleaned)
+}
+
+function getTopicSubject(topic: string): string {
+  const cleaned = cleanOutput(topic).replace(/\?$/, '')
+  return /^should\s+/i.test(cleaned)
+    ? cleaned.replace(/^should\s+/i, '')
+    : cleaned
+}
+
+function buildAlignmentClaimSummary(topic: string, alignmentTag: ArenaAlignmentTag, reason: string): string {
+  const subject = getTopicSubject(topic)
+  const compactReason = cleanOutput(reason).replace(/\.+$/, '')
+
+  if (alignmentTag === 'support') {
+    return normalizeDebateSentence(`Yes, ${subject} because ${compactReason}.`)
+  }
+
+  if (alignmentTag === 'oppose' || alignmentTag === 'skeptic') {
+    return normalizeDebateSentence(`No, ${subject} because ${compactReason}.`)
+  }
+
+  return normalizeDebateSentence(`Conditionally, ${subject}, but only if ${compactReason}.`)
+}
+
+function buildAlignmentDefenseFrame(topic: string, alignmentTag: ArenaAlignmentTag): string {
+  const subject = getTopicSubject(topic)
+
+  if (alignmentTag === 'support') {
+    return `${subject} still wins`
+  }
+
+  if (alignmentTag === 'oppose' || alignmentTag === 'skeptic') {
+    return `${subject} should still be rejected`
+  }
+
+  return `${subject} should only be accepted conditionally`
+}
+
+function deriveClaimSummaryFromMessage(message: string, topic: string, alignmentTag: ArenaAlignmentTag, fallbackReason: string): string {
+  const lead = extractLeadSentence(message)
+  const candidate = lead ? compactPromptText(lead, 180) : ''
+  if (candidate.length >= 20) {
+    return candidate
+  }
+
+  return buildAlignmentClaimSummary(topic, alignmentTag, fallbackReason)
+}
+
+function pickAlignedNotebookClaim(
+  notebook: ArenaParticipantNotebook,
+  alignmentTag: ArenaAlignmentTag,
+  topic: string,
+  fallbackReason: string
+): string {
+  const strongestNotebookClaim = notebook.commitments
+    .map((candidate) => normalizeDebateSentence(candidate))
+    .find((candidate) => candidate.length >= 20 && !detectStanceDrift(candidate, candidate, alignmentTag))
+
+  return strongestNotebookClaim || buildAlignmentClaimSummary(topic, alignmentTag, fallbackReason)
+}
+
+function buildFreshFocusQuestion(run: ArenaRun, stage: ArenaStage, fallback: string): string {
+  const unresolved = trimDistinctNarratives(run.ledger.unresolvedThreads.map((item) => cleanPressureThread(item)), 5, 0.72)
+  const recentFocuses = getRecentRoundLedger(run, 2).map((entry) => cleanPressureThread(entry.focusQuestion))
+  const fresh = unresolved.find((candidate) => !recentFocuses.some((focus) => claimSimilarity(candidate, focus) >= 0.82))
+
+  if (fresh) {
+    return fresh
+  }
+
+  if (stage === 'crossfire') {
+    return 'Which concrete release workflow, mechanism, or failure mode actually separates these positions?'
+  }
+
+  if (stage === 'narrowing') {
+    return 'Which single release tradeoff should decide the verdict?'
+  }
+
+  return fallback
+}
+
+function compareScorecards(left: ArenaScorecard, right: ArenaScorecard): number {
+  const dimensions: Array<'total' | ArenaScoreDimension> = ['total', 'responsiveness', 'pressure', 'clarity', 'consistency']
+  for (const dimension of dimensions) {
+    const leftValue = dimension === 'total' ? left.total : left[dimension]
+    const rightValue = dimension === 'total' ? right.total : right[dimension]
+    if (rightValue !== leftValue) {
+      return rightValue - leftValue
+    }
+  }
+
+  return left.agentName.localeCompare(right.agentName)
+}
+
+function getLeadingDimensions(winner?: ArenaScorecard | null): ArenaScoreDimension[] {
+  if (!winner) {
+    return []
+  }
+
+  return ([
+    ['clarity', winner.clarity],
+    ['pressure', winner.pressure],
+    ['responsiveness', winner.responsiveness],
+    ['consistency', winner.consistency],
+  ] as const)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 2)
+    .map(([label]) => label)
+}
+
+function buildWinnerNarrative(winner: ArenaScorecard | undefined, runnerUp?: ArenaScorecard): string {
+  if (!winner) {
+    return 'The arena completed, but no score leader could be derived.'
+  }
+
+  const leadingDimensions = getLeadingDimensions(winner)
+  if (!runnerUp) {
+    return `${winner.agentName} finished ahead on the arena ledger, leading most clearly in ${leadingDimensions.join(' and ') || 'overall quality'}.`
+  }
+
+  if (winner.total === runnerUp.total) {
+    return `${winner.agentName} edged a tied total score through stronger ${leadingDimensions.join(' and ') || 'overall pressure'}.`
+  }
+
+  return `${winner.agentName} won on total score (${winner.total} vs ${runnerUp.total}), leading most clearly in ${leadingDimensions.join(' and ') || 'overall pressure'}.`
+}
+
 function validateHeadDirective(parsed: HeadDirectiveResult, participantIds: string[]): string[] {
   const errors: string[] = []
 
@@ -793,7 +1015,9 @@ function validateDebaterResult(parsed: DebaterTurnResult, speaker: ArenaParticip
   }
 
   errors.push(...detectTextLeakage(message).map((flag) => `message leakage: ${flag}`))
+  errors.push(...detectTextLeakage(claimSummary).map((flag) => `claim leakage: ${flag}`))
   errors.push(...detectRoleBleed(message, speaker, participants))
+  errors.push(...detectRoleBleed(claimSummary, speaker, participants))
 
   return errors
 }
@@ -814,6 +1038,11 @@ function validateDebaterResultForConstraints(params: {
   const message = cleanOutput(params.parsed.message)
   const alignmentTag = cleanOutput(params.parsed.alignmentTag).toLowerCase()
   const moveType = cleanOutput(params.parsed.moveType).toLowerCase()
+  const mentionedParticipant = findMentionedParticipantName(claimSummary, params.participants)
+  const maxCommitmentSimilarity = Math.max(
+    0,
+    ...(params.notebook.commitments || []).map((commitment) => claimSimilarity(commitment, claimSummary))
+  )
 
   if (alignmentTag !== params.expectedAlignment) {
     errors.push(`alignment drift: expected ${params.expectedAlignment}`)
@@ -837,6 +1066,19 @@ function validateDebaterResultForConstraints(params: {
     }
   }
 
+  if ((params.requiredMoveType === 'example' || params.requiredMoveType === 'tradeoff' || params.requiredMoveType === 'closing')
+    && !hasConcreteDebateSignal(`${claimSummary} ${message}`)) {
+    errors.push('missing concrete mechanism or example')
+  }
+
+  if (mentionedParticipant) {
+    errors.push(`claim summary mentions participant name: ${mentionedParticipant}`)
+  }
+
+  if (params.round >= 3 && maxCommitmentSimilarity >= (params.requiredMoveType === 'closing' ? 0.93 : 0.88)) {
+    errors.push('claim repeats prior commitment too closely')
+  }
+
   return errors
 }
 
@@ -852,16 +1094,45 @@ function normalizeHeadDirective(parsed: HeadDirectiveResult, participantIds: str
   }
 }
 
-function normalizeDebaterResult(parsed: DebaterTurnResult, speakerId: string, participantIds: string[]): DebaterTurnResult {
-  const targets = normalizeParticipantIdList(parsed.targetAgentIds, participantIds, speakerId)
+function normalizeDebaterResult(
+  parsed: DebaterTurnResult,
+  params: {
+    speakerId: string
+    participantIds: string[]
+    alignmentTag: ArenaAlignmentTag
+    topic: string
+    fallbackReason: string
+    participants?: ArenaParticipant[]
+  }
+): DebaterTurnResult {
+  const targets = normalizeParticipantIdList(parsed.targetAgentIds, params.participantIds, params.speakerId)
 
   const confidence = typeof parsed.confidence === 'number'
     ? Math.max(0.1, Math.min(1, parsed.confidence))
     : 0.6
 
+  const normalizedClaim = normalizeDebateSentence(parsed.claimSummary)
+  const normalizedMessage = normalizeDebateSentence(parsed.message)
+  const participantMention = params.participants
+    ? findMentionedParticipantName(normalizedClaim, params.participants)
+    : null
+  const driftedClaim = normalizedClaim
+    ? detectStanceDrift(normalizedClaim, normalizedMessage, params.alignmentTag)
+    : 'missing claim summary'
+  const baseClaim = normalizedClaim.length >= 20 && !participantMention && !driftedClaim
+    ? normalizedClaim
+    : deriveClaimSummaryFromMessage(normalizedMessage, params.topic, params.alignmentTag, params.fallbackReason)
+  const rewrittenMention = params.participants
+    ? findMentionedParticipantName(baseClaim, params.participants)
+    : null
+  const rewrittenDrift = detectStanceDrift(baseClaim, normalizedMessage || baseClaim, params.alignmentTag)
+  const claimSummary = baseClaim.length >= 20 && !rewrittenMention && !rewrittenDrift
+    ? baseClaim
+    : buildAlignmentClaimSummary(params.topic, params.alignmentTag, params.fallbackReason)
+
   return {
-    message: cleanOutput(parsed.message),
-    claimSummary: cleanOutput(parsed.claimSummary),
+    message: normalizedMessage || claimSummary,
+    claimSummary,
     targetAgentIds: targets,
     concedes: trimList(parsed.concedes || [], 3),
     confidence,
@@ -953,7 +1224,7 @@ function deriveDecisiveMoments(events: ArenaEvent[]): ArenaReport['decisiveMomen
 }
 
 function normalizeFinalReport(parsed: FinalReportResult, run: ArenaRun, events: ArenaEvent[]): ArenaReport {
-  const fallbackWinner = [...run.scorecardSnapshot].sort((left, right) => right.total - left.total)[0]
+  const fallbackWinner = [...run.scorecardSnapshot].sort(compareScorecards)[0]
   const winnerAgentId = fallbackWinner?.agentId || (
     run.participantIds.includes(parsed.winnerAgentId)
       ? parsed.winnerAgentId
@@ -1002,7 +1273,7 @@ function normalizeFinalReport(parsed: FinalReportResult, run: ArenaRun, events: 
     scorecards,
     decisiveMoments: decisiveMoments.length > 0 ? decisiveMoments.slice(0, 4) : deriveDecisiveMoments(events),
     headInterventionSummary: trimList(parsed.headInterventionSummary || [], 4),
-    unresolvedQuestions: trimList(parsed.unresolvedQuestions || run.ledger.unresolvedThreads, 5),
+    unresolvedQuestions: trimDistinctNarratives(parsed.unresolvedQuestions || run.ledger.unresolvedThreads, 5, 0.7),
     improvementNotes: trimList(parsed.improvementNotes || [], 5),
     createdAt: new Date().toISOString(),
   }
@@ -1058,13 +1329,11 @@ function buildFallbackDebaterTurn(params: {
     params.directive.focusQuestion ||
     params.run.config.topic
   )
-  const topicCue = compactPromptText(params.run.config.topic, 120)
-  const claimSummary = cleanOutput(
-    alignmentTag === 'support'
-      ? `The arena should endorse "${topicCue}" because ${params.seat.winCondition}.`
-      : alignmentTag === 'oppose' || alignmentTag === 'skeptic'
-        ? `The arena should reject "${topicCue}" because ${params.seat.winCondition}.`
-        : `The arena should take a conditional path on "${topicCue}" because ${params.seat.winCondition}.`
+  const claimSummary = pickAlignedNotebookClaim(
+    params.notebook,
+    alignmentTag,
+    params.run.config.topic,
+    params.seat.winCondition
   )
   const targetSeat = targetAgentIds[0]
     ? params.run.seats.find((seat) => seat.agentId === targetAgentIds[0])
@@ -1075,16 +1344,21 @@ function buildFallbackDebaterTurn(params: {
     targetAgentName: targetSeat?.agentName,
     focusQuestion: params.directive.focusQuestion,
     moveType,
+    topic: params.run.config.topic,
+    targetAlignment: targetSeat
+      ? getSeatAlignmentTag(targetSeat.orderIndex, params.run.participants.length)
+      : alignmentTag,
   })
   const message = params.closing
     ? cleanOutput([
         `${claimSummary}`,
-        `The head should weigh it against ${params.directive.focusQuestion}.`,
-        targetAgentIds.length > 0 ? `The opposing seat still needs to answer ${normalizedPressurePoint}.` : '',
+        targetSeat
+          ? `${targetSeat.agentName} never closed the gap on ${cleanPressureCore(normalizedPressurePoint).replace(/\.$/, '')}.`
+          : 'That is the clearest release decision left on the board.',
       ].join(' '))
     : cleanOutput([
         `${claimSummary}`,
-        targetAgentIds.length > 0 ? `The targeted weakness is ${normalizedPressurePoint}.` : '',
+        normalizedPressurePoint,
       ].join(' '))
 
   return {
@@ -1099,16 +1373,77 @@ function buildFallbackDebaterTurn(params: {
   }
 }
 
+function buildDeterministicClosingTurn(params: {
+  run: ArenaRun
+  seat: ArenaSeat
+  speaker: ArenaParticipant
+  notebook: ArenaParticipantNotebook
+  directive: HeadDirectiveResult
+  requiredTargetId?: string | null
+}): DebaterTurnResult {
+  const alignmentTag = getSeatAlignmentTag(params.seat.orderIndex, params.run.participants.length)
+  const targetAgentIds = trimList(
+    params.requiredTargetId
+      ? [params.requiredTargetId]
+      : params.run.seats
+          .filter((seat) => seat.agentId !== params.speaker.id)
+          .slice(0, 1)
+          .map((seat) => seat.agentId),
+    1
+  )
+  const targetSeat = targetAgentIds[0]
+    ? params.run.seats.find((seat) => seat.agentId === targetAgentIds[0])
+    : undefined
+  const claimSummary = pickAlignedNotebookClaim(
+    params.notebook,
+    alignmentTag,
+    params.run.config.topic,
+    params.seat.winCondition
+  )
+  const nextPressurePoint = normalizePressurePointForTarget({
+    raw: params.notebook.attacksToAnswer[0] || params.notebook.nextPressurePoints[0] || params.directive.focusQuestion,
+    claimSummary,
+    targetAgentName: targetSeat?.agentName,
+    focusQuestion: params.directive.focusQuestion,
+    moveType: 'closing',
+    topic: params.run.config.topic,
+    targetAlignment: targetSeat
+      ? getSeatAlignmentTag(targetSeat.orderIndex, params.run.participants.length)
+      : alignmentTag,
+  })
+  const latestTargetClaim = targetSeat ? compactPromptText(getLatestClaimForAgent(params.run, targetSeat.agentId), 170) : ''
+  const message = cleanOutput([
+    claimSummary,
+    targetSeat
+      ? latestTargetClaim
+        ? `${targetSeat.agentName}'s strongest counter was ${latestTargetClaim.replace(/\.$/, '').toLowerCase()}, but it never outweighed this case.`
+        : `${targetSeat.agentName}'s case never outweighed this release decision.`
+      : 'That remains the clearest verdict-ready case in the arena record.',
+  ].join(' '))
+
+  return {
+    message,
+    claimSummary,
+    targetAgentIds,
+    concedes: [],
+    confidence: 0.7,
+    nextPressurePoint,
+    alignmentTag,
+    moveType: 'closing',
+  }
+}
+
 function buildFallbackFinalReport(run: ArenaRun, events: ArenaEvent[]): ArenaReport {
-  const sortedScorecards = [...run.scorecardSnapshot].sort((left, right) => right.total - left.total)
+  const sortedScorecards = [...run.scorecardSnapshot].sort(compareScorecards)
   const winner = sortedScorecards[0] || run.scorecardSnapshot[0]
+  const runnerUp = sortedScorecards[1]
   const winnerAgentId = winner?.agentId || run.participantIds[0]
   const winnerAgentName = winner?.agentName || run.participants.find((participant) => participant.id === winnerAgentId)?.name || 'Unknown'
 
   return {
     winnerAgentId,
     winnerAgentName,
-    verdictSummary: `${winnerAgentName} finished with the strongest cumulative pressure and consistency across the arena ledger.`,
+    verdictSummary: `${buildWinnerNarrative(winner, runnerUp)} ${cleanOutput(winner?.summary || '')}`.trim(),
     scorecards: run.scorecardSnapshot.map((scorecard) => ({
       ...scorecard,
       summary: cleanOutput(scorecard.summary) || `${scorecard.agentName} completed the run with ${scorecard.total} total points.`,
@@ -1120,7 +1455,7 @@ function buildFallbackFinalReport(run: ArenaRun, events: ArenaEvent[]): ArenaRep
         .map((event) => event.summary),
       4
     ),
-    unresolvedQuestions: trimList(run.ledger.unresolvedThreads, 5),
+    unresolvedQuestions: trimDistinctNarratives(run.ledger.unresolvedThreads.map((item) => cleanPressureThread(item)), 5, 0.7),
     improvementNotes: trimList([
       'Press the winner harder on the strongest remaining counterargument.',
       'Force one more direct answer on the unresolved operational tradeoff.',
@@ -1153,7 +1488,7 @@ function getRequiredTargetId(run: ArenaRun, events: ArenaEvent[], speakerId: str
 
   const scoreSortedOpponents = [...run.scorecardSnapshot]
     .filter((scorecard) => scorecard.agentId !== speakerId)
-    .sort((left, right) => right.total - left.total)
+    .sort(compareScorecards)
 
   return scoreSortedOpponents[0]?.agentId || run.participantIds.find((participantId) => participantId !== speakerId) || null
 }
@@ -1194,12 +1529,25 @@ function getOpponentClaimDigest(run: ArenaRun, speakerId: string): string[] {
     .slice(0, 3)
 }
 
+function getLatestClaimForAgent(run: ArenaRun, agentId: string): string {
+  for (const round of [...run.ledger.rounds].reverse()) {
+    const claim = [...round.claimHighlights].reverse().find((entry) => entry.agentId === agentId)
+    if (claim) {
+      return claim.claim
+    }
+  }
+
+  return ''
+}
+
 function normalizePressurePointForTarget(params: {
   raw: string
   claimSummary: string
   targetAgentName?: string
   focusQuestion?: string
   moveType: DebateMoveType
+  topic: string
+  targetAlignment: ArenaAlignmentTag
 }): string {
   const targetLabel = cleanOutput(params.targetAgentName) || 'The opposing seat'
   const rawCore = cleanPressureCore(params.raw)
@@ -1214,27 +1562,22 @@ function normalizePressurePointForTarget(params: {
     core = claimCore || 'the strongest unresolved tradeoff'
   }
 
-  if (/^evidence that\b/i.test(core)) {
-    return `${targetLabel} must provide ${core}`
-  }
-
-  if (/^(a|one)\s+concrete example\b/i.test(core)) {
-    return `${targetLabel} must provide ${core}`
-  }
-
-  if (/^(how|why|whether|which|what)\b/i.test(core)) {
-    return `${targetLabel} must answer ${core}`
-  }
+  const defenseFrame = compactPromptText(buildAlignmentDefenseFrame(params.topic, params.targetAlignment), 120)
+  const challengeCore = compactPromptText(core.replace(/\.$/, ''), 160)
 
   if (params.moveType === 'example') {
-    return `${targetLabel} must answer with one concrete mechanism or failure mode: ${core}`
+    return `${targetLabel} must show with one concrete mechanism or failure mode why ${defenseFrame}, despite this challenge: ${challengeCore}.`
   }
 
   if (params.moveType === 'tradeoff') {
-    return `${targetLabel} must resolve the decisive tradeoff around ${core.replace(/\.$/, '')}.`
+    return `${targetLabel} must resolve the decisive tradeoff and show why ${defenseFrame}, despite this challenge: ${challengeCore}.`
   }
 
-  return `${targetLabel} must answer directly: ${core}`
+  if (params.moveType === 'closing') {
+    return `${targetLabel} must explain why ${defenseFrame}, despite this challenge: ${challengeCore}.`
+  }
+
+  return `${targetLabel} must answer why ${defenseFrame}, despite this challenge: ${challengeCore}.`
 }
 
 function buildDeterministicHeadDirective(run: ArenaRun, round: number, stage: ArenaStage): HeadDirectiveResult {
@@ -1283,12 +1626,20 @@ function buildDeterministicHeadDirective(run: ArenaRun, round: number, stage: Ar
     scoreSignals = ['clear thesis', 'decision criterion', 'targeted attack']
     rationaleSummary = 'Round one should establish distinct lanes instead of abstract agreement.'
   } else if (stage === 'opening') {
-    focusQuestion = strongestAttack || previousRound?.focusQuestion || 'Which assumption from the previous round fails under scrutiny?'
+    focusQuestion = buildFreshFocusQuestion(
+      run,
+      stage,
+      strongestAttack || previousRound?.focusQuestion || 'Which assumption from the previous round fails under scrutiny?'
+    )
     directive = 'Stop broad framing. Answer the sharpest attack from the previous round first, then tighten the contrast.'
     scoreSignals = ['direct rebuttal', 'specific evidence', 'no stance drift']
     rationaleSummary = 'Round two should turn the opening claims into direct conflict.'
   } else if (stage === 'crossfire') {
-    focusQuestion = strongestAttack || run.ledger.unresolvedThreads[0] || 'Which concrete mechanism or failure mode actually decides this question?'
+    focusQuestion = buildFreshFocusQuestion(
+      run,
+      stage,
+      strongestAttack || run.ledger.unresolvedThreads[0] || 'Which concrete mechanism or failure mode actually decides this question?'
+    )
     directive = repeatedPairs.length > 0
       ? 'Differentiate your case from the others. Do not repeat the same consistency-versus-flexibility frame. Answer the live attack and add one concrete mechanism or failure mode.'
       : 'Answer the live attack first, then raise one concrete mechanism, example, or failure mode that shifts the debate.'
@@ -1297,7 +1648,11 @@ function buildDeterministicHeadDirective(run: ArenaRun, round: number, stage: Ar
       ? 'The prior round started converging, so this round forces differentiation.'
       : 'Crossfire rounds should convert abstract positions into concrete pressure.'
   } else if (stage === 'narrowing') {
-    focusQuestion = run.ledger.unresolvedThreads[0] || 'Which single tradeoff should decide the verdict?'
+    focusQuestion = buildFreshFocusQuestion(
+      run,
+      stage,
+      run.ledger.unresolvedThreads[0] || 'Which single tradeoff should decide the verdict?'
+    )
     directive = 'Compress the debate to one decisive tradeoff, give the head a verdict-ready contrast, and stop reopening old branches.'
     scoreSignals = ['decision-ready tradeoff', 'tight contrast', 'verdict clarity']
     rationaleSummary = 'Late rounds should narrow the argument to a final decision frame.'
@@ -1319,29 +1674,18 @@ function getEventPayload(event: ArenaEvent): Record<string, unknown> {
 }
 
 function buildDeterministicFinalReport(run: ArenaRun, events: ArenaEvent[]): ArenaReport {
-  const sortedScorecards = [...run.scorecardSnapshot].sort((left, right) => right.total - left.total)
+  const sortedScorecards = [...run.scorecardSnapshot].sort(compareScorecards)
   const winner = sortedScorecards[0] || run.scorecardSnapshot[0]
   const runnerUp = sortedScorecards[1]
   const winnerAgentId = winner?.agentId || run.participantIds[0]
   const winnerAgentName = winner?.agentName || run.participants.find((participant) => participant.id === winnerAgentId)?.name || 'Unknown'
   const decisiveMoments = deriveDecisiveMoments(events)
-  const leadingDimensions = winner
-    ? ([
-        ['clarity', winner.clarity],
-        ['pressure', winner.pressure],
-        ['responsiveness', winner.responsiveness],
-        ['consistency', winner.consistency],
-      ] as const)
-        .sort((left, right) => right[1] - left[1])
-        .slice(0, 2)
-        .map(([label]) => label)
-    : []
 
   return {
     winnerAgentId,
     winnerAgentName,
     verdictSummary: winner
-      ? `${winnerAgentName} won on total score${runnerUp ? ` (${winner.total} vs ${runnerUp.total})` : ''}, leading most clearly in ${leadingDimensions.join(' and ') || 'overall pressure'}. ${cleanOutput(winner.summary)}`
+      ? `${buildWinnerNarrative(winner, runnerUp)} ${cleanOutput(winner.summary)}`
       : 'The arena completed, but no score leader could be derived.',
     scorecards: run.scorecardSnapshot.map((scorecard) => ({
       ...scorecard,
@@ -1648,10 +1992,12 @@ function buildDebaterPrompt(params: {
       `Win condition: ${compactWinCondition}`,
       'Your seat is structurally adversarial. Do not defect to the opposing conclusion unless making a narrow concession.',
       'Your claimSummary must say why your own seat still wins. Do not use claimSummary to restate why the opposing side is right.',
+      'claimSummary must be a single thesis sentence from your own side. Do not mention any participant by name in claimSummary.',
+      'nextPressurePoint must describe what the opponent still has to prove while staying in their own assigned lane. Do not ask them to argue your side for you.',
       'If you concede a point, keep it to one clause and end the turn by reaffirming your assigned side.',
       `Required move type: ${params.requiredMoveType}. ${getMoveInstruction(params.requiredMoveType)}`,
       params.closing
-        ? 'You are writing a closing statement. Compress your strongest position and final pressure.'
+        ? 'You are writing a closing statement. Compress your strongest position into a verdict-ready case. Do not end by assigning homework or reopening the debate.'
         : 'You are writing one debate turn. Stay aggressive, precise, and in-seat.',
       `Return JSON only with keys: message, claimSummary, targetAgentIds, concedes, confidence, nextPressurePoint, alignmentTag, moveType.`,
       `message should be ${params.closing ? budget.closingWords : budget.turnWords}.`,
@@ -1668,12 +2014,13 @@ function buildDebaterPrompt(params: {
       targetSeat ? `Required target: ${targetSeat.agentName} (${targetSeat.agentId}).` : 'Required target: name the sharpest opponent explicitly.',
       `Your notebook:\n- Latest commitments: ${params.notebook.commitments.slice(0, 2).join(' | ') || 'none'}\n- Attacks to answer: ${params.notebook.attacksToAnswer.slice(0, 2).join(' | ') || 'none'}\n- Concessions already made: ${params.notebook.concessions.slice(0, 2).join(' | ') || 'none'}\n- Next pressure points: ${params.notebook.nextPressurePoints.slice(0, 2).join(' | ') || 'none'}`,
       `Avoid repeating these claims: ${params.notebook.commitments.slice(0, 2).join(' | ') || 'none'}`,
+      'Novelty requirement: do not reuse the same example domain or mechanism from your last commitments unless you are directly rebutting it. If needed, rotate to a different release workflow, failure mode, or operational example.',
       opponentClaims.length > 0 ? `Recent opposing claims:\n- ${opponentClaims.join('\n- ')}` : undefined,
       `Recent arena ledger:\n${roundDigest}`,
       `Other seats:\n${params.run.seats.filter((seat) => seat.agentId !== params.seat.agentId).map((seat) => `- ${seat.agentName}: ${seat.seatLabel}`).join('\n')}`,
       `Seat discipline reminder: ${getAlignmentInstruction(alignmentTag)}`,
       params.closing
-        ? 'Land your final strongest case. Do not introduce a brand-new tangent.'
+        ? 'Land your final strongest case. Do not introduce a brand-new tangent. Do not ask the opponent another question in the closing.'
         : 'Answer the head focus question, defend your seat, target the required opponent, and add one new concrete mechanism, example, or failure mode if possible.',
     ].join('\n\n'),
   }
@@ -2119,7 +2466,14 @@ export class ArenaService {
                 round,
               }),
             })
-            turn = normalizeDebaterResult(turnRaw, speaker.id, run.participantIds)
+            turn = normalizeDebaterResult(turnRaw, {
+              speakerId: speaker.id,
+              participantIds: run.participantIds,
+              alignmentTag: getSeatAlignmentTag(seat.orderIndex, run.participants.length),
+              topic: run.config.topic,
+              fallbackReason: seat.winCondition,
+              participants: run.participants,
+            })
           } catch (error) {
             turn = buildFallbackDebaterTurn({
               run,
@@ -2143,9 +2497,19 @@ export class ArenaService {
             targetAgentName: primaryTargetSeat?.agentName,
             focusQuestion: headDirective.focusQuestion,
             moveType: (turn.moveType as DebateMoveType) || requiredMoveType,
+            topic: run.config.topic,
+            targetAlignment: primaryTargetSeat
+              ? getSeatAlignmentTag(primaryTargetSeat.orderIndex, run.participants.length)
+              : alignmentTag,
           })
 
-          const scoreDelta = scoreTurn(turn, speaker, run.participants, notebook)
+          const scoreDelta = scoreTurn({
+            result: turn,
+            speaker,
+            participants: run.participants,
+            previousNotebook: notebook,
+            requiredTargetId,
+          })
           run.scorecardSnapshot = mergeScorecards(run.scorecardSnapshot, scoreDelta)
           roundClaims.push({
             agentId: speaker.id,
@@ -2243,7 +2607,7 @@ export class ArenaService {
 
         const unresolvedThreads = trimDistinctNarratives([
           ...Array.from(incomingAttackMap.values()).flat().map((item) => cleanPressureThread(item)),
-          headDirective.focusQuestion,
+          cleanPressureThread(headDirective.focusQuestion),
           roundClaims.length > 0 && Array.from(incomingAttackMap.values()).flat().length === 0
             ? `What concrete evidence or failure mode best distinguishes these positions: ${roundClaims.map((claim) => `${claim.agentName} says ${claim.claim}`).join(' / ')}`
             : '',
@@ -2376,6 +2740,7 @@ export class ArenaService {
       events.push(closingPhaseEvent)
       run.eventCount += 1
 
+      const useDeterministicClosing = resolvedProviderInfo?.provider === 'ollama'
       for (const seat of run.seats) {
         const speaker = run.participants.find((participant) => participant.id === seat.agentId)
         const notebook = run.participantNotebooks.find((entry) => entry.agentId === seat.agentId)
@@ -2383,51 +2748,70 @@ export class ArenaService {
           continue
         }
 
-        const closingPrompt = buildDebaterPrompt({
-          run,
-          seat,
-          speaker,
-          notebook,
-          directive: closingDirective,
-          stage: 'closing',
-          round: run.currentRound,
-          requiredTargetId: getRequiredTargetId(run, events, speaker.id, run.currentRound),
-          requiredMoveType: 'closing',
-          closing: true,
-        })
+        const requiredClosingTargetId = getRequiredTargetId(run, events, speaker.id, run.currentRound)
         let closingResult: DebaterTurnResult
         let closingDegradedReason: string | null = null
-        try {
-          const closingRaw = await generateStructuredOutput<DebaterTurnResult>({
-            system: closingPrompt.system,
-            user: closingPrompt.user,
-            maxTokens: budgetConfig(run.config.responseBudget).closingTokens,
-            temperature: closingTemperature,
-            providerInfo: resolvedProviderInfo,
-            validator: (parsed) => validateDebaterResultForConstraints({
-              parsed,
-              speaker,
-              participants: run.participants,
-              notebook,
-              expectedAlignment: getSeatAlignmentTag(seat.orderIndex, run.participants.length),
-              requiredMoveType: 'closing',
-              requiredTargetId: getRequiredTargetId(run, events, speaker.id, run.currentRound),
-              round: run.currentRound,
-            }),
-          })
-          closingResult = normalizeDebaterResult(closingRaw, speaker.id, run.participantIds)
-        } catch (error) {
-          closingResult = buildFallbackDebaterTurn({
+        if (useDeterministicClosing) {
+          closingResult = buildDeterministicClosingTurn({
             run,
             seat,
             speaker,
             notebook,
             directive: closingDirective,
-            requiredTargetId: getRequiredTargetId(run, events, speaker.id, run.currentRound),
+            requiredTargetId: requiredClosingTargetId,
+          })
+        } else {
+          const closingPrompt = buildDebaterPrompt({
+            run,
+            seat,
+            speaker,
+            notebook,
+            directive: closingDirective,
+            stage: 'closing',
+            round: run.currentRound,
+            requiredTargetId: requiredClosingTargetId,
             requiredMoveType: 'closing',
             closing: true,
           })
-          closingDegradedReason = error instanceof Error ? error.message : 'Closing statement generation failed.'
+          try {
+            const closingRaw = await generateStructuredOutput<DebaterTurnResult>({
+              system: closingPrompt.system,
+              user: closingPrompt.user,
+              maxTokens: budgetConfig(run.config.responseBudget).closingTokens,
+              temperature: closingTemperature,
+              providerInfo: resolvedProviderInfo,
+              validator: (parsed) => validateDebaterResultForConstraints({
+                parsed,
+                speaker,
+                participants: run.participants,
+                notebook,
+                expectedAlignment: getSeatAlignmentTag(seat.orderIndex, run.participants.length),
+                requiredMoveType: 'closing',
+                requiredTargetId: requiredClosingTargetId,
+                round: run.currentRound,
+              }),
+            })
+            closingResult = normalizeDebaterResult(closingRaw, {
+              speakerId: speaker.id,
+              participantIds: run.participantIds,
+              alignmentTag: getSeatAlignmentTag(seat.orderIndex, run.participants.length),
+              topic: run.config.topic,
+              fallbackReason: seat.winCondition,
+              participants: run.participants,
+            })
+          } catch (error) {
+            closingResult = buildFallbackDebaterTurn({
+              run,
+              seat,
+              speaker,
+              notebook,
+              directive: closingDirective,
+              requiredTargetId: requiredClosingTargetId,
+              requiredMoveType: 'closing',
+              closing: true,
+            })
+            closingDegradedReason = error instanceof Error ? error.message : 'Closing statement generation failed.'
+          }
         }
 
         const closingEvent: ArenaEvent = {
@@ -2542,6 +2926,7 @@ export class ArenaService {
       events.push(reportEvent)
       run.eventCount += 1
       await saveRun(run)
+      await relationshipOrchestrator.applyArenaOutcome(run, events)
 
       return { run, events }
     } catch (error) {

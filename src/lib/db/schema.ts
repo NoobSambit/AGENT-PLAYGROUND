@@ -34,6 +34,9 @@ import type {
   MemoryRecord,
   Mentorship,
   MessageRecord,
+  RelationshipEvidence,
+  RelationshipRevision,
+  RelationshipSynthesisRun,
   PersonalityEventRecord,
   ProfileAnalysisRun,
   ProfileInterviewTurn,
@@ -174,6 +177,66 @@ export const agentRelationships = pgTable('agent_relationships', {
   index('agent_relationships_agent1_idx').on(table.agentId1),
   index('agent_relationships_agent2_idx').on(table.agentId2),
   index('agent_relationships_status_idx').on(table.status),
+])
+
+export const relationshipEvidence = pgTable('relationship_evidence', {
+  id: text('id').primaryKey(),
+  pairId: text('pair_id').notNull().references(() => agentRelationships.id, { onDelete: 'cascade' }),
+  agentId1: text('agent_id_1').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  agentId2: text('agent_id_2').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  sourceKind: text('source_kind').notNull(),
+  sourceId: text('source_id').notNull(),
+  signalKind: text('signal_kind').notNull(),
+  actorAgentId: text('actor_agent_id'),
+  targetAgentId: text('target_agent_id'),
+  valence: real('valence').notNull().default(0),
+  weight: real('weight').notNull().default(0),
+  confidence: real('confidence').notNull().default(0.5),
+  createdAt,
+  payload: jsonb('payload').$type<RelationshipEvidence>().notNull(),
+}, (table) => [
+  index('relationship_evidence_pair_created_idx').on(table.pairId, table.createdAt),
+  index('relationship_evidence_source_idx').on(table.sourceKind, table.sourceId, table.createdAt),
+  index('relationship_evidence_agent1_created_idx').on(table.agentId1, table.createdAt),
+  index('relationship_evidence_agent2_created_idx').on(table.agentId2, table.createdAt),
+])
+
+export const relationshipRevisions = pgTable('relationship_revisions', {
+  id: text('id').primaryKey(),
+  pairId: text('pair_id').notNull().references(() => agentRelationships.id, { onDelete: 'cascade' }),
+  agentId1: text('agent_id_1').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  agentId2: text('agent_id_2').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  sourceKind: text('source_kind').notNull(),
+  sourceId: text('source_id').notNull(),
+  synthesisRunId: text('synthesis_run_id').notNull(),
+  confidence: real('confidence').notNull().default(0.5),
+  createdAt,
+  payload: jsonb('payload').$type<RelationshipRevision>().notNull(),
+}, (table) => [
+  index('relationship_revisions_pair_created_idx').on(table.pairId, table.createdAt),
+  index('relationship_revisions_source_idx').on(table.sourceKind, table.sourceId, table.createdAt),
+  index('relationship_revisions_agent1_created_idx').on(table.agentId1, table.createdAt),
+  index('relationship_revisions_agent2_created_idx').on(table.agentId2, table.createdAt),
+])
+
+export const relationshipSynthesisRuns = pgTable('relationship_synthesis_runs', {
+  id: text('id').primaryKey(),
+  pairId: text('pair_id').notNull().references(() => agentRelationships.id, { onDelete: 'cascade' }),
+  agentId1: text('agent_id_1').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  agentId2: text('agent_id_2').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  triggerSourceKind: text('trigger_source_kind').notNull(),
+  triggerSourceId: text('trigger_source_id').notNull(),
+  status: text('status').notNull(),
+  promptVersion: text('prompt_version').notNull(),
+  provider: text('provider'),
+  model: text('model'),
+  createdAt,
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull(),
+  payload: jsonb('payload').$type<RelationshipSynthesisRun>().notNull(),
+}, (table) => [
+  index('relationship_synthesis_pair_created_idx').on(table.pairId, table.createdAt),
+  index('relationship_synthesis_trigger_idx').on(table.triggerSourceKind, table.triggerSourceId, table.createdAt),
+  index('relationship_synthesis_status_idx').on(table.status, table.createdAt),
 ])
 
 export const creativeSessions = pgTable('creative_sessions', {
@@ -661,6 +724,9 @@ export const schema = {
   memoryGraphs,
   agentPersonalityEvents,
   agentRelationships,
+  relationshipEvidence,
+  relationshipRevisions,
+  relationshipSynthesisRuns,
   creativeSessions,
   creativeArtifacts,
   creativePipelineEvents,
