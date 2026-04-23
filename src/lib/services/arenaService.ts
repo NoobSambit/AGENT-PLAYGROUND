@@ -2201,7 +2201,9 @@ export class ArenaService {
     run.config.objective = cleanOutput(input.objective || run.config.objective)
     run.config.roundCount = clampRoundCount(input.roundCount || run.config.roundCount)
     run.config.responseBudget = normalizeBudget(input.responseBudget || run.config.responseBudget)
-    run.config.referenceBrief = cleanOutput(input.referenceBrief || run.config.referenceBrief || '') || undefined
+    if (input.referenceBrief !== undefined) {
+      run.config.referenceBrief = cleanOutput(input.referenceBrief) || undefined
+    }
 
     if (input.seats?.length) {
       run.seats = run.seats.map((seat) => {

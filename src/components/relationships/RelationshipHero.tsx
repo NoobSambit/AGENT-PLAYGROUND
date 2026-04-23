@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { ArrowUpRight, GitBranch, Loader2, RefreshCw } from 'lucide-react'
+import { ArrowUpRight, GitBranch, Info, Loader2, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { RelationshipWorkspaceDetail } from '@/types/database'
 import { MetricBar, HealthPill } from './RelationshipAtoms'
@@ -27,6 +27,32 @@ export function RelationshipHero({
 }) {
   const cfg = statusConfig(selectedPair.relationship.status)
   const d = selectedPair.relationship.derived
+  const selfSide = selectedPair.relationship.directional[agentId]
+  const otherSide = selectedPair.relationship.directional[selectedPair.otherAgent.id]
+  const sourceEventCount = Object.values(selectedPair.relationship.sourceStats).reduce((sum, stats) => sum + stats.count, 0)
+  const hasPairEvidence =
+    sourceEventCount > 0 ||
+    selectedPair.recentEvidence.length > 0 ||
+    selectedPair.recentRevisions.length > 0 ||
+    selectedPair.synthesisRuns.length > 0
+  const mirroredDirectionalState = Boolean(
+    selfSide &&
+    otherSide &&
+    selfSide.summary === otherSide.summary &&
+    selfSide.trust === otherSide.trust &&
+    selfSide.respect === otherSide.respect &&
+    selfSide.affection === otherSide.affection &&
+    selfSide.alignment === otherSide.alignment &&
+    selfSide.reliance === otherSide.reliance &&
+    selfSide.grievance === otherSide.grievance &&
+    selfSide.levers.join('|') === otherSide.levers.join('|') &&
+    selfSide.sensitivities.join('|') === otherSide.sensitivities.join('|')
+  )
+  const perspectiveState = !hasPairEvidence && mirroredDirectionalState
+    ? 'baseline'
+    : hasPairEvidence && mirroredDirectionalState
+      ? 'symmetric'
+      : 'distinct'
 
   // Determine a momentum label
   const momentumLabel =
@@ -163,6 +189,24 @@ export function RelationshipHero({
       {/* ── Perspectives ── */}
       <div>
         <div className={`${labelStyle} mb-2 px-1`}>Perspectives — How Each Side Sees This Tie</div>
+        {perspectiveState === 'baseline' && (
+          <div className="mb-3 flex items-start gap-2 rounded-md border border-pastel-blue/20 bg-pastel-blue/5 px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pastel-blue" />
+            <div>
+              This pair has no relationship evidence yet, so both perspectives are still showing the same starting baseline.
+              Run an arena, conflict, or manual checkpoint for this pair to reveal real directional differences.
+            </div>
+          </div>
+        )}
+        {perspectiveState === 'symmetric' && (
+          <div className="mb-3 flex items-start gap-2 rounded-md border border-pastel-yellow/20 bg-pastel-yellow/5 px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pastel-yellow" />
+            <div>
+              This pair has evidence, but the current synthesis is still nearly mirrored on both sides.
+              That usually means the recorded interactions changed the relationship overall without yet producing a strong directional split.
+            </div>
+          </div>
+        )}
         <div className="grid gap-3 xl:grid-cols-2">
           {[agentId, selectedPair.otherAgent.id].map((sideAgentId) => {
             const side = selectedPair.relationship.directional[sideAgentId]
@@ -176,6 +220,16 @@ export function RelationshipHero({
                     <div className={labelStyle}>
                       {isSelf ? `${agentName}’s view` : `${selectedPair.otherAgent.name}’s view`}
                     </div>
+                    {perspectiveState === 'baseline' && (
+                      <div className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-pastel-blue">
+                        Mirrored baseline
+                      </div>
+                    )}
+                    {perspectiveState === 'symmetric' && (
+                      <div className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-pastel-yellow">
+                        Symmetric synthesis
+                      </div>
+                    )}
                     <div className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
                       {side.summary || 'No summary yet.'}
                     </div>

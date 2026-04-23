@@ -122,7 +122,9 @@ const SIGNAL_EFFECTS: Record<RelationshipSignalKind, {
   },
   constructive_disagreement: {
     shared: { respect: 0.018, familiarity: 0.01 },
-    symmetric: { alignment: -0.045, grievance: 0.02 },
+    symmetric: { alignment: -0.03, grievance: 0.012 },
+    actor: { alignment: 0.03, grievance: 0.014 },
+    target: { trust: -0.018, respect: -0.01, alignment: -0.04, grievance: 0.03 },
   },
   dismissal: {
     shared: { trust: -0.045, respect: -0.04, affection: -0.025 },
@@ -131,7 +133,9 @@ const SIGNAL_EFFECTS: Record<RelationshipSignalKind, {
   },
   conflict: {
     shared: { trust: -0.05, respect: -0.03, affection: -0.035, familiarity: 0.006 },
-    symmetric: { alignment: -0.08, grievance: 0.08 },
+    symmetric: { alignment: -0.05, grievance: 0.05 },
+    actor: { alignment: 0.02, grievance: 0.03 },
+    target: { trust: -0.045, respect: -0.03, alignment: -0.07, grievance: 0.09 },
   },
   repair: {
     shared: { trust: 0.045, respect: 0.025, affection: 0.02, familiarity: 0.008 },
@@ -162,7 +166,9 @@ const SIGNAL_EFFECTS: Record<RelationshipSignalKind, {
   },
   competition: {
     shared: { respect: 0.012, familiarity: 0.008 },
-    symmetric: { alignment: -0.04, grievance: 0.04 },
+    symmetric: { alignment: -0.02, grievance: 0.015 },
+    actor: { respect: 0.012, alignment: 0.028 },
+    target: { trust: -0.012, respect: -0.008, alignment: -0.045, grievance: 0.04 },
   },
   mediation: {
     shared: { trust: 0.025, respect: 0.028, familiarity: 0.006 },

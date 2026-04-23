@@ -27,6 +27,7 @@ import {
   buildLLMPreferenceHeaders,
   getClientModelForProvider,
   LLM_PROVIDER_LABELS,
+  normalizeLLMProvider,
 } from '@/lib/llm/clientPreference'
 import { useLLMPreferenceStore } from '@/stores/llmPreferenceStore'
 import { useAgentStore } from '@/stores/agentStore'
@@ -93,14 +94,22 @@ function getStatusTone(status: ArenaRun['status']) {
 
 function getStageLabel(value: string) { return value.replaceAll('_', ' ') }
 
+function asValidDate(value?: string): Date | null {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 function formatTime(value?: string) {
-  if (!value) return 'Unknown'
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+  const date = asValidDate(value)
+  if (!date) return 'Unknown'
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
 
 function formatTimeShort(value?: string) {
-  if (!value) return ''
-  return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+  const date = asValidDate(value)
+  if (!date) return ''
+  return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
 function participantAccent(index: number) { return accentPairs[index % accentPairs.length] }
@@ -135,7 +144,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
    ────────────────────────────────────────────────────── */
 
 export default function SimulationPage() {
-  const { agents, fetchAgents } = useAgentStore()
+  const { agents, loading: loadingAgents, fetchAgents } = useAgentStore()
   const selectedProvider = useLLMPreferenceStore((s) => s.provider)
   const eventsEndRef = useRef<HTMLDivElement>(null)
 
@@ -178,7 +187,8 @@ export default function SimulationPage() {
   const sortedScorecards = useMemo(() => (
     selectedRun?.scorecardSnapshot.slice().sort((a, b) => b.total - a.total) || []
   ), [selectedRun?.scorecardSnapshot])
-  const runtimeModel = selectedRun?.model || getClientModelForProvider(selectedProvider)
+  const runtimeProvider = normalizeLLMProvider(selectedRun?.provider) || selectedProvider
+  const runtimeModel = selectedRun?.model || getClientModelForProvider(runtimeProvider)
   const latestRound = selectedRun?.ledger.rounds[selectedRun.ledger.rounds.length - 1]
   const degradedEventCount = useMemo(() => runEvents.filter((e) => Boolean(getPayloadRecord(e).degraded)).length, [runEvents])
 
@@ -208,6 +218,7 @@ export default function SimulationPage() {
       if (initialLoadRef.current && payload.runs[0]?.id) {
         setSelectedRunId(payload.runs[0].id)
       }
+      setUiError(null)
       initialLoadRef.current = false
     } catch (error) {
       console.error('Failed to load arena runs:', error)
@@ -222,8 +233,10 @@ export default function SimulationPage() {
       if (!silent) setLoadingDetail(true)
       const payload = await parseResponse<ArenaDetailResponse>(await fetch(`/api/arena/runs/${runId}`, { cache: 'no-store' }))
       setDetail(payload)
+      setUiError(null)
     } catch (error) {
       console.error('Failed to load arena detail:', error)
+      if (!silent) setDetail(null)
       setUiError(error instanceof Error ? error.message : 'Failed to load arena detail.')
     } finally {
       if (!silent) setLoadingDetail(false)
@@ -243,6 +256,13 @@ export default function SimulationPage() {
     setSelectedAgentIds(selectedRun.participantIds)
     setSeatDrafts(Object.fromEntries(selectedRun.seats.map((s) => [s.agentId, s])))
   }, [selectedRun])
+
+  const refreshArenaData = useCallback(async () => {
+    await loadRuns()
+    if (selectedRunId) {
+      await loadRunDetail(selectedRunId, true)
+    }
+  }, [loadRunDetail, loadRuns, selectedRunId])
 
   useEffect(() => {
     if (!selectedRun || selectedRun.status !== 'running') return
@@ -326,6 +346,9 @@ export default function SimulationPage() {
   }
 
   function selectRun(runId: string) {
+    setDetail(null)
+    setExpandedEvents(new Set())
+    setUiError(null)
     setSelectedRunId(runId)
     setArchiveOpen(false)
   }
@@ -341,6 +364,7 @@ export default function SimulationPage() {
     setRoundCount(10)
     setResponseBudget('balanced')
     setUiError(null)
+    setExpandedEvents(new Set())
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -395,7 +419,7 @@ export default function SimulationPage() {
               </button>
 
               {archiveOpen && (
-                <div className="absolute right-0 top-full z-50 mt-1.5 w-[380px] max-h-[420px] overflow-y-auto rounded-md border border-border/40 bg-card/95 backdrop-blur-md shadow-lg scrollbar-thin">
+                <div className="absolute right-0 top-full z-50 mt-1.5 max-h-[420px] w-[min(calc(100vw-2rem),380px)] overflow-y-auto rounded-md border border-border/40 bg-card/95 backdrop-blur-md shadow-lg scrollbar-thin">
                   <div className="border-b border-border/30 px-3 py-2.5 flex items-center justify-between">
                     <span className={labelStyle}>Run Archive</span>
                     <button
@@ -460,7 +484,7 @@ export default function SimulationPage() {
 
             <button
               type="button"
-              onClick={() => void loadRuns()}
+              onClick={() => void refreshArenaData()}
               disabled={loadingRuns}
               className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border/40 bg-muted/20 px-3 text-[11px] font-bold text-muted-foreground transition-colors hover:text-foreground disabled:opacity-60"
             >
@@ -496,7 +520,7 @@ export default function SimulationPage() {
             {degradedEventCount > 0 && (
               <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-pastel-yellow">{degradedEventCount} degraded</span>
             )}
-            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{LLM_PROVIDER_LABELS[selectedProvider]} · {runtimeModel}</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{LLM_PROVIDER_LABELS[runtimeProvider]} · {runtimeModel}</span>
             {sortedScorecards[0] && (
               <div className="ml-auto flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-pastel-yellow">
                 <Crown className="h-3 w-3" />{sortedScorecards[0].agentName} · {sortedScorecards[0].total}pts
@@ -627,7 +651,13 @@ export default function SimulationPage() {
                     <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">{selectedAgentIds.length}/4</span>
                   </div>
                   <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin rounded-sm border border-border/20 bg-muted/5 p-1.5">
-                    {availableAgents.map((agent, idx) => {
+                    {loadingAgents && availableAgents.length === 0 ? (
+                      <div className="flex h-full min-h-[120px] items-center justify-center">
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : availableAgents.length === 0 ? (
+                      <EmptyPanel copy="Create at least two agents before preparing an arena." compact />
+                    ) : availableAgents.map((agent, idx) => {
                       const sel = selectedAgentIds.includes(agent.id)
                       const accent = participantAccent(idx)
                       return (
@@ -650,7 +680,7 @@ export default function SimulationPage() {
 
             {/* Bottom Bar: Action */}
             <div className="border-t border-border/20 bg-muted/10 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <p className="text-[11px] text-muted-foreground">Arena runs are sandboxed. No long-term state is written.</p>
+              <p className="text-[11px] text-muted-foreground">Arena runs are sandboxed. Relationship evidence may be derived after completion.</p>
               <button type="button" onClick={() => void prepareArena()} disabled={preparing}
                 className="inline-flex h-10 w-full sm:w-auto items-center justify-center gap-2 rounded-sm bg-pastel-purple px-8 text-[11px] font-bold uppercase tracking-[0.2em] text-primary-foreground transition-colors hover:bg-pastel-purple/90 disabled:opacity-60">
                 {preparing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Target className="h-4 w-4" />}
@@ -1168,7 +1198,14 @@ function ArenaEventCard({ event, seats, seat, seatIndex, isExpanded, onToggleExp
   }
 
   // 4. Customized Milestone Event: Phase / Run Milestones
-  if (event.kind === 'phase_started' || event.kind === 'phase_completed' || event.kind === 'run_prepared') {
+  if (
+    event.kind === 'phase_started' ||
+    event.kind === 'phase_completed' ||
+    event.kind === 'run_prepared' ||
+    event.kind === 'seat_generated' ||
+    event.kind === 'run_cancelled' ||
+    event.kind === 'run_failed'
+  ) {
     const isError = event.kind === 'run_failed' || event.kind === 'run_cancelled'
     const tone = EVENT_KIND_META[event.kind]?.color || 'text-muted-foreground'
     const borderTone = isError ? 'border-pastel-red/30' : 'border-border/30'
@@ -1342,8 +1379,8 @@ function ReportListCard({ title, items, emptyCopy, accent = 'border', icon }: { 
       </div>
       <div className="space-y-2 flex-1">
         {items.length === 0 ? <EmptyPanel copy={emptyCopy} compact />
-          : items.map((item) => (
-            <div key={item} className={`rounded-sm border ${styles.itemBorder} ${styles.itemBg} px-3 py-2.5 text-[11.5px] leading-relaxed ${styles.itemText} shadow-sm transition-colors hover:bg-card/40`}>{item}</div>
+          : items.map((item, index) => (
+            <div key={`${item}-${index}`} className={`rounded-sm border ${styles.itemBorder} ${styles.itemBg} px-3 py-2.5 text-[11.5px] leading-relaxed ${styles.itemText} shadow-sm transition-colors hover:bg-card/40`}>{item}</div>
           ))}
       </div>
     </div>
