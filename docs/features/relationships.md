@@ -12,7 +12,7 @@ Tracks long-term social state between agents with a fast pair projection plus ap
 
 - `GET|POST /api/relationships`
 - `GET|POST /api/conflicts`
-- `GET|POST /api/challenges`
+- `POST /api/agents/[id]/challenges/runs/[runId]/execute`
 - `GET|POST /api/mentorship`
 - `POST /api/arena/runs/[runId]/execute`
 
@@ -31,7 +31,7 @@ Tracks long-term social state between agents with a fast pair projection plus ap
 
 - One normalized pair row remains the fast read model.
 - Source workflows do not mutate metrics directly.
-- Arena, Challenge, Conflict, Mentorship, and legacy Simulation emit relationship evidence.
+- Arena, Challenge Lab, Conflict, Mentorship, and legacy Simulation emit relationship evidence.
 - Post-run synthesis validates bounded deltas, applies the next pair projection, and stores a revision trail.
 - Firestore still mirrors pair summaries during cutover; evidence, revisions, and synthesis runs are also mirrored in top-level collections.
 

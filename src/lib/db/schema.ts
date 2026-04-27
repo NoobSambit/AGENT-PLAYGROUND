@@ -15,6 +15,9 @@ import type {
   AgentRecord,
   ArenaEvent,
   ArenaRun,
+  ChallengeEvent,
+  ChallengeParticipantResult,
+  ChallengeRun,
   AgentRelationship,
   AgentStats,
   CreativeArtifact,
@@ -45,7 +48,6 @@ import type {
   SharedKnowledge,
   ScenarioRunRecord,
   SimulationRecord,
-  Challenge,
 } from '@/types/database'
 import type {
   LearningAdaptation,
@@ -606,16 +608,64 @@ export const conflicts = pgTable('conflicts', {
   index('conflicts_created_idx').on(table.createdAt),
 ])
 
-export const challenges = pgTable('challenges', {
+export const challengeRuns = pgTable('challenge_runs', {
   id: text('id').primaryKey(),
-  type: text('type').notNull(),
+  primaryAgentId: text('primary_agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  mode: text('mode').notNull(),
+  templateId: text('template_id').notNull(),
   status: text('status').notNull(),
+  latestStage: text('latest_stage').notNull(),
   participantIds: text('participant_ids').array().notNull().default(sql`'{}'::text[]`),
+  eventCount: integer('event_count').notNull().default(0),
+  qualityStatus: text('quality_status').notNull().default('pending'),
+  qualityScore: integer('quality_score'),
+  winnerAgentId: text('winner_agent_id'),
+  provider: text('provider'),
+  model: text('model'),
+  failureReason: text('failure_reason'),
+  cancellationRequested: boolean('cancellation_requested').notNull().default(false),
   createdAt,
-  payload: jsonb('payload').$type<Challenge>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true, mode: 'string' }),
+  payload: jsonb('payload').$type<ChallengeRun>().notNull(),
 }, (table) => [
-  index('challenges_created_idx').on(table.createdAt),
-  index('challenges_status_created_idx').on(table.status, table.createdAt),
+  index('challenge_runs_primary_updated_idx').on(table.primaryAgentId, table.updatedAt),
+  index('challenge_runs_updated_idx').on(table.updatedAt),
+  index('challenge_runs_participant_ids_idx').using('gin', table.participantIds),
+  index('challenge_runs_status_updated_idx').on(table.status, table.updatedAt),
+  index('challenge_runs_template_updated_idx').on(table.templateId, table.updatedAt),
+])
+
+export const challengeEvents = pgTable('challenge_events', {
+  id: text('id').primaryKey(),
+  runId: text('run_id').notNull().references(() => challengeRuns.id, { onDelete: 'cascade' }),
+  sequence: integer('sequence').notNull(),
+  stage: text('stage').notNull(),
+  kind: text('kind').notNull(),
+  speakerType: text('speaker_type').notNull(),
+  speakerAgentId: text('speaker_agent_id'),
+  createdAt,
+  payload: jsonb('payload').$type<ChallengeEvent>().notNull(),
+}, (table) => [
+  uniqueIndex('challenge_events_run_sequence_unique_idx').on(table.runId, table.sequence),
+  index('challenge_events_run_sequence_idx').on(table.runId, table.sequence),
+])
+
+export const challengeParticipantResults = pgTable('challenge_participant_results', {
+  id: text('id').primaryKey(),
+  runId: text('run_id').notNull().references(() => challengeRuns.id, { onDelete: 'cascade' }),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
+  templateId: text('template_id').notNull(),
+  mode: text('mode').notNull(),
+  outcome: text('outcome').notNull(),
+  totalScore: integer('total_score').notNull(),
+  capabilityScore: integer('capability_score').notNull(),
+  relationshipScore: integer('relationship_score'),
+  createdAt,
+  payload: jsonb('payload').$type<ChallengeParticipantResult>().notNull(),
+}, (table) => [
+  index('challenge_results_agent_created_idx').on(table.agentId, table.createdAt),
+  index('challenge_results_run_idx').on(table.runId),
 ])
 
 export const mentorships = pgTable('mentorships', {
@@ -749,7 +799,9 @@ export const schema = {
   sharedKnowledge,
   collectiveBroadcasts,
   conflicts,
-  challenges,
+  challengeRuns,
+  challengeEvents,
+  challengeParticipantResults,
   mentorships,
   arenaRuns,
   arenaEvents,

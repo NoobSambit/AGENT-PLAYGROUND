@@ -11,7 +11,9 @@
 - `conflicts` -> `conflicts`
 - `simulations` -> `simulations`
 - `scenario_runs` -> `scenario_runs`
-- `challenges` -> `challenges`
+- `challenge_runs` -> `challenge_runs`
+- `challenge_runs/{runId}/events` -> `challenge_events`
+- `challenge_runs/{runId}/participant_results` -> `challenge_participant_results`
 - `mentorships` -> `mentorships`
 
 ## Agent Subcollections
@@ -41,6 +43,7 @@
 - Relationship mirrors are deduplicated into one sorted pair row.
 - Legacy `creative_works` are intentionally not backfilled into the new Creative Studio tables.
 - Legacy pre-V2 dream rows are intentionally deleted during Dream Workspace cutover rather than migrated into the new session model.
+- Legacy top-level `challenges` is ignored by Challenge Lab and not backfilled. New challenge data is written only to `challenge_runs` and its run-scoped subcollections.
 - Skill progression IDs become `${agentId}:${category}`.
 - Rate limit IDs become `${feature}:${agentId}`.
 - Agent counters remain on `agents` and are verified against imported child records.

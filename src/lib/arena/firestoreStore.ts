@@ -36,9 +36,11 @@ function toArenaRunSummary(run: ArenaRun): ArenaRunSummary {
     latestStage: run.latestStage,
     topic: run.config.topic,
     objective: run.config.objective,
+    participantIds: run.participantIds,
     participantNames: run.participants.map((participant) => participant.name),
     roundCount: run.config.roundCount,
     currentRound: run.currentRound,
+    winnerAgentId: run.winnerAgentId,
     winnerAgentName: run.participants.find((participant) => participant.id === run.winnerAgentId)?.name,
     eventCount: run.eventCount,
     provider: run.provider,
@@ -72,6 +74,16 @@ export async function listArenaRunSummariesFromFirestore(limitCount = 10): Promi
   ))
 
   return snapshot.docs.map(asArenaRun).map(toArenaRunSummary)
+}
+
+export async function listArenaRunsFromFirestore(limitCount = 10): Promise<ArenaRun[]> {
+  const snapshot = await getDocs(query(
+    collection(db, ARENA_RUNS_COLLECTION),
+    orderBy('createdAt', 'desc'),
+    limit(limitCount)
+  ))
+
+  return snapshot.docs.map(asArenaRun)
 }
 
 export async function listArenaEventsFromFirestore(runId: string): Promise<ArenaEvent[]> {

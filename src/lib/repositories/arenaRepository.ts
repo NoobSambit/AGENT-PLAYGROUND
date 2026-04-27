@@ -32,9 +32,11 @@ function toArenaRunSummary(run: ArenaRun): ArenaRunSummary {
     latestStage: run.latestStage,
     topic: run.config.topic,
     objective: run.config.objective,
+    participantIds: run.participantIds,
     participantNames: run.participants.map((participant) => participant.name),
     roundCount: run.config.roundCount,
     currentRound: run.currentRound,
+    winnerAgentId: run.winnerAgentId,
     winnerAgentName: run.participants.find((participant) => participant.id === run.winnerAgentId)?.name,
     eventCount: run.eventCount,
     provider: run.provider,
@@ -108,6 +110,15 @@ export class ArenaRepository {
     })
 
     return rows.map(mapArenaRunRow).map(toArenaRunSummary)
+  }
+
+  static async listRecentRuns(limitCount: number): Promise<ArenaRun[]> {
+    const rows = await getDb().query.arenaRuns.findMany({
+      orderBy: desc(arenaRuns.createdAt),
+      limit: limitCount,
+    })
+
+    return rows.map(mapArenaRunRow)
   }
 
   static async saveEvent(record: ArenaEvent): Promise<ArenaEvent> {

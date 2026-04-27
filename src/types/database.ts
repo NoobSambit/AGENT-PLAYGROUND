@@ -619,9 +619,11 @@ export interface ArenaRunSummary {
   latestStage: ArenaStage
   topic: string
   objective: string
+  participantIds: string[]
   participantNames: string[]
   roundCount: number
   currentRound: number
+  winnerAgentId?: string
   winnerAgentName?: string
   eventCount: number
   provider?: string
@@ -2290,97 +2292,278 @@ export interface ProfileBootstrapPayload {
 }
 
 // ============================================
-// PHASE 2: Challenge System Types
+// Challenge Lab Types
 // ============================================
 
-export type ChallengeType =
-  | 'debate'
-  | 'collaboration'
-  | 'puzzle'
-  | 'roleplay'
-  | 'creative_collab'
-  | 'negotiation'
-  | 'teaching'
-  | 'brainstorm'
+export type ChallengeRunStatus = 'draft' | 'running' | 'completed' | 'failed' | 'cancelled'
 
-export type ChallengeDifficulty = 'easy' | 'medium' | 'hard' | 'expert'
+export type ChallengeRunMode = 'solo_capability' | 'pair_trial' | 'arena_followup'
 
-export type ChallengeStatus =
-  | 'pending'
-  | 'in_progress'
+export type ChallengeExecutionBudget = 'fast' | 'deep'
+
+export type ChallengeStage =
+  | 'compose'
+  | 'prepare_context'
+  | 'assign_roles'
+  | 'execute_turns'
+  | 'evaluate_outputs'
+  | 'synthesize_relationship_evidence'
+  | 'report'
   | 'completed'
   | 'failed'
-  | 'abandoned'
 
-export interface ChallengeObjective {
-  id: string
-  description: string
-  isComplete: boolean
-  completedAt?: string
-}
+export type ChallengeEventKind =
+  | 'run_created'
+  | 'stage_started'
+  | 'stage_completed'
+  | 'role_assigned'
+  | 'agent_turn_generated'
+  | 'judge_evaluation'
+  | 'score_update'
+  | 'relationship_evidence_prepared'
+  | 'report_published'
+  | 'run_failed'
+  | 'run_cancelled'
+
+export type ChallengeTemplateId =
+  | 'solo_memory_precision'
+  | 'solo_decision_pressure'
+  | 'solo_creation_to_spec'
+  | 'pair_collaboration_delivery'
+  | 'pair_conflict_repair'
+  | 'arena_claim_proof'
+
+export type ChallengeQualityStatus = 'pending' | 'passed' | 'failed' | 'degraded'
 
 export interface ChallengeTemplate {
-  id: string
-  name: string
-  type: ChallengeType
-  description: string
-  difficulty: ChallengeDifficulty
-
-  // Challenge structure
-  objectives: string[]
-  timeLimit?: number // in minutes
+  id: ChallengeTemplateId
+  mode: ChallengeRunMode
+  title: string
+  group: 'solo' | 'relationship' | 'arena_followup'
+  purpose: string
+  brief: string
   minParticipants: number
   maxParticipants: number
-
-  // Rewards
-  // Rules and prompts
-  systemPrompt: string
-  evaluationCriteria: string[]
-
-  // Tags for filtering
-  tags: string[]
+  scoringFocus: string[]
+  relationshipSignals?: RelationshipSignalKind[]
 }
 
-export interface Challenge {
+export interface ChallengeParticipant {
   id: string
-  templateId: string
-  type: ChallengeType
   name: string
-  description: string
-  difficulty: ChallengeDifficulty
+  persona: string
+  goals: string[]
+}
 
-  // Participants
-  participants: string[] // Agent IDs
-  initiator: string // Agent ID who started the challenge
+export interface ChallengeRolePacket {
+  agentId: string
+  role: string
+  objective: string
+  constraints: string[]
+  successCriteria: string[]
+}
 
-  // Progress
-  status: ChallengeStatus
-  objectives: ChallengeObjective[]
-  currentRound: number
-  maxRounds: number
-
-  // Results
-  messages: Array<{
-    id: string
-    agentId: string
-    agentName: string
-    content: string
-    timestamp: string
-    round: number
-  }>
-
-  // Evaluation
-  evaluation?: {
-    success: boolean
-    score: number // 0-100
-    feedback: string
-    participantScores: Record<string, number>
-  }
-
-  // Timestamps
-  startedAt: string
-  completedAt?: string
+export interface ChallengeTurn {
+  id: string
+  agentId: string
+  agentName: string
+  role: string
+  content: string
+  round: number
+  stage: ChallengeStage
   createdAt: string
+  sourceRefs?: string[]
+}
+
+export interface ChallengeDeterministicCheck {
+  id: string
+  label: string
+  passed: boolean
+  score: number
+  details: string
+}
+
+export interface ChallengeScorecard {
+  agentId: string
+  agentName: string
+  outcome: 'passed' | 'failed' | 'winner' | 'runner_up'
+  totalScore: number
+  capabilityScore: number
+  relationshipScore?: number
+  strengths: string[]
+  weaknesses: string[]
+  evidenceEventIds: string[]
+}
+
+export interface ChallengeRelationshipSignalDraft {
+  agentId1: string
+  agentId2: string
+  actorAgentId?: string
+  targetAgentId?: string
+  signalKind: RelationshipSignalKind
+  valence: number
+  weight: number
+  confidence: number
+  summary: string
+  excerptRefs: string[]
+}
+
+export interface ChallengeRunReport {
+  id: string
+  runId: string
+  templateId: ChallengeTemplateId
+  overallScore: number
+  capabilityScore: number
+  relationshipScore?: number
+  passed: boolean
+  degraded: boolean
+  deterministicChecks: ChallengeDeterministicCheck[]
+  scorecards: ChallengeScorecard[]
+  strengths: string[]
+  weaknesses: string[]
+  verdictSummary: string
+  keyEvidenceEventIds: string[]
+  recommendedNextChallenge?: ChallengeTemplateId
+  relationshipSignals: ChallengeRelationshipSignalDraft[]
+  judgeRawOutput?: Record<string, unknown>
+  validationWarnings: string[]
+  promptVersion: string
+  createdAt: string
+}
+
+export interface ChallengeRun {
+  id: string
+  primaryAgentId: string
+  mode: ChallengeRunMode
+  templateId: ChallengeTemplateId
+  status: ChallengeRunStatus
+  latestStage: ChallengeStage
+  participantIds: string[]
+  participants: ChallengeParticipant[]
+  scenario?: string
+  sourceArenaRunId?: string
+  sourceEventIds?: string[]
+  executionBudget: ChallengeExecutionBudget
+  eventCount: number
+  rolePackets: ChallengeRolePacket[]
+  turns: ChallengeTurn[]
+  deterministicChecks: ChallengeDeterministicCheck[]
+  report?: ChallengeRunReport
+  qualityStatus: ChallengeQualityStatus
+  qualityScore?: number
+  winnerAgentId?: string
+  provider?: string
+  model?: string
+  failureReason?: string
+  cancellationRequested: boolean
+  progressAppliedAt?: string
+  contextSummary?: string
+  promptVersion: string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
+export interface ChallengeEvent {
+  id: string
+  runId: string
+  sequence: number
+  stage: ChallengeStage
+  kind: ChallengeEventKind
+  speakerType: 'system' | 'agent' | 'judge'
+  speakerAgentId?: string
+  speakerName?: string
+  title: string
+  content: string
+  summary?: string
+  scoreSnapshot?: {
+    overallScore?: number
+    perAgent?: Record<string, number>
+  }
+  payload?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface ChallengeParticipantResult {
+  id: string
+  runId: string
+  agentId: string
+  templateId: ChallengeTemplateId
+  mode: ChallengeRunMode
+  outcome: ChallengeScorecard['outcome']
+  totalScore: number
+  capabilityScore: number
+  relationshipScore?: number
+  createdAt: string
+  payload: ChallengeScorecard
+}
+
+export interface ChallengeRunSummary {
+  id: string
+  status: ChallengeRunStatus
+  latestStage: ChallengeStage
+  mode: ChallengeRunMode
+  templateId: ChallengeTemplateId
+  templateTitle: string
+  participantNames: string[]
+  qualityScore?: number
+  winnerAgentName?: string
+  eventCount: number
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
+export interface ChallengeRelationshipCandidate {
+  partnerId: string
+  partnerName: string
+  relationshipTypes: AgentRelationship['relationshipTypes']
+  status: AgentRelationship['status']
+  tension: number
+  bondStrength: number
+  recentSourceCounts: RelationshipSourceStats
+  whyRecommended: string
+}
+
+export interface ChallengeArenaFollowupCandidate {
+  arenaRunId: string
+  title: string
+  participantIds: string[]
+  participantNames: string[]
+  winnerAgentId?: string
+  completedAt?: string
+  suggestedScenario: string
+  sourceEventIds: string[]
+}
+
+export interface ChallengeLabBootstrap {
+  agent: {
+    id: string
+    name: string
+    challengesCompleted: number
+    challengeWins: number
+  }
+  templates: ChallengeTemplate[]
+  recentRuns: ChallengeRunSummary[]
+  activeRun?: ChallengeRun | null
+  activeEvents?: ChallengeEvent[]
+  aggregateStats: {
+    completedCount: number
+    failedCount: number
+    runningCount: number
+    averageScore: number
+    recentScore?: number
+    relationshipTrialCount: number
+  }
+  recommendedNextTemplates: ChallengeTemplateId[]
+  relationshipCandidates: ChallengeRelationshipCandidate[]
+  arenaFollowupCandidates: ChallengeArenaFollowupCandidate[]
+}
+
+export interface ChallengeRunDetail {
+  run: ChallengeRun
+  events: ChallengeEvent[]
+  participantResults: ChallengeParticipantResult[]
 }
 
 // ============================================

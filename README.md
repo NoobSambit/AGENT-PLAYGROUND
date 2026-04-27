@@ -2,7 +2,7 @@
 
 `AGENT-PLAYGROUND` is an inspectable AI agent platform built with Next.js, React, TypeScript, PostgreSQL, Drizzle, and LLM-backed workflows.
 
-The app centers on agents with persistent identity, emotional state, memory, relationships, mentorship, creativity, challenges, and multi-agent simulation features.
+The app centers on agents with persistent identity, emotional state, memory, relationships, mentorship, creativity, Challenge Lab capability and relationship trials, and multi-agent simulation features.
 
 ## Quick Start
 

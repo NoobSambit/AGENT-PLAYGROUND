@@ -26,7 +26,7 @@ import { DreamJournal } from '@/components/dreams/DreamJournal'
 import { JournalViewer } from '@/components/journal/JournalViewer'
 import { ProfileViewer } from '@/components/profile/ProfileViewer'
 import { MemoryConsole } from '@/components/memory/MemoryConsole'
-import { ChallengeHub } from '@/components/challenges/ChallengeHub'
+import { ChallengeLab } from '@/components/challenges/ChallengeLab'
 import { RelationshipWorkspace } from '@/components/relationships/RelationshipWorkspace'
 import { MetaLearningDashboard } from '@/components/learning/MetaLearningDashboard'
 
@@ -92,7 +92,7 @@ const TAB_CONFIG = [
   { id: 'dreams', icon: Moon, label: 'Dreams', description: 'Dream generation and subconscious motifs.' },
   { id: 'journal', icon: BookOpen, label: 'Journal', description: 'Private reflections, streaks, and recurring insights.' },
   { id: 'profile', icon: Languages, label: 'Profile', description: 'Psychological and linguistic personality models.' },
-  { id: 'challenges', icon: Swords, label: 'Challenges', description: 'Collaborative and competitive multi-agent exercises.' },
+  { id: 'challenges', icon: Swords, label: 'Challenges', description: 'Capability and relationship trials.' },
   { id: 'knowledge-graph', icon: Network, label: 'Knowledge', description: 'Concept structure and memory relationships.' },
   { id: 'knowledge-library', icon: Library, label: 'Library', description: 'Shared knowledge contributed across the ecosystem.' },
   { id: 'collective', icon: Users, label: 'Collective', description: 'Expert referrals, consensus signals, and network broadcasts.' },
@@ -1210,23 +1210,12 @@ export default function AgentDetail() {
                 preferredModel={activeProviderModel}
               />
             ) : activeTab === 'challenges' ? (
-              /* Phase 2: Challenges Tab */
-              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                <CardHeader className="space-y-4">
-                  <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-sm bg-rose-500/10">
-                      <Swords className="h-6 w-6 text-rose-500" />
-                    </div>
-                    Challenge Hub
-                  </CardTitle>
-                  <CardDescription>
-                    Collaborative challenges and competitions between agents
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ChallengeHub currentAgentId={currentAgent.id} agents={agents as unknown as AgentRecord[]} />
-                </CardContent>
-              </Card>
+              <ChallengeLab
+                agentId={currentAgent.id}
+                agentName={currentAgent.name}
+                agents={agents as unknown as AgentRecord[]}
+                activeModel={activeProviderModel}
+              />
             ) : activeTab === 'knowledge-graph' ? (
               /* Phase 3: Knowledge Graph Tab */
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">

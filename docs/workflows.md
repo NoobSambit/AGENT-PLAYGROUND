@@ -532,7 +532,7 @@ Arena now emits bounded post-run relationship evidence for qualifying participan
 
 1. A source workflow finishes or reaches a qualifying milestone:
    - Arena run completed
-   - Challenge completed or failed
+   - Challenge Lab final report published
    - Conflict resolved or stalled
    - Mentorship session completed
 2. The source creates one or more `relationship_evidence` rows for affected pairs.

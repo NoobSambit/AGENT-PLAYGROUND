@@ -17,7 +17,9 @@ import type {
   AgentRelationship,
   ArenaEvent,
   ArenaRun,
-  Challenge,
+  ChallengeEvent,
+  ChallengeParticipantResult,
+  ChallengeRun,
   Mentorship,
   MentorshipSession,
   RelationshipDirectionalDelta,
@@ -740,50 +742,45 @@ export class RelationshipOrchestrator {
     })
   }
 
-  async applyChallengeOutcome(challenge: Challenge) {
-    if (challenge.participants.length < 2) {
+  async applyChallengeRunOutcome(
+    run: ChallengeRun,
+    participantResults: ChallengeParticipantResult[],
+    events: ChallengeEvent[]
+  ) {
+    if (run.participantIds.length < 2 || !run.report?.relationshipSignals?.length) {
       return []
     }
 
-    const drafts: RelationshipEvidenceDraft[] = []
-    const groupedMessages = challenge.messages.reduce<Record<string, typeof challenge.messages>>((acc, message) => {
-      acc[message.agentId] = acc[message.agentId] || []
-      acc[message.agentId].push(message)
-      return acc
-    }, {})
-
-    const participantPairs = challenge.participants.flatMap((left, index) =>
-      challenge.participants.slice(index + 1).map((right) => [left, right] as const)
-    )
-
-    for (const [left, right] of participantPairs) {
-      const leftMessages = groupedMessages[left] || []
-      const rightMessages = groupedMessages[right] || []
-      const cooperationScore = Math.min(leftMessages.length, rightMessages.length) > 0 ? 0.62 : 0.35
-      drafts.push({
-        agentId1: left,
-        agentId2: right,
-        signalKind: challenge.type === 'debate' || challenge.type === 'negotiation'
-          ? 'competition'
-          : cooperationScore > 0.5
-            ? 'coalition'
-            : 'support',
-        valence: challenge.status === 'completed' ? 0.18 : challenge.status === 'failed' ? -0.12 : 0.02,
-        confidence: 0.66,
-        weight: 0.52,
-        summary: `${challenge.name} ended ${challenge.status.replace(/_/g, ' ')} after ${challenge.currentRound} rounds.`,
+    const eventIds = new Set(events.map((event) => event.id))
+    const resultScores = Object.fromEntries(participantResults.map((result) => [result.agentId, result.totalScore]))
+    const drafts: RelationshipEvidenceDraft[] = run.report.relationshipSignals
+      .filter((draft) => draft.excerptRefs.some((ref) => eventIds.has(ref)))
+      .map((draft) => ({
+        agentId1: draft.agentId1,
+        agentId2: draft.agentId2,
+        actorAgentId: draft.actorAgentId,
+        targetAgentId: draft.targetAgentId,
+        signalKind: draft.signalKind,
+        valence: draft.valence,
+        confidence: draft.confidence,
+        weight: draft.weight,
+        summary: draft.summary,
+        excerptRefs: draft.excerptRefs.filter((ref) => eventIds.has(ref)),
         metadata: {
-          type: challenge.type,
-          score: challenge.evaluation?.score,
+          templateId: run.templateId,
+          mode: run.mode,
+          qualityScore: run.qualityScore,
+          participantScores: resultScores,
         },
-        sourceStage: challenge.status,
-        createdAt: challenge.completedAt || challenge.createdAt,
-      })
-    }
+        sourceStage: 'report',
+        createdAt: run.completedAt || run.updatedAt,
+      }))
 
     return this.applySourceEvidence({
       sourceKind: 'challenge',
-      sourceId: challenge.id,
+      sourceId: run.id,
+      provider: run.provider,
+      model: run.model,
       evidence: drafts,
     })
   }

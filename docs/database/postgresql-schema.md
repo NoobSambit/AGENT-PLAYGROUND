@@ -36,7 +36,9 @@
 - `shared_knowledge`
 - `collective_broadcasts`
 - `conflicts`
-- `challenges`
+- `challenge_runs`
+- `challenge_events`
+- `challenge_participant_results`
 - `mentorships`
 - `simulations`
 - `scenario_runs`
@@ -52,4 +54,5 @@
 - Profile Intelligence keeps analysis runs, interview transcript turns, and pipeline trace rows separate so the latest psychological profile can be updated without losing run history.
 - Dream Workspace keeps compose sessions, versioned draft/saved dream artifacts, and pipeline trace rows separate so staged generation, repair history, explicit save boundaries, and active dream residue stay inspectable.
 - Journal Workspace keeps compose sessions, versioned draft/saved entries, and pipeline trace rows separate so review state, repair history, and explicit save boundaries stay inspectable.
+- Challenge Lab drops the legacy `challenges` table and stores inspectable one-click runs in `challenge_runs`, append-only pipeline events in `challenge_events`, and per-agent queryable outcomes in `challenge_participant_results`.
 - Shared history tables keep direct references and payload snapshots.

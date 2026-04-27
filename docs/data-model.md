@@ -41,7 +41,9 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - `shared_knowledge`
 - `collective_broadcasts`
 - `conflicts`
-- `challenges`
+- `challenge_runs`
+- `challenge_events`
+- `challenge_participant_results`
 - `mentorships`
 - `arena_runs`
 - `arena_events`
@@ -81,7 +83,11 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - Store arena debates in `arena_runs` and `arena_events` rather than overloading `simulations`, because arena drafts, append-only event feeds, score snapshots, and final verdict reports have a different lifecycle from the legacy simulation record.
 - `arena_runs` index execution state (`status`, `latest_stage`, `participant_ids`, `round_count`, `current_round`, `event_count`, `winner_agent_id`, `provider`, `model`, `failure_reason`) while the full arena contract remains in payload.
 - `arena_events` index append-only feed state (`run_id`, `sequence`, `stage`, `kind`, `speaker_type`, `speaker_agent_id`, `round`) while preserving the full renderable event payload.
-- Legacy rows are intentionally preserved. If the new quality fields are absent, services and route serializers should treat them as `legacy_unvalidated` rather than rewriting historical payloads in place.
+- Store Challenge Lab runs in `challenge_runs`, events in `challenge_events`, and per-agent query rows in `challenge_participant_results`. The old `challenges` table is intentionally dropped by `drizzle/0011_challenge_lab.sql`.
+- `challenge_runs` index agent lookup, participant lookup, status dashboards, latest stage, quality score, provider/model, cancellation state, and final winner while preserving the full inspectable run payload.
+- `challenge_events` is append-only by `run_id` and `sequence`, allowing the UI to show live stage and model-call progress instead of a generic loading state.
+- `challenge_participant_results` supports per-agent challenge history and idempotent counter application through `ChallengeRun.progressAppliedAt`.
+- Legacy rows are generally preserved and treated as `legacy_unvalidated` when quality fields are absent. Challenge Lab is the exception: old `challenges` rows are a hard replacement and are not rendered or migrated.
 
 ## Detailed References
 

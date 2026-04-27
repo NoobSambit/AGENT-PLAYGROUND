@@ -45,7 +45,15 @@
 - `GET|POST /api/collective-intelligence`
 - `GET|POST /api/knowledge`
 - `GET|POST /api/mentorship`
-- `GET|POST /api/challenges`
+
+## Challenge Lab
+
+- `GET /api/agents/[id]/challenges`
+- `POST /api/agents/[id]/challenges/runs`
+- `GET /api/agents/[id]/challenges/runs/[runId]`
+- `POST /api/agents/[id]/challenges/runs/[runId]/execute`
+- `POST /api/agents/[id]/challenges/runs/[runId]/cancel`
+- `GET|POST /api/challenges` is legacy-only and returns `410`.
 
 ## Arena
 
@@ -112,7 +120,7 @@ Legacy simulation compatibility routes still exist:
   - `rebuild_from_source`
   - legacy `update` compatibility requests, which are converted into manual evidence before synthesis
 - `POST /api/conflicts` action `analyze` remains read-only. Action `resolve` now saves the conflict result, then emits relationship evidence and runs synthesis instead of mutating pair metrics inline.
-- `POST /api/challenges` terminal transitions now emit relationship evidence when a challenge completes or fails.
+- `POST /api/agents/[id]/challenges/runs/[runId]/execute` emits Challenge Lab relationship evidence after final report for qualifying pair-capable runs.
 - `POST /api/mentorship` action `complete_session` now emits mentorship relationship evidence after the session is persisted.
 - `POST /api/arena/runs/[runId]/execute` now also triggers post-run relationship evidence and synthesis for qualifying participant pairs.
 - `GET /api/arena/runs/[runId]` returns one arena run plus its append-only event feed for live polling or replay.
