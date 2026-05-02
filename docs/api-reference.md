@@ -32,6 +32,7 @@
 - `POST /api/agents/[id]/journal/sessions/[sessionId]/generate`
 - `POST /api/agents/[id]/journal/sessions/[sessionId]/save`
 - `GET|POST /api/agents/[id]/learning`
+- `GET /api/agents/[id]/timeline`
 - `GET|POST /api/agents/[id]/profile`
 - `GET /api/agents/[id]/profile/evolution`
 - `POST /api/agents/[id]/profile/runs`
@@ -89,6 +90,7 @@ Legacy simulation compatibility routes still exist:
 - `POST /api/agents/[id]/chat` now also drives learning side effects: observation capture, follow-up resolution, pattern confirmation, and adaptation refresh.
 - `GET /api/agents/[id]/learning` returns learning state built from patterns, goals, adaptations, skills, and recent observations.
 - `POST /api/agents/[id]/learning` remains available for explicit feature actions such as manual conversation analysis, goal generation, skill updates, and manual adaptation creation.
+- `GET /api/agents/[id]/timeline` returns the Agent Chronicle workspace: normalized timeline events, summary metrics, narrative threads, day clusters, source coverage, `generatedAt`, and optional cursor pagination. It accepts `limit`, `cursor`, `from`, `to`, `types`, `minImportance`, `quality`, and `q`.
 - `GET /api/agents/[id]/creative` now returns Creative Studio bootstrap state: allowed controls, defaults, candidate context signals, recent sessions, and published library items.
 - `POST /api/agents/[id]/creative` now creates a normalized creative session draft instead of generating and publishing immediately.
 - `POST /api/agents/[id]/creative/sessions/[sessionId]/generate` runs the two-pass draft -> evaluate -> repair workflow and returns the full session detail.

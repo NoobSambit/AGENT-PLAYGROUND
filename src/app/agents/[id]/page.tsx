@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
-import { MemoryRecord, MessageRecord, AgentRecord, ScenarioAnalyticsSummary, ScenarioBranchPoint, ScenarioIntervention, ScenarioRunRecord, EMOTION_COLORS, EmotionType, MessageRenderBlock, TimelineEvent, JournalEntry } from '@/types/database'
+import { MemoryRecord, AgentRecord, ScenarioAnalyticsSummary, ScenarioBranchPoint, ScenarioIntervention, ScenarioRunRecord, EMOTION_COLORS, EmotionType, MessageRenderBlock } from '@/types/database'
 import { ArrowLeft, Send, User, MessageCircle, Brain, TrendingUp, Heart, Clock, Palette, Moon, BookOpen, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles, LayoutDashboard } from 'lucide-react'
 import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { motion } from 'framer-motion'
@@ -47,7 +47,6 @@ import { useLLMPreferenceStore } from '@/stores/llmPreferenceStore'
 // Phase 1 Services
 import { agentStatsService } from '@/lib/services/agentStatsService'
 import { emotionalService } from '@/lib/services/emotionalService'
-import { timelineService } from '@/lib/services/timelineService'
 
 type TabType =
   | 'overview'
@@ -132,8 +131,6 @@ export default function AgentDetail() {
   const [profileRefreshToken, setProfileRefreshToken] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Phase 1: Timeline events (generated from memories and messages)
-  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([])
 
   // Get agent stats with defaults
   const agentStats = currentAgent?.stats || agentStatsService.createDefaultStats()
@@ -334,41 +331,11 @@ export default function AgentDetail() {
     if (tab === 'memory' && memories.length === 0) {
       void loadMemories()
     }
-    if (tab === 'timeline' && timelineEvents.length === 0 && currentAgent) {
-      void loadTimelineEvents()
-    }
     if (tab === 'learning' && !learningState) {
       void loadLearningData()
     }
     if (tab === 'scenarios' && scenarioBranchPoints.length === 0) {
       void loadScenarioLab()
-    }
-  }
-
-  const loadTimelineEvents = async () => {
-    if (!currentAgent) return
-    try {
-      const loadedMemories = memories.length > 0 ? memories : await loadMemories()
-      const [journalBootstrap, dreamBootstrap] = await Promise.all([
-        fetch(`/api/agents/${currentAgent.id}/journal`, { cache: 'no-store' }),
-        fetch(`/api/agents/${currentAgent.id}/dream`, { cache: 'no-store' }),
-      ])
-      const journalPayload = journalBootstrap.ok
-        ? await journalBootstrap.json() as { recentSavedEntries?: JournalEntry[] }
-        : null
-      const dreamPayload = dreamBootstrap.ok
-        ? await dreamBootstrap.json() as { recentSavedDreams?: import('@/types/database').Dream[] }
-        : null
-      const events = await timelineService.aggregateEvents(
-        currentAgent as unknown as AgentRecord,
-        loadedMemories,
-        messages as unknown as MessageRecord[],
-        dreamPayload?.recentSavedDreams || [],
-        journalPayload?.recentSavedEntries || []
-      )
-      setTimelineEvents(events)
-    } catch (error) {
-      console.error('Failed to load timeline events:', error)
     }
   }
 
@@ -438,7 +405,6 @@ export default function AgentDetail() {
 
   const handleMemoryMutation = async () => {
     await loadMemories(true)
-    setTimelineEvents([])
   }
 
   const handleMemoryCountChange = useCallback((count: number) => {
@@ -1110,21 +1076,9 @@ export default function AgentDetail() {
                 </CardContent>
               </Card>
             ) : activeTab === 'timeline' ? (
-              /* Timeline Tab */
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                <CardHeader className="space-y-4">
-                  <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-sm bg-[var(--color-pastel-blue)]/20">
-                      <Clock className="h-6 w-6 text-[var(--color-pastel-blue)]" />
-                    </div>
-                    Timeline Explorer
-                  </CardTitle>
-                  <CardDescription>
-                    Explore {currentAgent.name}&apos;s life events and memories over time
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <TimelineExplorer events={timelineEvents} />
+                <CardContent className="p-6">
+                  <TimelineExplorer agentId={currentAgent.id} agentName={currentAgent.name} />
                 </CardContent>
               </Card>
             ) : activeTab === 'relationships' ? (

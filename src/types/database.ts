@@ -185,6 +185,115 @@ export interface TimelineFilters {
   searchQuery?: string
 }
 
+export type TimelineEventV2Type =
+  | 'conversation'
+  | 'memory'
+  | 'emotion'
+  | 'relationship'
+  | 'dream'
+  | 'creative'
+  | 'journal'
+  | 'profile'
+  | 'scenario'
+  | 'challenge'
+  | 'arena'
+  | 'learning'
+  | 'mentorship'
+  | 'knowledge'
+
+export type TimelineQualityFilter = 'all' | 'passed' | 'degraded' | 'failed' | 'legacy_unvalidated' | 'unknown'
+
+export interface TimelineSourceRefV2 {
+  type: string
+  id: string
+  label: string
+  href?: string
+}
+
+export interface TimelineEventV2 {
+  id: string
+  agentId: string
+  type: TimelineEventV2Type
+  timestamp: string
+  title: string
+  summary: string
+  importance: number
+  source: string
+  sourceId: string
+  status?: string
+  qualityStatus?: string
+  qualityScore?: number
+  themes: string[]
+  participants: Array<{ id: string; name?: string; role?: string }>
+  evidenceRefs: string[]
+  sourceRefs: TimelineSourceRefV2[]
+  relatedRefs: TimelineSourceRefV2[]
+  detail: Record<string, unknown>
+}
+
+export interface TimelineThreadV2 {
+  id: string
+  label: string
+  eventIds: string[]
+  count: number
+  startTime: string
+  endTime: string
+  importance: number
+}
+
+export interface TimelineClusterV2 {
+  id: string
+  label: string
+  eventIds: string[]
+  startTime: string
+  endTime: string
+  dominantType: TimelineEventV2Type
+  count: number
+}
+
+export interface TimelineSourceCoverage {
+  source: TimelineEventV2Type
+  label: string
+  count: number
+  status: 'loaded' | 'empty' | 'degraded'
+  error?: string
+}
+
+export interface TimelineWorkspaceSummary {
+  totalEvents: number
+  visibleEvents: number
+  highImportanceEvents: number
+  averageImportance: number
+  topSource?: TimelineEventV2Type
+  latestEventAt?: string
+  oldestEventAt?: string
+}
+
+export interface TimelineWorkspacePayload {
+  agent: {
+    id: string
+    name: string
+  }
+  events: TimelineEventV2[]
+  summary: TimelineWorkspaceSummary
+  threads: TimelineThreadV2[]
+  clusters: TimelineClusterV2[]
+  coverage: TimelineSourceCoverage[]
+  generatedAt: string
+  nextCursor?: string
+}
+
+export interface TimelineWorkspaceQuery {
+  limit?: number
+  cursor?: string
+  from?: string
+  to?: string
+  types?: TimelineEventV2Type[]
+  minImportance?: number
+  quality?: TimelineQualityFilter
+  q?: string
+}
+
 // ============================================
 // PHASE 1: Emotion Types
 // ============================================

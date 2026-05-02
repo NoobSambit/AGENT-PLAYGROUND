@@ -1,490 +1,632 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ElementType } from 'react'
+import { motion } from 'framer-motion'
 import {
-  TimelineEvent,
-  TimelineEventType,
-  TimelineFilters,
-  NarrativeThread
+  AlertTriangle,
+  Archive,
+  BookOpen,
+  Brain,
+  Brush,
+  CheckCircle2,
+  Clock,
+  GitBranch,
+  GraduationCap,
+  Heart,
+  Library,
+  Loader2,
+  MessageCircle,
+  Moon,
+  Network,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Swords,
+  Users,
+  X,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
+import type {
+  TimelineClusterV2,
+  TimelineEventV2,
+  TimelineEventV2Type,
+  TimelineQualityFilter,
+  TimelineSourceCoverage,
+  TimelineWorkspacePayload,
 } from '@/types/database'
-import {
-  timelineService,
-  EVENT_TYPE_ICONS,
-  EVENT_TYPE_COLORS
-} from '@/lib/services/timelineService'
 
 interface TimelineExplorerProps {
-  events: TimelineEvent[]
+  agentId: string
+  agentName: string
   className?: string
 }
 
-type ZoomLevel = 'day' | 'week' | 'month' | 'year'
+const premiumPanel = 'rounded-md border border-border/40 bg-card/40 backdrop-blur-md shadow-sm'
+const subPanel = 'rounded-sm border border-border/30 bg-muted/20'
+const labelStyle = 'text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80'
 
-const ZOOM_LABELS: Record<ZoomLevel, string> = {
-  day: 'Day',
-  week: 'Week',
-  month: 'Month',
-  year: 'Year'
+const SOURCE_CONFIG: Record<TimelineEventV2Type, { label: string; icon: ElementType; className: string }> = {
+  conversation: { label: 'Chat', icon: MessageCircle, className: 'text-pastel-blue border-pastel-blue/30 bg-pastel-blue/10' },
+  memory: { label: 'Memory', icon: Brain, className: 'text-pastel-purple border-pastel-purple/30 bg-pastel-purple/10' },
+  emotion: { label: 'Emotion', icon: Heart, className: 'text-pastel-red border-pastel-red/30 bg-pastel-red/10' },
+  relationship: { label: 'Relationships', icon: Users, className: 'text-pastel-green border-pastel-green/30 bg-pastel-green/10' },
+  dream: { label: 'Dreams', icon: Moon, className: 'text-pastel-purple border-pastel-purple/30 bg-pastel-purple/10' },
+  creative: { label: 'Creative', icon: Brush, className: 'text-pastel-yellow border-pastel-yellow/30 bg-pastel-yellow/10' },
+  journal: { label: 'Journal', icon: BookOpen, className: 'text-pastel-blue border-pastel-blue/30 bg-pastel-blue/10' },
+  profile: { label: 'Profile', icon: ShieldCheck, className: 'text-pastel-green border-pastel-green/30 bg-pastel-green/10' },
+  scenario: { label: 'Scenarios', icon: GitBranch, className: 'text-pastel-pink border-pastel-pink/30 bg-pastel-pink/10' },
+  challenge: { label: 'Challenges', icon: Swords, className: 'text-pastel-red border-pastel-red/30 bg-pastel-red/10' },
+  arena: { label: 'Arena', icon: Sparkles, className: 'text-pastel-yellow border-pastel-yellow/30 bg-pastel-yellow/10' },
+  learning: { label: 'Learning', icon: GraduationCap, className: 'text-pastel-green border-pastel-green/30 bg-pastel-green/10' },
+  mentorship: { label: 'Mentorship', icon: Network, className: 'text-pastel-purple border-pastel-purple/30 bg-pastel-purple/10' },
+  knowledge: { label: 'Knowledge', icon: Library, className: 'text-pastel-blue border-pastel-blue/30 bg-pastel-blue/10' },
 }
 
-const EVENT_TYPE_LABELS: Record<TimelineEventType, string> = {
-  conversation: 'Conversations',
-  memory: 'Memories',
-  emotion: 'Emotions',
-  relationship: 'Relationships',
-  dream: 'Dreams',
-  creative: 'Creative Works',
-  journal: 'Journal Entries'
-}
+const SOURCE_ORDER = Object.keys(SOURCE_CONFIG) as TimelineEventV2Type[]
+const QUALITY_OPTIONS: Array<{ value: TimelineQualityFilter; label: string }> = [
+  { value: 'all', label: 'All quality' },
+  { value: 'passed', label: 'Passed' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'legacy_unvalidated', label: 'Legacy' },
+  { value: 'unknown', label: 'Unknown' },
+]
 
-export function TimelineExplorer({ events, className = '' }: TimelineExplorerProps) {
-  const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('week')
-  const [filters, setFilters] = useState<TimelineFilters>({
-    types: ['all'],
-    dateRange: { start: null, end: null },
-    minImportance: 0,
-    searchQuery: ''
-  })
-  const [selectedEvent, setSelectedEvent] = useState<TimelineEvent | null>(null)
-  const [showFilters, setShowFilters] = useState(false)
-
-  // Apply filters
-  const filteredEvents = useMemo(() => {
-    let result = [...events]
-
-    // Filter by types
-    if (!filters.types.includes('all')) {
-      result = result.filter(e => filters.types.includes(e.type))
-    }
-
-    // Filter by importance
-    if (filters.minImportance > 0) {
-      result = result.filter(e => e.importance >= filters.minImportance)
-    }
-
-    // Filter by search query
-    if (filters.searchQuery) {
-      const query = filters.searchQuery.toLowerCase()
-      result = result.filter(e =>
-        e.title.toLowerCase().includes(query) ||
-        e.description.toLowerCase().includes(query)
-      )
-    }
-
-    return result.sort((a, b) =>
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    )
-  }, [events, filters])
-
-  // Detect narrative threads
-  const threads = useMemo(() =>
-    timelineService.detectNarrativeThreads(filteredEvents),
-    [filteredEvents]
-  )
-
-  // Get insights
-  const insights = useMemo(() =>
-    timelineService.getTemporalInsights(filteredEvents),
-    [filteredEvents]
-  )
-
-  const toggleTypeFilter = (type: TimelineEventType) => {
-    setFilters(prev => {
-      const currentTypes = prev.types.includes('all') ? [] : [...prev.types]
-
-      if (currentTypes.includes(type)) {
-        const newTypes = currentTypes.filter(t => t !== type)
-        return { ...prev, types: newTypes.length === 0 ? ['all'] : newTypes }
-      } else {
-        return { ...prev, types: [...currentTypes, type] }
-      }
-    })
+async function parseResponse<T>(response: Response): Promise<T> {
+  const raw = await response.text()
+  const payload = raw ? JSON.parse(raw) as Record<string, unknown> : {}
+  if (!response.ok) {
+    throw new Error(typeof payload.error === 'string' ? payload.error : `Request failed with status ${response.status}`)
   }
+  return payload as T
+}
 
+function formatDateTime(value?: string) {
+  if (!value) return 'Unknown'
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
+}
+
+function formatDay(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date(value))
+}
+
+function getQualityClass(status?: string) {
+  if (status === 'passed') return 'border-pastel-green/30 bg-pastel-green/10 text-pastel-green'
+  if (status === 'failed') return 'border-pastel-red/30 bg-pastel-red/10 text-pastel-red'
+  if (status === 'legacy_unvalidated') return 'border-pastel-yellow/30 bg-pastel-yellow/10 text-pastel-yellow'
+  return 'border-border/40 bg-muted/20 text-muted-foreground'
+}
+
+function EventIcon({ type, className }: { type: TimelineEventV2Type; className?: string }) {
+  const Icon = SOURCE_CONFIG[type].icon
+  return <Icon className={cn('h-4 w-4', className)} />
+}
+
+function MetricTile({ label, value, hint }: { label: string; value: string | number; hint: string }) {
   return (
-    <div className={`space-y-4 ${className}`}>
-      {/* Controls bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        {/* Zoom controls */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">Zoom:</span>
-          <div className="flex rounded-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-            {(Object.keys(ZOOM_LABELS) as ZoomLevel[]).map(level => (
-              <button
-                key={level}
-                onClick={() => setZoomLevel(level)}
-                className={`
-                  px-3 py-1.5 text-sm transition-colors
-                  ${zoomLevel === level
-                    ? 'bg-[var(--color-pastel-blue)]/20 text-white'
-                    : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }
-                `}
-              >
-                {ZOOM_LABELS[level]}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Search and filter toggle */}
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Search events..."
-            value={filters.searchQuery || ''}
-            onChange={e => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
-            className="px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`
-              px-3 py-1.5 text-sm rounded-sm border transition-colors
-              ${showFilters
-                ? 'bg-[var(--color-pastel-blue)]/20 text-white border-[var(--color-pastel-blue)]/50'
-                : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }
-            `}
-          >
-            Filters
-          </button>
-        </div>
-      </div>
-
-      {/* Filter panel */}
-      {showFilters && (
-        <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-sm border border-gray-200 dark:border-gray-700">
-          <div className="space-y-4">
-            {/* Event type filters */}
-            <div>
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-                Event Types
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {(Object.keys(EVENT_TYPE_LABELS) as TimelineEventType[]).map(type => (
-                  <button
-                    key={type}
-                    onClick={() => toggleTypeFilter(type)}
-                    className={`
-                      flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors
-                      ${filters.types.includes(type) || filters.types.includes('all')
-                        ? 'text-white'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-                      }
-                    `}
-                    style={{
-                      backgroundColor: filters.types.includes(type) || filters.types.includes('all')
-                        ? EVENT_TYPE_COLORS[type]
-                        : undefined
-                    }}
-                  >
-                    {EVENT_TYPE_ICONS[type]} {EVENT_TYPE_LABELS[type]}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Importance filter */}
-            <div>
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-                Minimum Importance: {filters.minImportance}
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="10"
-                value={filters.minImportance}
-                onChange={e => setFilters(prev => ({ ...prev, minImportance: parseInt(e.target.value) }))}
-                className="w-full"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Stats summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard
-          label="Total Events"
-          value={filteredEvents.length}
-          icon="📊"
-        />
-        <StatCard
-          label="Most Active Day"
-          value={insights.mostActiveDay}
-          icon="📅"
-        />
-        <StatCard
-          label="Peak Hour"
-          value={`${insights.mostActiveHour}:00`}
-          icon="🕐"
-        />
-        <StatCard
-          label="Avg Importance"
-          value={insights.averageImportance.toFixed(1)}
-          icon="⭐"
-        />
-      </div>
-
-      {/* Narrative threads */}
-      {threads.length > 0 && (
-        <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-sm border border-purple-200 dark:border-purple-800">
-          <h3 className="text-sm font-medium text-purple-700 dark:text-purple-300 mb-2">
-            Narrative Threads
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {threads.slice(0, 5).map(thread => (
-              <ThreadBadge key={thread.id} thread={thread} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Timeline */}
-      <div className="relative">
-        {/* Timeline line */}
-        <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-700" />
-
-        {/* Events */}
-        <div className="space-y-4">
-          {filteredEvents.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <p className="text-lg">No events found</p>
-              <p className="text-sm mt-1">Try adjusting your filters</p>
-            </div>
-          ) : (
-            filteredEvents.map(event => (
-              <TimelineEventCard
-                key={event.id}
-                event={event}
-                isSelected={selectedEvent?.id === event.id}
-                onClick={() => setSelectedEvent(event)}
-              />
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Event detail sidebar */}
-      {selectedEvent && (
-        <EventDetailsSidebar
-          event={selectedEvent}
-          onClose={() => setSelectedEvent(null)}
-        />
-      )}
+    <div className={`${subPanel} p-3`}>
+      <div className={labelStyle}>{label}</div>
+      <div className="mt-2 text-2xl font-bold leading-none text-foreground">{value}</div>
+      <div className="mt-1 text-[11px] font-medium text-muted-foreground">{hint}</div>
     </div>
   )
 }
 
-// Stat card component
-function StatCard({
-  label,
-  value,
-  icon
+function SourceToggle({
+  type,
+  active,
+  count,
+  onToggle,
 }: {
-  label: string
-  value: string | number
-  icon: string
+  type: TimelineEventV2Type
+  active: boolean
+  count: number
+  onToggle: () => void
 }) {
+  const config = SOURCE_CONFIG[type]
   return (
-    <div className="p-4 bg-white dark:bg-gray-800 rounded-sm border border-gray-200 dark:border-gray-700">
-      <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-        <span>{icon}</span>
-        <span>{label}</span>
+    <button
+      type="button"
+      onClick={onToggle}
+      className={cn(
+        'inline-flex items-center gap-2 rounded-sm border px-2.5 py-1.5 text-xs font-medium transition-all',
+        active ? config.className : 'border-border/30 bg-muted/5 text-muted-foreground hover:text-foreground'
+      )}
+    >
+      <EventIcon type={type} />
+      <span>{config.label}</span>
+      <span className="text-[10px] opacity-70">{count}</span>
+    </button>
+  )
+}
+
+function CoverageStrip({ coverage }: { coverage: TimelineSourceCoverage[] }) {
+  return (
+    <div className={`${premiumPanel} p-4`}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className={labelStyle}>Source Coverage</div>
+          <div className="mt-1 text-sm font-semibold text-foreground">Loaded from authoritative feature records</div>
+        </div>
+        <Archive className="h-4 w-4 text-muted-foreground" />
       </div>
-      <div className="text-xl font-semibold">{value}</div>
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
+        {coverage.map((source) => {
+          const config = SOURCE_CONFIG[source.source]
+          return (
+            <div key={source.source} className="rounded-sm border border-border/25 bg-muted/10 p-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-xs font-semibold text-foreground">{config.label}</span>
+                {source.status === 'degraded' ? (
+                  <AlertTriangle className="h-3.5 w-3.5 text-pastel-red" />
+                ) : source.count > 0 ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-pastel-green" />
+                ) : (
+                  <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
+                )}
+              </div>
+              <div className="mt-1 text-[11px] text-muted-foreground">{source.count} events</div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
-// Thread badge component
-function ThreadBadge({ thread }: { thread: NarrativeThread }) {
-  return (
-    <span className="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 dark:bg-purple-800/30 text-purple-700 dark:text-purple-300 rounded-full text-sm">
-      <span className="font-medium">{thread.topic}</span>
-      <span className="text-purple-500">({thread.events.length})</span>
-    </span>
-  )
-}
-
-// Timeline event card
 function TimelineEventCard({
   event,
-  isSelected,
-  onClick
+  selected,
+  onSelect,
 }: {
-  event: TimelineEvent
-  isSelected: boolean
-  onClick: () => void
+  event: TimelineEventV2
+  selected: boolean
+  onSelect: () => void
 }) {
-  const color = EVENT_TYPE_COLORS[event.type]
-  const icon = EVENT_TYPE_ICONS[event.type]
+  const config = SOURCE_CONFIG[event.type]
 
   return (
-    <div
-      className={`
-        relative pl-14 cursor-pointer transition-all
-        ${isSelected ? 'scale-[1.02]' : 'hover:scale-[1.01]'}
-      `}
-      onClick={onClick}
+    <motion.button
+      type="button"
+      layout
+      onClick={onSelect}
+      className={cn(
+        'group relative w-full rounded-md border p-4 text-left transition-all',
+        selected
+          ? 'border-pastel-blue/50 bg-pastel-blue/10 shadow-sm'
+          : 'border-border/30 bg-card/35 hover:border-border/60 hover:bg-card/55'
+      )}
     >
-      {/* Timeline dot */}
-      <div
-        className="absolute left-4 w-5 h-5 rounded-full border-2 border-white dark:border-gray-900 shadow flex items-center justify-center text-xs"
-        style={{ backgroundColor: color }}
-      >
-        {icon}
-      </div>
-
-      {/* Event card */}
-      <div
-        className={`
-          p-4 rounded-sm border-2 transition-colors
-          ${isSelected
-            ? 'border-[var(--color-pastel-blue)]/50 bg-[var(--color-pastel-blue)]/20 dark:bg-[var(--color-pastel-blue)]/20'
-            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600'
-          }
-        `}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span
-                className="px-2 py-0.5 rounded-full text-xs font-medium text-white"
-                style={{ backgroundColor: color }}
-              >
-                {event.type}
-              </span>
-              <span className="text-xs text-gray-400">
-                {new Date(event.timestamp).toLocaleString()}
-              </span>
-            </div>
-            <h4 className="font-medium text-gray-900 dark:text-white">
-              {event.title}
-            </h4>
-            <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2 mt-1">
-              {event.description}
-            </p>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-gray-400">
-            <span>Importance:</span>
-            <span className="font-medium text-gray-600 dark:text-gray-300">
-              {event.importance}/10
+      <div className="flex gap-4">
+        <div className={cn('mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border', config.className)}>
+          <EventIcon type={event.type} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={cn('rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em]', config.className)}>
+              {config.label}
             </span>
+            <span className="text-xs text-muted-foreground">{formatDateTime(event.timestamp)}</span>
+            {event.qualityStatus && (
+              <span className={cn('rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em]', getQualityClass(event.qualityStatus))}>
+                {event.qualityStatus.replaceAll('_', ' ')}
+              </span>
+            )}
+          </div>
+          <h3 className="mt-2 text-base font-semibold leading-snug text-foreground">{event.title}</h3>
+          <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-muted-foreground">{event.summary}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="rounded-sm border border-border/30 bg-muted/10 px-2 py-1 text-[11px] text-muted-foreground">
+              Importance {event.importance}/10
+            </span>
+            <span className="rounded-sm border border-border/30 bg-muted/10 px-2 py-1 text-[11px] text-muted-foreground">
+              {event.source}
+            </span>
+            {event.evidenceRefs.length > 0 && (
+              <span className="rounded-sm border border-border/30 bg-muted/10 px-2 py-1 text-[11px] text-muted-foreground">
+                {event.evidenceRefs.length} refs
+              </span>
+            )}
           </div>
         </div>
-
-        {/* Topics */}
-        {event.metadata.topics && event.metadata.topics.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {event.metadata.topics.slice(0, 5).map(topic => (
-              <span
-                key={topic}
-                className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded text-xs"
-              >
-                {topic}
-              </span>
-            ))}
-          </div>
-        )}
       </div>
-    </div>
+    </motion.button>
   )
 }
 
-// Event details sidebar
-function EventDetailsSidebar({
-  event,
-  onClose
+function ClusterGroup({
+  cluster,
+  events,
+  selectedId,
+  onSelect,
 }: {
-  event: TimelineEvent
-  onClose: () => void
+  cluster: TimelineClusterV2
+  events: TimelineEventV2[]
+  selectedId?: string
+  onSelect: (event: TimelineEventV2) => void
 }) {
-  const color = EVENT_TYPE_COLORS[event.type]
-  const icon = EVENT_TYPE_ICONS[event.type]
+  const groupedEvents = cluster.eventIds
+    .map((id) => events.find((event) => event.id === id))
+    .filter((event): event is TimelineEventV2 => Boolean(event))
+
+  if (!groupedEvents.length) return null
 
   return (
-    <div className="fixed right-0 top-0 bottom-0 w-96 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 shadow-xl z-50 overflow-y-auto">
-      {/* Header */}
-      <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span
-            className="w-8 h-8 rounded-full flex items-center justify-center text-white"
-            style={{ backgroundColor: color }}
-          >
-            {icon}
-          </span>
-          <span className="font-medium">Event Details</span>
+    <section className="relative pl-7">
+      <div className="absolute left-2 top-2 bottom-0 w-px bg-border/50" />
+      <div className="absolute left-0 top-1 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background">
+        <span className="h-1.5 w-1.5 rounded-full bg-pastel-blue" />
+      </div>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-bold text-foreground">{formatDay(cluster.startTime)}</h2>
+        <span className="text-xs text-muted-foreground">{cluster.count} events</span>
+      </div>
+      <div className="space-y-3">
+        {groupedEvents.map((event) => (
+          <TimelineEventCard
+            key={event.id}
+            event={event}
+            selected={selectedId === event.id}
+            onSelect={() => onSelect(event)}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function EventInspector({ event, onClose }: { event: TimelineEventV2 | null; onClose: () => void }) {
+  if (!event) {
+    return (
+      <aside className={`${premiumPanel} hidden min-h-[520px] p-5 xl:block`}>
+        <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+          <Clock className="h-7 w-7" />
+          <div className="text-sm font-semibold text-foreground">Select an event</div>
+          <p className="max-w-[240px] text-xs leading-relaxed">Provenance, quality signals, participants, and linked evidence appear here.</p>
+        </div>
+      </aside>
+    )
+  }
+
+  const config = SOURCE_CONFIG[event.type]
+  return (
+    <aside className={`${premiumPanel} p-5 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className={cn('mb-3 inline-flex items-center gap-2 rounded-sm border px-2.5 py-1 text-xs font-semibold', config.className)}>
+            <EventIcon type={event.type} />
+            {config.label}
+          </div>
+          <h2 className="text-xl font-bold leading-tight text-foreground">{event.title}</h2>
+          <p className="mt-2 text-sm text-muted-foreground">{formatDateTime(event.timestamp)}</p>
         </div>
         <button
+          type="button"
           onClick={onClose}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-sm transition-colors"
+          className="rounded-sm border border-border/30 p-2 text-muted-foreground transition-colors hover:text-foreground xl:hidden"
+          aria-label="Close event inspector"
         >
-          <span className="text-xl">&times;</span>
+          <X className="h-4 w-4" />
         </button>
       </div>
 
-      {/* Content */}
-      <div className="p-4 space-y-4">
-        <div>
-          <span
-            className="px-3 py-1 rounded-full text-sm font-medium text-white"
-            style={{ backgroundColor: color }}
-          >
-            {event.type}
-          </span>
+      <div className="mt-5 space-y-4">
+        <div className={`${subPanel} p-4`}>
+          <div className={labelStyle}>Summary</div>
+          <p className="mt-2 text-sm leading-relaxed text-foreground/85">{event.summary}</p>
         </div>
 
-        <h2 className="text-xl font-semibold">{event.title}</h2>
-
-        <div className="text-sm text-gray-500">
-          {new Date(event.timestamp).toLocaleString()}
+        <div className="grid grid-cols-2 gap-2">
+          <MetricTile label="Importance" value={`${event.importance}/10`} hint="normalized signal" />
+          <MetricTile label="Quality" value={event.qualityScore ?? event.qualityStatus ?? 'n/a'} hint="source gate" />
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">Importance:</span>
-          <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${event.importance * 10}%`,
-                backgroundColor: color
-              }}
-            />
-          </div>
-          <span className="text-sm font-medium">{event.importance}/10</span>
+        <div className={`${subPanel} p-4`}>
+          <div className={labelStyle}>Source</div>
+          <div className="mt-2 text-sm font-semibold text-foreground">{event.source}</div>
+          <div className="mt-1 break-all text-xs text-muted-foreground">{event.sourceId}</div>
+          {event.status && <div className="mt-3 text-xs text-muted-foreground">Status: {event.status}</div>}
         </div>
 
-        <div>
-          <h3 className="text-sm font-medium text-gray-500 mb-2">Description</h3>
-          <p className="text-gray-700 dark:text-gray-300">
-            {event.description}
-          </p>
-        </div>
-
-        {event.metadata.topics && event.metadata.topics.length > 0 && (
+        {event.themes.length > 0 && (
           <div>
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Topics</h3>
-            <div className="flex flex-wrap gap-2">
-              {event.metadata.topics.map(topic => (
-                <span
-                  key={topic}
-                  className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full text-sm"
-                >
-                  {topic}
+            <div className={labelStyle}>Themes</div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {event.themes.map((theme) => (
+                <span key={theme} className="rounded-sm border border-border/30 bg-muted/10 px-2 py-1 text-xs text-muted-foreground">
+                  {theme}
                 </span>
               ))}
             </div>
           </div>
         )}
 
-        {event.contentRef && (
-          <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-            <span className="text-sm text-gray-500">
-              Source: {event.contentRef.collection}
-            </span>
+        {event.participants.length > 0 && (
+          <div>
+            <div className={labelStyle}>Participants</div>
+            <div className="mt-2 space-y-2">
+              {event.participants.map((participant) => (
+                <div key={`${participant.id}:${participant.role}`} className="rounded-sm border border-border/30 bg-muted/10 px-3 py-2 text-xs">
+                  <div className="font-semibold text-foreground">{participant.name || participant.id}</div>
+                  {participant.role && <div className="mt-1 text-muted-foreground">{participant.role}</div>}
+                </div>
+              ))}
+            </div>
           </div>
         )}
+
+        {event.sourceRefs.length > 0 && (
+          <RefList title="Source Refs" refs={event.sourceRefs} />
+        )}
+        {event.evidenceRefs.length > 0 && (
+          <div>
+            <div className={labelStyle}>Evidence Refs</div>
+            <div className="mt-2 grid gap-1.5">
+              {event.evidenceRefs.slice(0, 10).map((ref) => (
+                <code key={ref} className="rounded-sm border border-border/30 bg-muted/10 px-2 py-1 text-[11px] text-muted-foreground">
+                  {ref}
+                </code>
+              ))}
+            </div>
+          </div>
+        )}
+        {event.relatedRefs.length > 0 && (
+          <RefList title="Related Refs" refs={event.relatedRefs} />
+        )}
+      </div>
+    </aside>
+  )
+}
+
+function RefList({ title, refs }: { title: string; refs: TimelineEventV2['sourceRefs'] }) {
+  return (
+    <div>
+      <div className={labelStyle}>{title}</div>
+      <div className="mt-2 space-y-2">
+        {refs.slice(0, 8).map((ref) => (
+          <div key={`${ref.type}:${ref.id}:${ref.label}`} className="rounded-sm border border-border/30 bg-muted/10 px-3 py-2 text-xs">
+            <div className="font-semibold text-foreground">{ref.label}</div>
+            <div className="mt-1 break-all text-muted-foreground">{ref.type}:{ref.id}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TimelineSkeleton() {
+  return (
+    <div className="space-y-4">
+      {[0, 1, 2, 3].map((item) => (
+        <div key={item} className={`${premiumPanel} animate-pulse p-4`}>
+          <div className="h-4 w-28 rounded-sm bg-muted/30" />
+          <div className="mt-4 h-5 w-2/3 rounded-sm bg-muted/40" />
+          <div className="mt-3 h-4 w-full rounded-sm bg-muted/20" />
+          <div className="mt-2 h-4 w-4/5 rounded-sm bg-muted/20" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function TimelineExplorer({ agentId, agentName, className = '' }: TimelineExplorerProps) {
+  const [payload, setPayload] = useState<TimelineWorkspacePayload | null>(null)
+  const [selectedEvent, setSelectedEvent] = useState<TimelineEventV2 | null>(null)
+  const [activeTypes, setActiveTypes] = useState<TimelineEventV2Type[]>([])
+  const [quality, setQuality] = useState<TimelineQualityFilter>('all')
+  const [query, setQuery] = useState('')
+  const [minImportance, setMinImportance] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const sourceCounts = useMemo(() => {
+    const counts = new Map<TimelineEventV2Type, number>()
+    for (const source of SOURCE_ORDER) counts.set(source, 0)
+    for (const item of payload?.coverage || []) counts.set(item.source, item.count)
+    return counts
+  }, [payload])
+
+  const loadTimeline = useCallback(async (showRefresh = false) => {
+    try {
+      setError(null)
+      if (showRefresh) setRefreshing(true)
+      else setLoading(true)
+
+      const params = new URLSearchParams()
+      params.set('limit', '120')
+      if (activeTypes.length) params.set('types', activeTypes.join(','))
+      if (quality !== 'all') params.set('quality', quality)
+      if (query.trim()) params.set('q', query.trim())
+      if (minImportance > 0) params.set('minImportance', String(minImportance))
+
+      const data = await parseResponse<TimelineWorkspacePayload>(
+        await fetch(`/api/agents/${agentId}/timeline?${params.toString()}`, { cache: 'no-store' })
+      )
+      setPayload(data)
+      setSelectedEvent((current) => current && data.events.some((event) => event.id === current.id) ? current : data.events[0] || null)
+    } catch (nextError) {
+      console.error('Failed to load timeline workspace:', nextError)
+      setError(nextError instanceof Error ? nextError.message : 'Failed to load timeline workspace')
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [activeTypes, agentId, minImportance, quality, query])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => void loadTimeline(false), 180)
+    return () => window.clearTimeout(timeout)
+  }, [loadTimeline])
+
+  const toggleType = (type: TimelineEventV2Type) => {
+    setActiveTypes((current) => current.includes(type)
+      ? current.filter((entry) => entry !== type)
+      : [...current, type])
+  }
+
+  const events = payload?.events || []
+  const clusters = payload?.clusters || []
+
+  return (
+    <div className={cn('space-y-5', className)}>
+      <div className={`${premiumPanel} overflow-hidden`}>
+        <div className="grid gap-0 xl:grid-cols-[1fr_360px]">
+          <div className="p-5 md:p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-2xl">
+                <div className={labelStyle}>Agent Chronicle</div>
+                <h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground md:text-3xl">{agentName} Timeline</h1>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  Inspectable life events composed from persisted feature records, quality gates, evidence, and relationship state.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void loadTimeline(true)}
+                disabled={refreshing}
+                className="shrink-0"
+              >
+                {refreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Refresh
+              </Button>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <MetricTile label="Visible" value={payload?.summary.visibleEvents ?? 0} hint={`${payload?.summary.totalEvents ?? 0} total indexed`} />
+              <MetricTile label="High Signal" value={payload?.summary.highImportanceEvents ?? 0} hint="importance 8+" />
+              <MetricTile label="Average" value={(payload?.summary.averageImportance ?? 0).toFixed(1)} hint="importance score" />
+              <MetricTile label="Latest" value={payload?.summary.latestEventAt ? formatDateTime(payload.summary.latestEventAt).split(',')[0] : 'None'} hint="newest event" />
+            </div>
+          </div>
+          <div className="border-t border-border/30 bg-muted/10 p-5 xl:border-l xl:border-t-0">
+            <div className={labelStyle}>Narrative Threads</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(payload?.threads || []).slice(0, 8).map((thread) => (
+                <span key={thread.id} className="rounded-sm border border-border/30 bg-card/40 px-2.5 py-1 text-xs text-muted-foreground">
+                  {thread.label} <span className="text-foreground">{thread.count}</span>
+                </span>
+              ))}
+              {payload && payload.threads.length === 0 && (
+                <span className="text-xs text-muted-foreground">Threads appear after repeated themes emerge.</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className={`${premiumPanel} p-4`}>
+        <div className="grid gap-3 xl:grid-cols-[minmax(220px,320px)_1fr_auto] xl:items-end">
+          <div className="space-y-1.5">
+            <div className={labelStyle}>Search</div>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search events, themes, sources"
+                className="pl-9"
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <div className={labelStyle}>Sources</div>
+            <div className="flex flex-wrap gap-2">
+              {SOURCE_ORDER.map((type) => (
+                <SourceToggle
+                  key={type}
+                  type={type}
+                  active={activeTypes.length === 0 || activeTypes.includes(type)}
+                  count={sourceCounts.get(type) || 0}
+                  onToggle={() => toggleType(type)}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[260px]">
+            <div className="space-y-1.5">
+              <div className={labelStyle}>Quality</div>
+              <select
+                value={quality}
+                onChange={(event) => setQuality(event.target.value as TimelineQualityFilter)}
+                className="h-10 w-full rounded-sm border border-input bg-background px-3 text-sm"
+              >
+                {QUALITY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <div className={labelStyle}>Min {minImportance}</div>
+              <input
+                type="range"
+                min="0"
+                max="10"
+                value={minImportance}
+                onChange={(event) => setMinImportance(Number(event.target.value))}
+                className="h-10 w-full"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {payload && <CoverageStrip coverage={payload.coverage} />}
+
+      {error && (
+        <div className="rounded-md border border-pastel-red/30 bg-pastel-red/10 p-4 text-sm text-pastel-red">
+          <div className="flex items-center gap-2 font-semibold">
+            <AlertTriangle className="h-4 w-4" />
+            Timeline failed to load
+          </div>
+          <p className="mt-1 text-xs">{error}</p>
+        </div>
+      )}
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <main className="min-w-0">
+          {loading ? (
+            <TimelineSkeleton />
+          ) : events.length === 0 ? (
+            <div className={`${premiumPanel} px-6 py-14 text-center`}>
+              <Clock className="mx-auto h-8 w-8 text-muted-foreground" />
+              <h2 className="mt-4 text-base font-semibold text-foreground">No timeline events found</h2>
+              <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
+                Adjust filters or create saved artifacts, relationship changes, memories, or conversations for this agent.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-7">
+              {clusters.map((cluster) => (
+                <ClusterGroup
+                  key={cluster.id}
+                  cluster={cluster}
+                  events={events}
+                  selectedId={selectedEvent?.id}
+                  onSelect={setSelectedEvent}
+                />
+              ))}
+            </div>
+          )}
+        </main>
+
+        <div className={cn(
+          selectedEvent ? 'fixed inset-x-3 bottom-3 z-50 max-h-[78vh] overflow-y-auto xl:static xl:z-auto xl:max-h-none xl:overflow-visible' : '',
+        )}>
+          <EventInspector event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+        </div>
       </div>
     </div>
   )
