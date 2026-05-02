@@ -76,6 +76,14 @@ function isRunning(run?: ChallengeRun | null) {
   return run?.status === 'running'
 }
 
+function sameParticipantIds(current: string[], next: string[]) {
+  return current.length === next.length && current.every((id, index) => id === next[index])
+}
+
+const premiumPanel = 'rounded-md border border-border/40 bg-card/40 backdrop-blur-md shadow-sm'
+const sectionHeader = 'border-b border-border/40 bg-muted/10 px-4 py-3'
+const labelStyle = 'text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground'
+
 export function ChallengeLab({ agentId, agentName, agents, activeModel }: ChallengeLabProps) {
   const selectedProvider = useLLMPreferenceStore((state) => state.provider)
   const providerModel = activeModel || getClientModelForProvider(selectedProvider)
@@ -96,7 +104,8 @@ export function ChallengeLab({ agentId, agentName, agents, activeModel }: Challe
   const [elapsed, setElapsed] = useState(0)
 
   const selectedTemplate = bootstrap?.templates.find((template) => template.id === selectedTemplateId) || null
-  const otherAgents = agents.filter((agent) => agent.id !== agentId)
+  const otherAgents = useMemo(() => agents.filter((agent) => agent.id !== agentId), [agents, agentId])
+  const firstOtherAgentId = otherAgents[0]?.id
   const canRunPair = otherAgents.length > 0
   const activeRun = activeDetail?.run || bootstrap?.activeRun || null
   const events = activeDetail?.events || bootstrap?.activeEvents || []
@@ -136,17 +145,26 @@ export function ChallengeLab({ agentId, agentName, agents, activeModel }: Challe
       setSourceEventIds([])
     }
     if (selectedTemplate.minParticipants === 1 && selectedTemplate.maxParticipants === 1) {
-      setParticipantIds([agentId])
+      const nextParticipantIds = [agentId]
+      if (!sameParticipantIds(participantIds, nextParticipantIds)) {
+        setParticipantIds(nextParticipantIds)
+      }
       return
     }
-    if (selectedTemplate.minParticipants === 2 && participantIds.length < 2 && otherAgents[0]) {
-      setParticipantIds([agentId, otherAgents[0].id])
+    if (selectedTemplate.minParticipants === 2 && participantIds.length < 2 && firstOtherAgentId) {
+      const nextParticipantIds = [agentId, firstOtherAgentId]
+      if (!sameParticipantIds(participantIds, nextParticipantIds)) {
+        setParticipantIds(nextParticipantIds)
+      }
       return
     }
     if (selectedTemplate.maxParticipants === 1) {
-      setParticipantIds([agentId])
+      const nextParticipantIds = [agentId]
+      if (!sameParticipantIds(participantIds, nextParticipantIds)) {
+        setParticipantIds(nextParticipantIds)
+      }
     }
-  }, [agentId, otherAgents, participantIds.length, selectedTemplate, sourceArenaRunId])
+  }, [agentId, firstOtherAgentId, participantIds, selectedTemplate, sourceArenaRunId])
 
   const pollDetail = useCallback(async (runId: string) => {
     try {
@@ -257,44 +275,72 @@ export function ChallengeLab({ agentId, agentName, agents, activeModel }: Challe
 
   return (
     <div className="min-w-0 space-y-4">
-      <section className="rounded-sm border border-border/50 bg-card/70 p-4 backdrop-blur-xl">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-primary/70">
-              <FlaskConical className="h-3.5 w-3.5" />
-              Challenge Lab
-            </div>
-            <h2 className="mt-1 text-2xl font-semibold tracking-tight">Testing console for {agentName}</h2>
+      <div className="flex flex-col gap-4 px-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="rounded-md bg-pastel-purple/10 p-2.5">
+            <FlaskConical className="h-5 w-5 text-pastel-purple" />
           </div>
-          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-5">
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-bold leading-tight tracking-tight text-foreground">
+              {agentName}&apos;s Challenge Lab
+            </h3>
+            <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+              Capability Trials & Evidence Reports
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="hidden grid-cols-5 gap-2 text-xs lg:grid">
             <Metric label="Provider" value={LLM_PROVIDER_LABELS[selectedProvider]} />
             <Metric label="Model" value={providerModel} />
-            <Metric label="Recent" value={bootstrap?.aggregateStats.recentScore ? `${bootstrap.aggregateStats.recentScore}` : 'none'} />
+            <Metric label="Recent" value={bootstrap?.aggregateStats.recentScore ? `${bootstrap.aggregateStats.recentScore}` : 'None'} />
             <Metric label="Done" value={`${bootstrap?.aggregateStats.completedCount || 0}`} />
             <Metric label="Pairs" value={`${bootstrap?.aggregateStats.relationshipTrialCount || 0}`} />
           </div>
-          <Button onClick={() => void runChallenge()} disabled={!canSubmit} className="gap-2">
+          <Button
+            onClick={() => void runChallenge()}
+            disabled={!canSubmit}
+            className="h-9 gap-2 bg-pastel-purple text-primary-foreground hover:bg-pastel-purple/90"
+          >
             <Play className="h-4 w-4" />
             Run Challenge
           </Button>
         </div>
-        {warning && (
-          <div className="mt-3 flex items-center gap-2 rounded-sm border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-            <AlertTriangle className="h-4 w-4" />
-            {warning}
-          </div>
-        )}
-      </section>
+      </div>
 
-      <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)_300px]">
-        <ChallengeTemplateRail
-          templates={bootstrap?.templates || []}
-          selectedId={selectedTemplateId}
-          pairDisabled={!canRunPair}
-          onSelect={setSelectedTemplateId}
-        />
+      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-5 lg:hidden">
+        <Metric label="Provider" value={LLM_PROVIDER_LABELS[selectedProvider]} />
+        <Metric label="Model" value={providerModel} />
+        <Metric label="Recent" value={bootstrap?.aggregateStats.recentScore ? `${bootstrap.aggregateStats.recentScore}` : 'None'} />
+        <Metric label="Done" value={`${bootstrap?.aggregateStats.completedCount || 0}`} />
+        <Metric label="Pairs" value={`${bootstrap?.aggregateStats.relationshipTrialCount || 0}`} />
+      </div>
 
-        <main className="min-w-0 space-y-4">
+      {warning && (
+        <div className="flex items-center gap-2 rounded-md border border-pastel-yellow/30 bg-pastel-yellow/5 px-4 py-3 text-[13px] text-pastel-yellow">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {warning}
+        </div>
+      )}
+
+      <div className="grid gap-4 xl:h-[calc(100vh-220px)] xl:min-h-[680px] xl:grid-cols-[320px_minmax(0,1fr)_360px]">
+        <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
+          <ChallengeTemplateRail
+            templates={bootstrap?.templates || []}
+            selectedId={selectedTemplateId}
+            pairDisabled={!canRunPair}
+            onSelect={setSelectedTemplateId}
+          />
+          <ChallengeHistory
+            runs={filteredHistory}
+            filter={historyFilter}
+            onFilter={setHistoryFilter}
+            onOpen={(run) => void openRun(run)}
+          />
+        </div>
+
+        <main className="flex min-h-0 min-w-0 flex-col gap-4 overflow-hidden">
           <ChallengeComposer
             template={selectedTemplate}
             agents={agents}
@@ -318,18 +364,10 @@ export function ChallengeLab({ agentId, agentName, agents, activeModel }: Challe
           />
 
           <ChallengePipeline run={activeRun} elapsed={elapsed} lastEvent={lastEvent} onCancel={() => void cancelRun()} />
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-            <ChallengeEventFeed events={events} />
-            <ChallengeReport run={activeRun} results={results} />
-          </div>
+          <ChallengeEventFeed events={events} />
         </main>
 
-        <ChallengeHistory
-          runs={filteredHistory}
-          filter={historyFilter}
-          onFilter={setHistoryFilter}
-          onOpen={(run) => void openRun(run)}
-        />
+        <ChallengeReport run={activeRun} results={results} />
       </div>
     </div>
   )
@@ -337,7 +375,7 @@ export function ChallengeLab({ agentId, agentName, agents, activeModel }: Challe
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-sm bg-background/50 px-3 py-2 ring-1 ring-border/50">
+    <div className="rounded-sm border border-border/30 bg-muted/10 px-3 py-2">
       <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{label}</div>
       <div className="mt-1 max-w-[130px] truncate font-semibold text-foreground">{value}</div>
     </div>
@@ -357,15 +395,20 @@ function ChallengeTemplateRail({ templates, selectedId, pairDisabled, onSelect }
   ] as const
 
   return (
-    <aside className="rounded-sm border border-border/50 bg-card/60 p-3">
-      <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        <Swords className="h-4 w-4 text-primary" />
-        Templates
+    <aside className={`${premiumPanel} flex min-h-[260px] flex-1 flex-col overflow-hidden`}>
+      <div className={`${sectionHeader} flex shrink-0 items-center justify-between`}>
+        <div className="flex items-center gap-2">
+          <Swords className="h-4 w-4 text-pastel-purple" />
+          <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Templates</span>
+        </div>
+        <span className="rounded-sm border border-pastel-purple/30 bg-pastel-purple/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-pastel-purple">
+          {templates.length}
+        </span>
       </div>
-      <div className="flex gap-2 overflow-x-auto xl:block xl:space-y-4">
+      <div className="flex flex-1 gap-2 overflow-x-auto p-3 scrollbar-thin xl:block xl:space-y-4 xl:overflow-y-auto xl:overflow-x-hidden">
         {groups.map(([group, label]) => (
           <div key={group} className="min-w-[240px] xl:min-w-0">
-            <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">{label}</div>
+            <div className="mb-2 text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">{label}</div>
             <div className="space-y-2">
               {templates.filter((template) => template.group === group).map((template) => {
                 const disabled = template.minParticipants === 2 && pairDisabled
@@ -376,13 +419,13 @@ function ChallengeTemplateRail({ templates, selectedId, pairDisabled, onSelect }
                     disabled={disabled}
                     onClick={() => onSelect(template.id)}
                     className={cn(
-                      'w-full rounded-sm border p-3 text-left transition',
-                      active ? 'border-primary/50 bg-primary/10' : 'border-border/40 bg-background/35 hover:border-primary/30',
+                      'w-full rounded-sm border px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pastel-purple/60',
+                      active ? 'border-pastel-purple/40 bg-pastel-purple/10 shadow-sm' : 'border-border/30 bg-muted/5 text-muted-foreground hover:border-pastel-purple/20 hover:text-foreground',
                       disabled && 'cursor-not-allowed opacity-45'
                     )}
                   >
-                    <div className="text-sm font-semibold">{template.title}</div>
-                    <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{disabled ? 'Needs another agent.' : template.purpose}</div>
+                    <div className="text-[13px] font-bold text-foreground">{template.title}</div>
+                    <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed">{disabled ? 'Needs another agent.' : template.purpose}</div>
                   </button>
                 )
               })}
@@ -427,22 +470,22 @@ function ChallengeComposer({
   const isArenaTemplate = template?.id === 'arena_claim_proof'
 
   return (
-    <section className="rounded-sm border border-border/50 bg-card/60 p-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary/70">Composer</div>
-          <h3 className="mt-1 text-lg font-semibold">{template?.title || 'Select a template'}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{template?.brief}</p>
+    <section className={`${premiumPanel} shrink-0 overflow-hidden`}>
+      <div className={`${sectionHeader} flex flex-col gap-3 md:flex-row md:items-start md:justify-between`}>
+        <div className="min-w-0">
+          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-pastel-purple">Composer</div>
+          <h3 className="mt-1 truncate text-base font-bold">{template?.title || 'Select a template'}</h3>
+          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{template?.brief}</p>
         </div>
-        <div className="flex rounded-sm border border-border/50 bg-background/50 p-1">
+        <div className="flex shrink-0 rounded-md border border-border/40 bg-muted/20 p-1">
           {(['fast', 'deep'] as const).map((budget) => (
             <button
               key={budget}
               disabled={disabled}
               onClick={() => onBudgetChange(budget)}
               className={cn(
-                'rounded-sm px-3 py-1.5 text-xs font-semibold uppercase tracking-widest',
-                executionBudget === budget ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                'rounded-sm px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pastel-purple/60',
+                executionBudget === budget ? 'bg-pastel-purple text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
               )}
             >
               {budget}
@@ -451,9 +494,10 @@ function ChallengeComposer({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-[260px_minmax(0,1fr)]">
-        <div className="space-y-2">
-          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Participants</div>
+      <div className="grid gap-3 p-4 md:grid-cols-[240px_minmax(0,1fr)]">
+        <div className="min-h-0 space-y-2">
+          <div className={labelStyle}>Participants</div>
+          <div className="max-h-[154px] space-y-1.5 overflow-y-auto pr-1 scrollbar-thin">
           {agents.map((agent) => {
             const locked = agent.id === selectedAgentId
             const selected = participantIds.includes(agent.id)
@@ -470,30 +514,31 @@ function ChallengeComposer({
                   }
                 }}
                 className={cn(
-                  'flex w-full items-center justify-between rounded-sm border px-3 py-2 text-left text-sm',
-                  selected ? 'border-primary/40 bg-primary/10' : 'border-border/40 bg-background/40',
+                  'flex w-full items-center justify-between rounded-sm border px-3 py-2 text-left text-[12px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pastel-purple/60',
+                  selected ? 'border-pastel-purple/40 bg-pastel-purple/10 text-foreground' : 'border-border/30 bg-muted/5 text-muted-foreground hover:border-pastel-purple/20 hover:text-foreground',
                   disabledAgent && !locked && 'opacity-45'
                 )}
               >
                 <span className="truncate">{agent.name}</span>
-                {selected ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <Circle className="h-4 w-4 text-muted-foreground" />}
+                {selected ? <CheckCircle2 className="h-4 w-4 text-pastel-purple" /> : <Circle className="h-4 w-4 text-muted-foreground" />}
               </button>
             )
           })}
-          {pairDisabled && <div className="text-xs text-amber-300">Pair templates need at least one other agent.</div>}
+          </div>
+          {pairDisabled && <div className="text-xs text-pastel-yellow">Pair templates need at least one other agent.</div>}
         </div>
         <div>
-          <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Scenario / Context</div>
+          <div className={`mb-2 ${labelStyle}`}>Scenario / Context</div>
           <Textarea
             disabled={disabled}
             value={scenario}
             onChange={(event) => onScenarioChange(event.target.value)}
             placeholder="Leave blank to use the template default, or write a specific trial scenario."
-            className="min-h-[168px]"
+            className="min-h-[116px] border-border/30 bg-muted/5 text-[12px] focus:border-pastel-purple/50"
           />
           {isArenaTemplate && (
             <div className="mt-3 space-y-2">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Arena Source</div>
+              <div className={labelStyle}>Arena Source</div>
               {arenaCandidates.length === 0 ? (
                 <div className="rounded-sm border border-dashed border-border/60 bg-background/30 px-3 py-2 text-xs text-muted-foreground">
                   No completed arena source found for this agent. The run will use the manual scenario.
@@ -504,7 +549,7 @@ function ChallengeComposer({
                   type="button"
                   disabled={disabled}
                   onClick={() => onApplyArenaCandidate(candidate)}
-                  className="w-full rounded-sm border border-border/40 bg-background/35 px-3 py-2 text-left text-xs transition hover:border-primary/30 disabled:opacity-50"
+                  className="w-full rounded-sm border border-border/30 bg-muted/5 px-3 py-2 text-left text-xs transition hover:border-pastel-purple/30 disabled:opacity-50"
                 >
                   <div className="truncate font-semibold text-foreground">{candidate.title}</div>
                   <div className="mt-1 truncate text-muted-foreground">{candidate.suggestedScenario}</div>
@@ -529,14 +574,14 @@ function ChallengePipeline({ run, elapsed, lastEvent, onCancel }: {
   const modelWaiting = run?.status === 'running' && ['execute_turns', 'evaluate_outputs'].includes(run.latestStage)
 
   return (
-    <section className="sticky top-[78px] z-20 rounded-sm border border-border/50 bg-card/80 p-4 backdrop-blur-xl">
+    <section className={`${premiumPanel} shrink-0 p-4`}>
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <Activity className={cn('h-4 w-4 text-primary', run?.status === 'running' && 'animate-pulse')} />
+            <Activity className={cn('h-4 w-4 text-pastel-purple', run?.status === 'running' && 'animate-pulse')} />
             {run ? STAGE_LABELS[run.latestStage] : 'No active run'}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">
+          <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
             {run?.status === 'failed'
               ? run.failureReason || 'The run failed before a report could be published.'
               : modelWaiting
@@ -552,7 +597,7 @@ function ChallengePipeline({ run, elapsed, lastEvent, onCancel }: {
           </Button>
         )}
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
+      <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 2xl:grid-cols-8">
         {visibleStages.map((stage, index) => {
           const active = run?.latestStage === stage
           const complete = run ? index < currentIndex || run.status === 'completed' || run.status === 'cancelled' : false
@@ -561,12 +606,12 @@ function ChallengePipeline({ run, elapsed, lastEvent, onCancel }: {
               key={stage}
               layout
               className={cn(
-                'rounded-sm border px-2 py-2 text-xs',
-                active ? 'border-primary/50 bg-primary/10 text-foreground' : complete ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-border/40 bg-background/35 text-muted-foreground'
+                'rounded-sm border px-2 py-2 text-[11px]',
+                active ? 'border-pastel-purple/50 bg-pastel-purple/10 text-foreground' : complete ? 'border-pastel-green/30 bg-pastel-green/10 text-foreground' : 'border-border/30 bg-muted/5 text-muted-foreground'
               )}
             >
               <div className="flex items-center gap-1.5">
-                {complete ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> : <Circle className="h-3.5 w-3.5" />}
+                {complete ? <CheckCircle2 className="h-3.5 w-3.5 text-pastel-green" /> : <Circle className="h-3.5 w-3.5" />}
                 <span className="truncate">{STAGE_LABELS[stage]}</span>
               </div>
             </motion.div>
@@ -579,15 +624,18 @@ function ChallengePipeline({ run, elapsed, lastEvent, onCancel }: {
 
 function ChallengeEventFeed({ events }: { events: ChallengeEvent[] }) {
   return (
-    <section className="min-h-[360px] rounded-sm border border-border/50 bg-card/60 p-4">
-      <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        <Activity className="h-4 w-4 text-primary" />
-        Event Feed
+    <section className={`${premiumPanel} flex min-h-[360px] flex-1 flex-col overflow-hidden`}>
+      <div className={`${sectionHeader} flex shrink-0 items-center justify-between`}>
+        <div className="flex items-center gap-2">
+          <Activity className="h-4 w-4 text-pastel-blue" />
+          <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Event Feed</span>
+        </div>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{events.length} events</span>
       </div>
-      <div className="space-y-2">
+      <div className="flex-1 space-y-2 overflow-y-auto p-3 scrollbar-thin">
         <AnimatePresence initial={false}>
           {events.length === 0 ? (
-            <div className="rounded-sm border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-sm border border-dashed border-border/40 bg-muted/5 p-8 text-center text-sm text-muted-foreground">
               Events will appear as the lab moves through stages.
             </div>
           ) : events.map((event) => (
@@ -596,16 +644,16 @@ function ChallengeEventFeed({ events }: { events: ChallengeEvent[] }) {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="rounded-sm border border-border/40 bg-background/40 p-3"
+              className="rounded-sm border border-border/30 bg-muted/5 p-3"
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">{event.title}</div>
+                  <div className="truncate text-[13px] font-bold">{event.title}</div>
                   <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{event.kind} · {STAGE_LABELS[event.stage]}</div>
                 </div>
                 <div className="shrink-0 text-xs tabular-nums text-muted-foreground">#{event.sequence}</div>
               </div>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/85">{event.content}</p>
+              <p className="mt-2 whitespace-pre-wrap text-[12px] leading-relaxed text-foreground/85">{event.content}</p>
             </motion.article>
           ))}
         </AnimatePresence>
@@ -618,39 +666,42 @@ function ChallengeReport({ run, results }: { run: ChallengeRun | null; results: 
   const report = run?.report
   if (!report) {
     return (
-      <section className="rounded-sm border border-border/50 bg-card/60 p-4">
-        <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          <Gauge className="h-4 w-4 text-primary" />
-          Report
+      <section className={`${premiumPanel} flex min-h-[320px] flex-col overflow-hidden`}>
+        <div className={`${sectionHeader} flex shrink-0 items-center gap-2`}>
+          <Gauge className="h-4 w-4 text-pastel-green" />
+          <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Report</span>
         </div>
-        <div className={cn(
-          'rounded-sm border border-dashed border-border/60 p-8 text-center text-sm text-muted-foreground',
-          run?.status === 'failed' && 'border-red-500/30 bg-red-500/10 text-red-100',
-          run?.status === 'cancelled' && 'border-amber-500/30 bg-amber-500/10 text-amber-100'
-        )}>
-          {run?.status === 'failed'
-            ? run.failureReason || 'The run failed before a report could be published.'
-            : run?.status === 'cancelled'
-              ? 'The run was cancelled at a safe boundary before final scoring.'
-              : 'Final scores, evidence refs, and relationship impact appear after evaluation.'}
+        <div className="flex flex-1 items-center p-4">
+          <div className={cn(
+            'w-full rounded-sm border border-dashed border-border/40 bg-muted/5 p-8 text-center text-sm text-muted-foreground',
+            run?.status === 'failed' && 'border-pastel-red/30 bg-pastel-red/5 text-pastel-red',
+            run?.status === 'cancelled' && 'border-pastel-yellow/30 bg-pastel-yellow/5 text-pastel-yellow'
+          )}>
+            {run?.status === 'failed'
+              ? run.failureReason || 'The run failed before a report could be published.'
+              : run?.status === 'cancelled'
+                ? 'The run was cancelled at a safe boundary before final scoring.'
+                : 'Final scores, evidence refs, and relationship impact appear after evaluation.'}
+          </div>
         </div>
     </section>
   )
 }
 
   return (
-    <section className="rounded-sm border border-border/50 bg-card/60 p-4">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          <Gauge className="h-4 w-4 text-primary" />
-          Report
+    <section className={`${premiumPanel} flex min-h-[420px] flex-col overflow-hidden`}>
+      <div className={`${sectionHeader} flex shrink-0 items-center justify-between`}>
+        <div className="flex items-center gap-2">
+          <Gauge className="h-4 w-4 text-pastel-green" />
+          <span className="text-[11px] font-bold uppercase tracking-[0.2em]">Report</span>
         </div>
-        <motion.div initial={{ scale: 0.92 }} animate={{ scale: 1 }} className="text-3xl font-semibold tabular-nums">
+        <motion.div initial={{ scale: 0.92 }} animate={{ scale: 1 }} className="text-3xl font-black tabular-nums text-pastel-green">
           {report.overallScore}
         </motion.div>
       </div>
+      <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
       {report.degraded && (
-        <div className="mb-3 rounded-sm border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+        <div className="mb-3 rounded-sm border border-pastel-yellow/30 bg-pastel-yellow/5 px-3 py-2 text-xs text-pastel-yellow">
           Judge output was incomplete or malformed, so deterministic fallback scoring was used.
         </div>
       )}
@@ -673,8 +724,8 @@ function ChallengeReport({ run, results }: { run: ChallengeRun | null; results: 
         ))}
       </div>
       {report.relationshipSignals.length > 0 && (
-        <div className="mt-4 rounded-sm bg-primary/5 p-3 ring-1 ring-primary/15">
-          <div className="text-[10px] font-bold uppercase tracking-widest text-primary/80">Relationship Impact</div>
+        <div className="mt-4 rounded-sm border border-pastel-blue/20 bg-pastel-blue/5 p-3">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-pastel-blue">Relationship Impact</div>
           <div className="mt-2 space-y-1 text-sm text-muted-foreground">
             {(report.relationshipSignals || []).map((signal, index) => (
               <div key={`${signal.signalKind}-${index}`}>{signal.signalKind.replace(/_/g, ' ')} · refs {signal.excerptRefs.join(', ')}</div>
@@ -686,13 +737,14 @@ function ChallengeReport({ run, results }: { run: ChallengeRun | null; results: 
         <ListBlock title="Strengths" items={report.strengths || []} />
         <ListBlock title="Weaknesses" items={report.weaknesses || []} />
       </div>
+      </div>
     </section>
   )
 }
 
 function ChallengeScorecard({ result }: { result: ChallengeParticipantResult }) {
   return (
-    <div className="rounded-sm border border-border/40 bg-background/40 p-3">
+    <div className="rounded-sm border border-border/30 bg-muted/5 p-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold">{result.payload.agentName || result.agentId}</div>
@@ -701,7 +753,7 @@ function ChallengeScorecard({ result }: { result: ChallengeParticipantResult }) 
         <div className="text-xl font-semibold tabular-nums">{result.totalScore}</div>
       </div>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-        <motion.div initial={{ width: 0 }} animate={{ width: `${result.totalScore}%` }} className="h-full bg-primary" />
+        <motion.div initial={{ width: 0 }} animate={{ width: `${result.totalScore}%` }} className="h-full bg-pastel-purple" />
       </div>
     </div>
   )
@@ -711,7 +763,7 @@ function ListBlock({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
       <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{title}</div>
-      <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+      <ul className="mt-2 space-y-1 text-sm leading-relaxed text-muted-foreground">
         {items.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
       </ul>
     </div>
@@ -725,37 +777,38 @@ function ChallengeHistory({ runs, filter, onFilter, onOpen }: {
   onOpen: (run: ChallengeRunSummary) => void
 }) {
   return (
-    <aside className="rounded-sm border border-border/50 bg-card/60 p-3">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          <History className="h-4 w-4 text-primary" />
-          History
+    <aside className={`${premiumPanel} flex h-[250px] shrink-0 flex-col overflow-hidden xl:h-[260px]`}>
+      <div className={`${sectionHeader} flex shrink-0 items-center justify-between gap-3`}>
+        <div className="flex items-center gap-2">
+          <History className="h-4 w-4 text-pastel-blue" />
+          <span className="text-[11px] font-bold uppercase tracking-[0.2em]">History</span>
         </div>
         <select
           value={filter}
           onChange={(event) => onFilter(event.target.value as 'all' | ChallengeRun['status'])}
-          className="rounded-sm border border-border/50 bg-background px-2 py-1 text-xs"
+          aria-label="Filter challenge history"
+          className="rounded-sm border border-border/40 bg-background px-2 py-1 text-xs outline-none focus:border-pastel-blue/50"
         >
           {['all', 'draft', 'running', 'completed', 'failed', 'cancelled'].map((value) => <option key={value}>{value}</option>)}
         </select>
       </div>
-      <div className="space-y-2">
+      <div className="flex-1 space-y-1.5 overflow-y-auto p-2 scrollbar-thin">
         {runs.length === 0 ? (
-          <div className="rounded-sm border border-dashed border-border/60 p-6 text-center text-sm text-muted-foreground">
+          <div className="rounded-sm border border-dashed border-border/40 bg-muted/5 p-6 text-center text-sm text-muted-foreground">
             No Challenge Lab runs yet.
           </div>
         ) : runs.map((run) => (
           <button
             key={run.id}
             onClick={() => onOpen(run)}
-            className="w-full rounded-sm border border-border/40 bg-background/40 p-3 text-left transition hover:border-primary/30"
+            className="w-full rounded-sm border border-border/30 bg-muted/5 p-2.5 text-left transition hover:border-pastel-blue/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pastel-blue/60"
           >
             <div className="flex items-center justify-between gap-2">
-              <div className="truncate text-sm font-semibold">{run.templateTitle || formatTemplateId(run.templateId)}</div>
-              <div className="text-sm font-semibold tabular-nums">{run.qualityScore ?? '-'}</div>
+              <div className="truncate text-[12px] font-bold">{run.templateTitle || formatTemplateId(run.templateId)}</div>
+              <div className="text-[12px] font-bold tabular-nums text-pastel-green">{run.qualityScore ?? '-'}</div>
             </div>
-            <div className="mt-1 truncate text-xs text-muted-foreground">{run.participantNames.join(' + ')}</div>
-            <div className="mt-2 text-[10px] uppercase tracking-widest text-muted-foreground">{run.status} · {new Date(run.updatedAt).toLocaleDateString()}</div>
+            <div className="mt-1 truncate text-[11px] text-muted-foreground">{run.participantNames.join(' + ')}</div>
+            <div className="mt-1 text-[9px] uppercase tracking-widest text-muted-foreground">{run.status} · {new Date(run.updatedAt).toLocaleDateString()}</div>
           </button>
         ))}
       </div>
@@ -766,15 +819,18 @@ function ChallengeHistory({ runs, filter, onFilter, onOpen }: {
 function ChallengeLabSkeleton() {
   return (
     <div className="space-y-4">
-      <div className="h-28 animate-pulse rounded-sm border border-border/50 bg-card/60" />
-      <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)_300px]">
-        <div className="h-[520px] animate-pulse rounded-sm border border-border/50 bg-card/60" />
+      <div className="h-12 animate-pulse rounded-md border border-border/40 bg-card/40" />
+      <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
         <div className="space-y-4">
-          <div className="h-56 animate-pulse rounded-sm border border-border/50 bg-card/60" />
-          <div className="h-32 animate-pulse rounded-sm border border-border/50 bg-card/60" />
-          <div className="h-72 animate-pulse rounded-sm border border-border/50 bg-card/60" />
+          <div className="h-[420px] animate-pulse rounded-md border border-border/40 bg-card/40" />
+          <div className="h-[220px] animate-pulse rounded-md border border-border/40 bg-card/40" />
         </div>
-        <div className="h-[520px] animate-pulse rounded-sm border border-border/50 bg-card/60" />
+        <div className="space-y-4">
+          <div className="h-56 animate-pulse rounded-md border border-border/40 bg-card/40" />
+          <div className="h-32 animate-pulse rounded-md border border-border/40 bg-card/40" />
+          <div className="h-72 animate-pulse rounded-md border border-border/40 bg-card/40" />
+        </div>
+        <div className="h-[680px] animate-pulse rounded-md border border-border/40 bg-card/40" />
       </div>
     </div>
   )
