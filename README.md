@@ -52,14 +52,16 @@ The profile benchmark seeds targeted chat turns for `Nova Forge`, runs a full pr
 The documentation set is in [`docs/`](./docs/README.md).
 
 - [Documentation Home](./docs/README.md)
+- [Architecture](./docs/architecture/README.md)
+- [Workflows](./docs/workflows/README.md)
+- [API Reference](./docs/api/README.md)
+- [Data Model](./docs/data-model/README.md)
+- [Feature Index](./docs/features/README.md)
+- [Workspace Section Manuals](./docs/workspace-sections/README.md): implementation-grounded manuals for Overview, Chat, Memory, Emotions, Neural Activity, Timeline, Relationships, Learning, Scenarios, Creative, Dreams, Journal, Profile, Challenges, Knowledge Graph, Knowledge Library, Collective Intelligence, Mentorship, and Arena.
 - [Getting Started](./docs/getting-started.md)
-- [Feature Index](./docs/features.md)
-- [Architecture](./docs/architecture.md)
-- [Data Model](./docs/data-model.md)
-- [API Reference](./docs/api-reference.md)
-- [Workflows](./docs/workflows.md)
 - [Development](./docs/development.md)
-- [PostgreSQL Schema](./docs/database/postgresql-schema.md)
+- [Database Schema](./docs/database/postgresql-schema.md)
+- [Firestore to PostgreSQL Mapping](./docs/database/firestore-to-postgres-mapping.md)
 - [Cutover Runbook](./docs/database/cutover-runbook.md)
 
 ## Main Routes

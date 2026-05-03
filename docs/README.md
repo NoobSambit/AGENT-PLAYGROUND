@@ -1,21 +1,21 @@
 # Documentation Home
 
-This docs set is organized around operating the app, changing the codebase, and running the Firestore to PostgreSQL migration safely.
+This docs set is organized around the product, the runtime architecture, the persisted data model, the API surface, and the major user workflows.
 
 ## Start Here
 
 - [`getting-started.md`](./getting-started.md): local setup, env vars, runtime modes.
-- [`architecture.md`](./architecture.md): service boundaries, route responsibilities, persistence flow.
-- [`agent-tab-refresh-plan.md`](./agent-tab-refresh-plan.md): simple refresh model for live core state and lazy heavy tabs on the agent page.
-- [`arena-creation-and-output-quality-report.md`](./arena-creation-and-output-quality-report.md): how arena was built, how debate quality was hardened, and what still limits output quality.
-- [`data-model.md`](./data-model.md): canonical PostgreSQL storage model.
-- [`api-reference.md`](./api-reference.md): route contracts and major query modes.
-- [`workflows.md`](./workflows.md): common operator and cutover workflows.
+- [`architecture/README.md`](./architecture/README.md): runtime layers, service boundaries, persistence flow, and provider selection.
+- [`workflows/README.md`](./workflows/README.md): how the major user and system flows actually execute.
+- [`api/README.md`](./api/README.md): route groups, request/response behavior, and workflow contracts.
+- [`data-model/README.md`](./data-model/README.md): canonical PostgreSQL storage model and table families.
+- [`features/README.md`](./features/README.md): feature map grouped by product area.
+- [`workspace-sections/README.md`](./workspace-sections/README.md): section-by-section manuals for every `/agents/[id]` tab plus the `/simulation` arena, with real route, service, repository, and schema mapping.
 - [`development.md`](./development.md): repo conventions and migration-era development rules.
 
 ## Feature Docs
 
-Use [`features.md`](./features.md) as the index for per-feature files under [`docs/features/`](./features/).
+Use [`features/README.md`](./features/README.md) as the main index for per-feature files under [`docs/features/`](./features/).
 
 Each feature file documents:
 
