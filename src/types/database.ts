@@ -2774,6 +2774,231 @@ export interface SharedKnowledge {
 }
 
 // ============================================
+// PHASE 1A: Knowledge Library Rebuild Types
+// ============================================
+
+export type LibraryItemStatus = 'review' | 'validated' | 'disputed' | 'rejected' | 'retired'
+export type LibraryScope = 'agent' | 'network'
+export type LibraryVisibility = 'agent' | 'network' | 'private'
+
+export type LibraryCategory =
+  | 'fact'
+  | 'preference'
+  | 'behavior_pattern'
+  | 'strength'
+  | 'weakness'
+  | 'strategy'
+  | 'relationship'
+  | 'creative_style'
+  | 'emotional_pattern'
+  | 'skill'
+  | 'risk'
+  | 'lesson'
+
+export type LibrarySourceType =
+  | 'manual'
+  | 'chat'
+  | 'memory'
+  | 'emotion'
+  | 'journal'
+  | 'dream'
+  | 'creative'
+  | 'profile'
+  | 'challenge'
+  | 'arena'
+  | 'relationship'
+  | 'learning'
+  | 'scenario'
+  | 'knowledge_graph'
+  | 'collective'
+  | 'mentorship'
+  | 'timeline'
+
+export type LibraryQualityStatus = 'pending' | 'passed' | 'failed' | 'legacy_unvalidated'
+export type LibraryValidationActorType = 'user' | 'agent' | 'system'
+
+export type LibraryValidationVerdict =
+  | 'accept'
+  | 'reject'
+  | 'endorse'
+  | 'dispute'
+  | 'resolve'
+  | 'retire'
+  | 'merge'
+
+export interface LibraryItemPayload {
+  extraction?: {
+    extractor: 'deterministic' | 'llm' | 'manual'
+    promptVersion?: string
+    model?: string
+    rawCandidate?: unknown
+  }
+  validation?: {
+    errors: string[]
+    warnings: string[]
+    checkedAt: string
+  }
+  dedupe?: {
+    normalizedClaimHash: string
+    possibleDuplicateIds: string[]
+  }
+  contextPolicy?: {
+    allowPromptUse: boolean
+    maxPromptChars: number
+  }
+  sourceSpecific?: Record<string, unknown>
+}
+
+export interface LibraryItem {
+  id: string
+  agentId?: string
+  scope: LibraryScope
+  title: string
+  claim: string
+  body: string
+  category: LibraryCategory
+  status: LibraryItemStatus
+  confidence: number
+  qualityStatus: LibraryQualityStatus
+  visibility: LibraryVisibility
+  createdByAgentId?: string
+  createdByName?: string
+  createdFromFeature: LibrarySourceType
+  primarySourceType: LibrarySourceType
+  primarySourceId: string
+  tags: string[]
+  relatedAgentIds: string[]
+  usageCount: number
+  lastUsedAt?: string
+  acceptedAt?: string
+  acceptedBy?: string
+  rejectedAt?: string
+  rejectedBy?: string
+  retiredAt?: string
+  retiredBy?: string
+  supersedesItemId?: string
+  mergedIntoItemId?: string
+  createdAt: string
+  updatedAt: string
+  payload: LibraryItemPayload
+}
+
+export interface LibrarySourceRef {
+  sourceType: LibrarySourceType
+  sourceId: string
+  sourceTitle?: string
+  sourceUrl?: string
+  sourceTimestamp?: string
+  evidenceSummary: string
+  quote?: string
+}
+
+export interface LibraryItemSource extends LibrarySourceRef {
+  id: string
+  itemId: string
+  createdAt: string
+  payload: Record<string, unknown>
+}
+
+export interface LibraryValidation {
+  id: string
+  itemId: string
+  actorType: LibraryValidationActorType
+  agentId?: string
+  actorName?: string
+  verdict: LibraryValidationVerdict
+  rationale: string
+  confidenceDelta: number
+  createdAt: string
+  payload: Record<string, unknown>
+}
+
+export interface LibraryUsageEvent {
+  id: string
+  itemId: string
+  agentId?: string
+  consumerFeature: LibrarySourceType
+  consumerSourceId?: string
+  query?: string
+  relevanceScore: number
+  usedAt: string
+  payload: Record<string, unknown>
+}
+
+export interface LibraryItemSummary {
+  id: string
+  agentId?: string
+  scope: LibraryScope
+  title: string
+  claim: string
+  category: LibraryCategory
+  status: LibraryItemStatus
+  confidence: number
+  qualityStatus: LibraryQualityStatus
+  visibility: LibraryVisibility
+  primarySourceType: LibrarySourceType
+  primarySourceId: string
+  tags: string[]
+  relatedAgentIds: string[]
+  usageCount: number
+  lastUsedAt?: string
+  updatedAt: string
+  createdAt: string
+}
+
+export interface LibraryItemDetail {
+  item: LibraryItem
+  sources: LibraryItemSource[]
+  validations: LibraryValidation[]
+  usageEvents: LibraryUsageEvent[]
+}
+
+export interface LibraryFilters {
+  statuses: LibraryItemStatus[]
+  categories: LibraryCategory[]
+  sourceTypes: LibrarySourceType[]
+}
+
+export interface LibraryStats {
+  total: number
+  review: number
+  validated: number
+  disputed: number
+  rejected: number
+  retired: number
+  usedThisWeek: number
+  averageConfidence: number
+  byCategory: Record<LibraryCategory, number>
+  bySourceType: Record<LibrarySourceType, number>
+}
+
+export interface LibraryBootstrapResponse {
+  agent: {
+    id: string
+    name: string
+  }
+  items: LibraryItemSummary[]
+  selectedItem?: LibraryItemDetail
+  stats: LibraryStats
+  filters: LibraryFilters
+  stale: boolean
+}
+
+export interface LibraryItemDetailResponse {
+  item: LibraryItem
+  sources: LibraryItemSource[]
+  validations: LibraryValidation[]
+  usageEvents: LibraryUsageEvent[]
+  relatedItems: LibraryItemSummary[]
+}
+
+export interface LibraryMutationResponse {
+  success: true
+  item: LibraryItemDetailResponse
+  stats: LibraryStats
+}
+
+// ============================================
 // PHASE 2: Mentorship System Types
 // ============================================
 

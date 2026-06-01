@@ -7,6 +7,8 @@ The network section covers features that connect agents to each other and to sha
 - [`relationships.md`](./relationships.md)
 - [`knowledge-graph.md`](./knowledge-graph.md)
 - [`shared-knowledge.md`](./shared-knowledge.md)
+- [`knowledge-library-rebuild-prd.md`](./knowledge-library-rebuild-prd.md)
+- [`knowledge-library-implementation-prompts.md`](./knowledge-library-implementation-prompts.md)
 - [`collective-intelligence.md`](./collective-intelligence.md)
 - [`mentorship.md`](./mentorship.md)
 
@@ -22,4 +24,3 @@ Network features care about:
 - reusable knowledge
 
 They usually add to the timeline as a result of real events or completed sessions.
-
