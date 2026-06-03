@@ -9,7 +9,9 @@ import {
   type CreateManualLibraryItemInput,
   type LibraryActionInput,
   type LibraryBootstrapQuery,
+  type LibraryContextRequestInput,
   type LibraryItemEditableFields,
+  type LibraryUsageRecordInput,
 } from '@/lib/services/libraryService'
 
 type ErrorCode = 'validation_error' | 'not_found' | 'invalid_transition' | 'internal_error'
@@ -120,6 +122,98 @@ export function parseCreateManualBody(value: unknown): CreateManualLibraryItemIn
     sourceRef: body.sourceRef && typeof body.sourceRef === 'object' && !Array.isArray(body.sourceRef)
       ? body.sourceRef as CreateManualLibraryItemInput['sourceRef']
       : undefined,
+  }
+}
+
+function optionalNumber(body: Record<string, unknown>, key: string): number | undefined {
+  const value = body[key]
+  if (value === undefined || value === null) {
+    return undefined
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new LibraryServiceError('validation_error', `${key} must be a finite number`, 400)
+  }
+  return value
+}
+
+function optionalString(body: Record<string, unknown>, key: string): string | undefined {
+  const value = body[key]
+  if (value === undefined || value === null) {
+    return undefined
+  }
+  if (typeof value !== 'string') {
+    throw new LibraryServiceError('validation_error', `${key} must be a string`, 400)
+  }
+  return value
+}
+
+export function parseContextBody(value: unknown): LibraryContextRequestInput {
+  const body = asRecord(value)
+  const category = optionalString(body, 'category')
+  const sourceType = optionalString(body, 'sourceType')
+  const scope = optionalString(body, 'scope')
+
+  if (category && !LIBRARY_CATEGORIES.includes(category as typeof LIBRARY_CATEGORIES[number])) {
+    throw new LibraryServiceError('validation_error', 'category is invalid', 400)
+  }
+  if (sourceType && !LIBRARY_SOURCE_TYPES.includes(sourceType as typeof LIBRARY_SOURCE_TYPES[number])) {
+    throw new LibraryServiceError('validation_error', 'sourceType is invalid', 400)
+  }
+  if (scope && scope !== 'all' && !LIBRARY_SCOPES.includes(scope as typeof LIBRARY_SCOPES[number])) {
+    throw new LibraryServiceError('validation_error', 'scope is invalid', 400)
+  }
+
+  return {
+    query: optionalString(body, 'query'),
+    limit: optionalNumber(body, 'limit'),
+    maxChars: optionalNumber(body, 'maxChars'),
+    minConfidence: optionalNumber(body, 'minConfidence'),
+    category: category as LibraryContextRequestInput['category'],
+    sourceType: sourceType as LibraryContextRequestInput['sourceType'],
+    scope: scope as LibraryContextRequestInput['scope'],
+  }
+}
+
+export function parseUsageBody(value: unknown): LibraryUsageRecordInput {
+  const body = asRecord(value)
+  const directItemIds = Array.isArray(body.itemIds)
+    ? body.itemIds.filter((itemId): itemId is string => typeof itemId === 'string')
+    : []
+  const usageItems = Array.isArray(body.items)
+    ? body.items.filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object' && !Array.isArray(entry)))
+    : []
+  const itemIds = [
+    ...directItemIds,
+    ...usageItems
+      .map((entry) => entry.itemId)
+      .filter((itemId): itemId is string => typeof itemId === 'string'),
+  ]
+  const consumerFeature = body.consumerFeature
+
+  if (typeof consumerFeature !== 'string' || !LIBRARY_SOURCE_TYPES.includes(consumerFeature as typeof LIBRARY_SOURCE_TYPES[number])) {
+    throw new LibraryServiceError('validation_error', 'consumerFeature is invalid', 400)
+  }
+
+  const relevanceScores: Record<string, number> = {}
+  if (body.relevanceScores && typeof body.relevanceScores === 'object' && !Array.isArray(body.relevanceScores)) {
+    for (const [itemId, score] of Object.entries(body.relevanceScores as Record<string, unknown>)) {
+      if (typeof score === 'number' && Number.isFinite(score)) {
+        relevanceScores[itemId] = score
+      }
+    }
+  }
+  for (const entry of usageItems) {
+    if (typeof entry.itemId === 'string' && typeof entry.relevanceScore === 'number' && Number.isFinite(entry.relevanceScore)) {
+      relevanceScores[entry.itemId] = entry.relevanceScore
+    }
+  }
+
+  return {
+    itemIds,
+    consumerFeature: consumerFeature as LibraryUsageRecordInput['consumerFeature'],
+    consumerSourceId: optionalString(body, 'consumerSourceId'),
+    query: optionalString(body, 'query'),
+    relevanceScores,
   }
 }
 

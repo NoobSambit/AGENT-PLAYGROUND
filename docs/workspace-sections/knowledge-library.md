@@ -25,6 +25,8 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
 6. Validated items can be endorsed, disputed, or retired.
 7. Disputed items can be resolved back to validated or retired.
 8. Detail reloads use `GET /api/agents/[id]/library/items/[itemId]`.
+9. Consumer workflows can request prompt-safe validated context through `POST /api/agents/[id]/library/context`.
+10. Consumers that use a context packet can record cheap usage events through `POST /api/agents/[id]/library/usage`.
 
 ## 4. Backend workflow/pipeline
 
@@ -44,6 +46,15 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
   - creates a manual Library item
   - body fields: `title`, `claim`, `body`, `category`, optional `status`, `scope`, `visibility`, `tags`, `relatedAgentIds`, `sourceRef`
   - returns `LibraryMutationResponse`
+- `POST /api/agents/[id]/library/context`
+  - body fields: optional `query`, `limit`, `maxChars`, `minConfidence`, `category`, `sourceType`, `scope`
+  - defaults: `limit=3`, `maxChars=1200`, `minConfidence=0.55`, validated items only
+  - returns `LibraryContextPacket` with bounded `items`, `itemIds`, `promptText`, source evidence summaries, and no raw private payloads
+  - internal retrieval failures return a non-blocking `status='failed'` packet after the agent is validated
+- `POST /api/agents/[id]/library/usage`
+  - body fields: `itemIds`, `consumerFeature`, optional `consumerSourceId`, `query`, and either `relevanceScores` or `items: [{ itemId, relevanceScore }]`
+  - records usage events only for accessible prompt-eligible validated items
+  - updates `usageCount` and `lastUsedAt` on recorded items
 - `GET /api/agents/[id]/library/items/[itemId]`
   - returns one `LibraryItemDetailResponse`
   - returns `404` when the item does not exist or is not accessible to the agent
@@ -112,6 +123,8 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
 - Verify accept, reject, dispute, resolve, endorse, and retire actions.
 - Verify search, category, source type, scope, and sort filters.
 - Verify detail reload and retry states.
+- Verify context retrieval returns validated prompt-safe packets and excludes review/disputed/rejected/retired rows.
+- Verify usage recording appends `library_item_usage_events` and updates aggregate fields.
 - Verify legacy `/api/knowledge` still returns shared knowledge compatibility responses.
 
 ## 12. How to extend safely
@@ -126,6 +139,8 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
 
 - `src/components/library/KnowledgeLibraryWorkspace.tsx`
 - `src/app/api/agents/[id]/library/route.ts`
+- `src/app/api/agents/[id]/library/context/route.ts`
+- `src/app/api/agents/[id]/library/usage/route.ts`
 - `src/app/api/agents/[id]/library/items/route.ts`
 - `src/app/api/agents/[id]/library/items/[itemId]/route.ts`
 - `src/app/api/agents/[id]/library/items/[itemId]/actions/route.ts`

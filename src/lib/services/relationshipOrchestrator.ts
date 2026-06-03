@@ -1072,7 +1072,11 @@ export class RelationshipOrchestrator {
 
     let savedSynthesisRun = await persistSynthesisRun(synthesisRun)
     if (outcome.applied && savedRevision) {
-      savedSynthesisRun = await this.createRelationshipLibraryCandidates(savedSynthesisRun, savedRevision)
+      try {
+        savedSynthesisRun = await this.createRelationshipLibraryCandidates(savedSynthesisRun, savedRevision)
+      } catch (error) {
+        savedSynthesisRun = await this.markRelationshipLibraryCandidateFailure(savedSynthesisRun, error)
+      }
     }
 
     return {
@@ -1167,6 +1171,25 @@ export class RelationshipOrchestrator {
     })
 
     return persistSynthesisRun(updated)
+  }
+
+  private async markRelationshipLibraryCandidateFailure(
+    run: RelationshipSynthesisRun,
+    error: unknown
+  ): Promise<RelationshipSynthesisRun> {
+    const failed = updateRelationshipLibraryCandidateMetadata(run, {
+      libraryCandidateStatus: 'failed',
+      libraryCandidateIds: [],
+      libraryCandidateError: error instanceof Error ? error.message : 'Library candidate extraction failed.',
+      libraryCandidateExtractor: 'deterministic',
+    })
+
+    try {
+      return await persistSynthesisRun(failed)
+    } catch {
+      // Best effort only: Library candidates must not fail an applied relationship synthesis.
+      return failed
+    }
   }
 }
 

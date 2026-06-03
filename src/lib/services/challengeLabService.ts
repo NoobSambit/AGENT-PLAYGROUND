@@ -496,6 +496,41 @@ async function createChallengeLibraryCandidates(
   ))
 }
 
+async function createChallengeLibraryCandidatesSafely(
+  run: ChallengeRun,
+  events: ChallengeEvent[],
+  report: ChallengeRunReport
+) {
+  try {
+    await createChallengeLibraryCandidates(run, events, report)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Library candidate extraction failed.'
+    updateChallengeLibraryCandidateMetadata(run, {
+      libraryCandidateStatus: 'failed',
+      libraryCandidateIds: [],
+      libraryCandidateError: message,
+      libraryCandidateExtractor: 'deterministic',
+    })
+    run.latestStage = 'completed'
+
+    try {
+      await persistRun(run)
+      await appendEvent(run, events, makeEvent(
+        run,
+        'library_candidate_extraction',
+        'library_candidates',
+        'Library extraction failed',
+        'Challenge output remains saved. Library candidate extraction failed and can be retried later.',
+        {
+          payload: run.payload,
+        }
+      ))
+    } catch {
+      // Best effort only: Library candidates must not fail a completed challenge run.
+    }
+  }
+}
+
 function defaultScenario(template: ChallengeTemplate, participants: ChallengeRun['participants']): string {
   if (template.id === 'solo_memory_precision') {
     return `Recall a grounded detail from ${participants[0].name}'s persona, goals, or recent memories. If the evidence is thin, say what is known and what is uncertain.`
@@ -1162,7 +1197,7 @@ export class ChallengeLabService {
         scoreSnapshot: { overallScore: report.overallScore, perAgent: Object.fromEntries(report.scorecards.map((entry) => [entry.agentId, entry.totalScore])) },
         payload: { report },
       }))
-      await createChallengeLibraryCandidates(run, events, report)
+      await createChallengeLibraryCandidatesSafely(run, events, report)
       return { run, events, participantResults: results }
     } catch (error) {
       run.status = 'failed'

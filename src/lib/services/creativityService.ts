@@ -870,11 +870,16 @@ class CreativityService {
       createdAt: new Date().toISOString(),
     })
 
-    const sessionWithLibraryMetadata = await this.createPublishedArtifactLibraryCandidates({
-      agent,
-      session: publishedSession,
-      artifact,
-    })
+    let sessionWithLibraryMetadata = publishedSession
+    try {
+      sessionWithLibraryMetadata = await this.createPublishedArtifactLibraryCandidates({
+        agent,
+        session: publishedSession,
+        artifact,
+      })
+    } catch (error) {
+      sessionWithLibraryMetadata = await this.markPublishedArtifactLibraryCandidateFailure(publishedSession, error)
+    }
 
     return {
       session: this.hydrateSessionQuality(sessionWithLibraryMetadata),
@@ -986,6 +991,39 @@ class CreativityService {
     })
 
     return saved
+  }
+
+  private async markPublishedArtifactLibraryCandidateFailure(
+    session: CreativeSession,
+    error: unknown
+  ): Promise<CreativeSession> {
+    const failed = updateCreativeLibraryCandidateMetadata(session, {
+      libraryCandidateStatus: 'failed',
+      libraryCandidateIds: [],
+      libraryCandidateError: error instanceof Error ? error.message : 'Library candidate extraction failed.',
+      libraryCandidateExtractor: 'deterministic',
+    })
+
+    try {
+      const saved = await CreativeStudioRepository.updateSession(failed.id, failed)
+      try {
+        await CreativeStudioRepository.savePipelineEvent({
+          id: generateId('creative_event'),
+          sessionId: saved.id,
+          stage: 'library_candidates',
+          status: 'failed',
+          summary: 'Creative artifact stayed published. Library candidate extraction failed and can be retried later.',
+          payload: { libraryCandidateStatus: saved.libraryCandidateStatus },
+          createdAt: new Date().toISOString(),
+        })
+      } catch {
+        // Best effort only: Library candidates must not fail a published creative artifact.
+      }
+      return saved
+    } catch {
+      // Best effort only: return the published session with in-memory failure metadata.
+      return failed
+    }
   }
 
   async getSessionDetail(agentId: string, sessionId: string): Promise<CreativeSessionDetail> {

@@ -854,11 +854,15 @@ class JournalService {
       })
     }
 
-    await this.createSavedEntryLibraryCandidate({
-      agent,
-      session: savedSession,
-      entry: savedEntry,
-    })
+    try {
+      await this.createSavedEntryLibraryCandidate({
+        agent,
+        session: savedSession,
+        entry: savedEntry,
+      })
+    } catch (error) {
+      await this.markSavedEntryLibraryCandidateFailure(agent.id, savedSession, error)
+    }
 
     return this.getSessionDetail(agentId, sessionId)
   }
@@ -965,6 +969,40 @@ class JournalService {
     })
 
     return saved
+  }
+
+  private async markSavedEntryLibraryCandidateFailure(
+    agentId: string,
+    session: JournalSession,
+    error: unknown
+  ): Promise<JournalSession> {
+    const failed = updateJournalLibraryCandidateMetadata(session, {
+      libraryCandidateStatus: 'failed',
+      libraryCandidateIds: [],
+      libraryCandidateError: error instanceof Error ? error.message : 'Library candidate extraction failed.',
+      libraryCandidateExtractor: 'deterministic',
+    })
+
+    try {
+      const saved = await this.saveSession(failed)
+      try {
+        await this.savePipelineEvent(agentId, {
+          id: generateId('journal_event'),
+          sessionId: saved.id,
+          stage: 'library_candidates',
+          status: 'failed',
+          summary: 'Journal entry stayed saved. Library candidate extraction failed and can be retried later.',
+          payload: { libraryCandidateStatus: saved.libraryCandidateStatus },
+          createdAt: new Date().toISOString(),
+        })
+      } catch {
+        // Best effort only: Library candidates must not fail a saved journal entry.
+      }
+      return saved
+    } catch {
+      // Best effort only: return the saved session with in-memory failure metadata.
+      return failed
+    }
   }
 
   async listSavedEntries(agentId: string, options?: { type?: JournalEntryType; limit?: number }) {

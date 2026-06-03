@@ -1205,14 +1205,38 @@ export class ProfileAnalysisService {
         }
       )))
 
-      const libraryCandidateEvent = await this.createProfileLibraryCandidates({
-        agent,
-        run,
-        profile,
-        gatePassed: gate.pass,
-      })
-      run = libraryCandidateEvent.run
-      pipelineEvents.push(libraryCandidateEvent.event)
+      try {
+        const libraryCandidateEvent = await this.createProfileLibraryCandidates({
+          agent,
+          run,
+          profile,
+          gatePassed: gate.pass,
+        })
+        run = libraryCandidateEvent.run
+        pipelineEvents.push(libraryCandidateEvent.event)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Library candidate extraction failed.'
+        const failedLibraryRun = updateProfileLibraryCandidateMetadata(run, {
+          libraryCandidateStatus: 'failed',
+          libraryCandidateIds: [],
+          libraryCandidateError: message,
+          libraryCandidateExtractor: 'deterministic',
+        })
+
+        try {
+          run = await this.saveRun(failedLibraryRun)
+          pipelineEvents.push(await this.savePipelineEvent(agentId, makePipelineEvent(
+            run.id,
+            'library_candidates',
+            'failed',
+            'Profile output remains saved. Library candidate extraction failed and can be retried later.',
+            run.payload || {}
+          )))
+        } catch {
+          run = failedLibraryRun
+          // Best effort only: Library candidates must not fail a completed profile run.
+        }
+      }
 
       if (!gate.pass) {
         await LearningService.recordQualityObservation({

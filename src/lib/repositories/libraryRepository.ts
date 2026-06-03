@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, ilike, inArray, or, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db/client'
 import {
   libraryItemSources,
@@ -47,6 +47,7 @@ export interface LibraryListParams {
   search?: string
   sort?: LibrarySortMode
   scope?: LibraryScope | 'all'
+  minConfidence?: number
   limit?: number
   offset?: number
 }
@@ -325,6 +326,10 @@ function buildListConditions(params: LibraryListParams) {
     ))
   }
 
+  if (params.minConfidence !== undefined) {
+    conditions.push(gte(libraryItems.confidence, params.minConfidence))
+  }
+
   return conditions.length > 0 ? and(...conditions) : undefined
 }
 
@@ -390,6 +395,20 @@ export class LibraryRepository {
       where: eq(libraryItems.id, id),
     })
     return row ? mapItemRow(row) : null
+  }
+
+  static async listItemsByIds(ids: string[]): Promise<LibraryItem[]> {
+    const uniqueIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))]
+    if (uniqueIds.length === 0) {
+      return []
+    }
+
+    const rows = await getDb()
+      .select()
+      .from(libraryItems)
+      .where(inArray(libraryItems.id, uniqueIds))
+
+    return rows.map(mapItemRow)
   }
 
   static async getItemDetail(id: string, usageLimit = 20): Promise<LibraryItemDetail | null> {
@@ -508,6 +527,34 @@ export class LibraryRepository {
       .returning()
 
     return mapUsageEventRow(row)
+  }
+
+  static async recordUsageEvents(records: LibraryUsageEvent[]): Promise<LibraryUsageEvent[]> {
+    if (records.length === 0) {
+      return []
+    }
+
+    const itemIds = [...new Set(records.map((record) => record.itemId))]
+    const usedAt = records.reduce((latest, record) => (
+      new Date(record.usedAt).getTime() > new Date(latest).getTime() ? record.usedAt : latest
+    ), records[0].usedAt)
+
+    return getDb().transaction(async (tx) => {
+      const rows = await tx
+        .insert(libraryItemUsageEvents)
+        .values(records.map(toUsageEventRow))
+        .returning()
+
+      await tx
+        .update(libraryItems)
+        .set({
+          usageCount: sql`${libraryItems.usageCount} + 1`,
+          lastUsedAt: asIsoString(usedAt),
+        })
+        .where(inArray(libraryItems.id, itemIds))
+
+      return rows.map(mapUsageEventRow)
+    })
   }
 
   static async listUsageEvents(itemId: string, limitCount = 20): Promise<LibraryUsageEvent[]> {

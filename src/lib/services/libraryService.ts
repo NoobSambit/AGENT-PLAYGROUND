@@ -9,6 +9,9 @@ import type {
   AgentRecord,
   LibraryBootstrapResponse,
   LibraryCategory,
+  LibraryContextItem,
+  LibraryContextPacket,
+  LibraryContextSourceSummary,
   LibraryFilters,
   LibraryItem,
   LibraryItemDetail,
@@ -20,6 +23,8 @@ import type {
   LibrarySourceRef,
   LibrarySourceType,
   LibraryStats,
+  LibraryUsageEvent,
+  LibraryUsageRecordResult,
   LibraryValidation,
   LibraryValidationActorType,
   LibraryValidationVerdict,
@@ -64,6 +69,14 @@ export const LIBRARY_SCOPES = ['agent', 'network'] as const
 export const LIBRARY_VISIBILITIES = ['agent', 'network', 'private'] as const
 export const LIBRARY_SORTS = ['updated', 'confidence', 'usage', 'created'] as const
 
+const DEFAULT_CONTEXT_LIMIT = 3
+const DEFAULT_CONTEXT_MAX_CHARS = 1200
+const DEFAULT_CONTEXT_MIN_CONFIDENCE = 0.55
+const MAX_CONTEXT_LIMIT = 10
+const MAX_CONTEXT_CHARS = 4000
+const MAX_CONTEXT_QUERY_CHARS = 500
+const MAX_USAGE_ITEMS = 20
+
 type LibraryAction = 'accept' | 'reject' | 'endorse' | 'dispute' | 'resolve' | 'retire'
 
 export interface LibraryItemEditableFields {
@@ -107,6 +120,24 @@ export interface LibraryActionInput {
   editedItem?: Partial<LibraryItemEditableFields>
 }
 
+export interface LibraryContextRequestInput {
+  query?: string
+  limit?: number
+  maxChars?: number
+  minConfidence?: number
+  category?: LibraryCategory
+  sourceType?: LibrarySourceType
+  scope?: LibraryScope | 'all'
+}
+
+export interface LibraryUsageRecordInput {
+  itemIds: string[]
+  consumerFeature: LibrarySourceType
+  consumerSourceId?: string
+  query?: string
+  relevanceScores?: Record<string, number>
+}
+
 export class LibraryServiceError extends Error {
   constructor(
     public readonly code: string,
@@ -131,6 +162,61 @@ function uniqueStrings(values: string[] | undefined): string[] {
 
 function clampConfidence(value: number): number {
   return Math.max(0, Math.min(1, value))
+}
+
+function clampInteger(value: number | undefined, fallback: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) {
+    return fallback
+  }
+
+  return Math.min(max, Math.max(min, Math.floor(value as number)))
+}
+
+function normalizeOptionalText(value: string | undefined, maxChars = 1000): string | undefined {
+  if (!isNonEmptyString(value)) {
+    return undefined
+  }
+
+  return normalizeText(value).slice(0, maxChars)
+}
+
+function truncateText(value: string, maxChars: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxChars) {
+    return normalized
+  }
+
+  return `${normalized.slice(0, Math.max(0, maxChars - 3)).trim()}...`
+}
+
+function tokenSet(value: string): Set<string> {
+  return new Set(value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s_-]/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 2))
+}
+
+function lexicalOverlap(query: string | undefined, text: string): number {
+  if (!query) {
+    return 0
+  }
+
+  const queryTokens = tokenSet(query)
+  const textTokens = tokenSet(text)
+  if (queryTokens.size === 0 || textTokens.size === 0) {
+    return 0
+  }
+
+  let matches = 0
+  for (const token of queryTokens) {
+    if (textTokens.has(token)) {
+      matches += 1
+    }
+  }
+
+  return matches / queryTokens.size
 }
 
 function isValidCategory(value: unknown): value is LibraryCategory {
@@ -159,6 +245,156 @@ function canAccessItem(agentId: string, item: LibraryItem): boolean {
   return item.agentId === agentId ||
     item.scope === 'network' ||
     item.relatedAgentIds.includes(agentId)
+}
+
+function canUseItemInPrompt(agentId: string, item: LibraryItem, minConfidence: number): boolean {
+  return canAccessItem(agentId, item) &&
+    item.status === 'validated' &&
+    item.confidence >= minConfidence &&
+    item.payload.contextPolicy?.allowPromptUse !== false
+}
+
+function primarySourceSummary(detail: LibraryItemDetail): LibraryContextSourceSummary | null {
+  const source = detail.sources.find((entry) => (
+    entry.sourceType === detail.item.primarySourceType &&
+    entry.sourceId === detail.item.primarySourceId
+  )) || detail.sources[0]
+
+  if (!source || !isNonEmptyString(source.evidenceSummary)) {
+    return null
+  }
+
+  return {
+    sourceType: source.sourceType,
+    sourceId: source.sourceId,
+    sourceTitle: source.sourceTitle,
+    sourceTimestamp: source.sourceTimestamp,
+    evidenceSummary: truncateText(source.evidenceSummary, 360),
+  }
+}
+
+function relevanceScore(detail: LibraryItemDetail, query: string | undefined): number {
+  const searchable = [
+    detail.item.title,
+    detail.item.claim,
+    detail.item.body,
+    detail.item.category,
+    detail.item.tags.join(' '),
+    detail.sources.map((source) => source.evidenceSummary).join(' '),
+  ].join(' ')
+  const lexical = lexicalOverlap(query, searchable)
+  const confidence = detail.item.confidence
+
+  return clampConfidence(query ? (lexical * 0.65) + (confidence * 0.35) : confidence)
+}
+
+function makePromptText(params: {
+  item: LibraryItem
+  source: LibraryContextSourceSummary
+  title: string
+  claim: string
+  bodyExcerpt: string
+  relevanceScore: number
+}): string {
+  const sourceLabel = [
+    params.source.sourceTitle,
+    `${params.source.sourceType}:${params.source.sourceId}`,
+  ].filter(Boolean).join(' | ')
+
+  return [
+    `- ${params.title} (${params.item.category}, confidence ${params.item.confidence.toFixed(2)}, relevance ${params.relevanceScore.toFixed(2)})`,
+    `  Claim: ${params.claim}`,
+    `  Context: ${params.bodyExcerpt}`,
+    `  Source: ${sourceLabel}. ${params.source.evidenceSummary}`,
+  ].join('\n')
+}
+
+function makeContextItem(
+  detail: LibraryItemDetail,
+  source: LibraryContextSourceSummary,
+  score: number,
+  remainingChars: number
+): LibraryContextItem | null {
+  let title = truncateText(detail.item.title, 90)
+  let claim = truncateText(detail.item.claim, 260)
+  let bodyExcerpt = truncateText(detail.item.body, 420)
+  let sourceSummary = source
+  let promptText = makePromptText({
+    item: detail.item,
+    source: sourceSummary,
+    title,
+    claim,
+    bodyExcerpt,
+    relevanceScore: score,
+  })
+
+  while (promptText.length > remainingChars && bodyExcerpt.length > 120) {
+    bodyExcerpt = truncateText(bodyExcerpt, bodyExcerpt.length - 60)
+    promptText = makePromptText({
+      item: detail.item,
+      source: sourceSummary,
+      title,
+      claim,
+      bodyExcerpt,
+      relevanceScore: score,
+    })
+  }
+
+  while (promptText.length > remainingChars && sourceSummary.evidenceSummary.length > 120) {
+    sourceSummary = {
+      ...sourceSummary,
+      evidenceSummary: truncateText(sourceSummary.evidenceSummary, sourceSummary.evidenceSummary.length - 60),
+    }
+    promptText = makePromptText({
+      item: detail.item,
+      source: sourceSummary,
+      title,
+      claim,
+      bodyExcerpt,
+      relevanceScore: score,
+    })
+  }
+
+  while (promptText.length > remainingChars && claim.length > 100) {
+    claim = truncateText(claim, claim.length - 50)
+    promptText = makePromptText({
+      item: detail.item,
+      source: sourceSummary,
+      title,
+      claim,
+      bodyExcerpt,
+      relevanceScore: score,
+    })
+  }
+
+  while (promptText.length > remainingChars && title.length > 40) {
+    title = truncateText(title, title.length - 20)
+    promptText = makePromptText({
+      item: detail.item,
+      source: sourceSummary,
+      title,
+      claim,
+      bodyExcerpt,
+      relevanceScore: score,
+    })
+  }
+
+  if (promptText.length > remainingChars || promptText.length < 80) {
+    return null
+  }
+
+  return {
+    id: detail.item.id,
+    title,
+    claim,
+    bodyExcerpt,
+    category: detail.item.category,
+    confidence: detail.item.confidence,
+    tags: detail.item.tags.slice(0, 8),
+    relevanceScore: score,
+    source: sourceSummary,
+    promptText,
+  }
 }
 
 function makeFilters(): LibraryFilters {
@@ -441,6 +677,176 @@ export class LibraryService {
     }
 
     return this.toDetailResponse(detail)
+  }
+
+  static async getContextPacket(
+    agentId: string,
+    input: LibraryContextRequestInput = {}
+  ): Promise<LibraryContextPacket> {
+    const agent = await this.requireAgent(agentId)
+    const limit = clampInteger(input.limit, DEFAULT_CONTEXT_LIMIT, 1, MAX_CONTEXT_LIMIT)
+    const maxChars = clampInteger(input.maxChars, DEFAULT_CONTEXT_MAX_CHARS, 200, MAX_CONTEXT_CHARS)
+    const minConfidence = clampConfidence(
+      typeof input.minConfidence === 'number' && Number.isFinite(input.minConfidence)
+        ? input.minConfidence
+        : DEFAULT_CONTEXT_MIN_CONFIDENCE
+    )
+    const query = normalizeOptionalText(input.query, MAX_CONTEXT_QUERY_CHARS)
+
+    if (input.category !== undefined && !isValidCategory(input.category)) {
+      throw new LibraryServiceError('validation_error', 'category is invalid', 400)
+    }
+    if (input.sourceType !== undefined && !isValidSourceType(input.sourceType)) {
+      throw new LibraryServiceError('validation_error', 'sourceType is invalid', 400)
+    }
+    if (input.scope !== undefined && input.scope !== 'all' && !isValidScope(input.scope)) {
+      throw new LibraryServiceError('validation_error', 'scope is invalid', 400)
+    }
+
+    const limits = {
+      limit,
+      maxChars,
+      minConfidence,
+      status: 'validated' as const,
+    }
+
+    try {
+      const summaries = await LibraryRepository.listItems({
+        agentId,
+        includeNetwork: true,
+        status: 'validated',
+        category: input.category,
+        sourceType: input.sourceType,
+        search: query,
+        sort: 'confidence',
+        scope: input.scope || 'all',
+        minConfidence,
+        limit: Math.min(100, Math.max(20, limit * 8)),
+      })
+      const details = (await Promise.all(summaries.map((summary) => LibraryRepository.getItemDetail(summary.id))))
+        .filter((detail): detail is LibraryItemDetail => Boolean(detail))
+        .filter((detail) => canUseItemInPrompt(agentId, detail.item, minConfidence))
+        .map((detail) => ({
+          detail,
+          source: primarySourceSummary(detail),
+          score: relevanceScore(detail, query),
+        }))
+        .filter((entry): entry is { detail: LibraryItemDetail; source: LibraryContextSourceSummary; score: number } => Boolean(entry.source))
+        .sort((left, right) => {
+          const byRelevance = right.score - left.score
+          return byRelevance !== 0 ? byRelevance : right.detail.item.confidence - left.detail.item.confidence
+        })
+
+      const items: LibraryContextItem[] = []
+      const promptBlocks: string[] = []
+      let usedChars = 0
+
+      for (const entry of details) {
+        if (items.length >= limit) {
+          break
+        }
+
+        const separatorChars = promptBlocks.length > 0 ? 2 : 0
+        const remainingChars = maxChars - usedChars - separatorChars
+        if (remainingChars < 120) {
+          break
+        }
+
+        const item = makeContextItem(entry.detail, entry.source, entry.score, remainingChars)
+        if (!item) {
+          continue
+        }
+
+        items.push(item)
+        promptBlocks.push(item.promptText)
+        usedChars += item.promptText.length + separatorChars
+      }
+
+      const promptText = promptBlocks.join('\n\n')
+      return {
+        agentId: agent.id,
+        status: items.length > 0 ? 'loaded' : 'skipped',
+        query,
+        items,
+        itemIds: items.map((item) => item.id),
+        promptText,
+        totalChars: promptText.length,
+        limits,
+        skippedReason: items.length > 0 ? undefined : 'no_validated_context',
+      }
+    } catch {
+      return {
+        agentId: agent.id,
+        status: 'failed',
+        query,
+        items: [],
+        itemIds: [],
+        promptText: '',
+        totalChars: 0,
+        limits,
+        error: 'Library context retrieval failed.',
+      }
+    }
+  }
+
+  static async recordUsage(
+    agentId: string,
+    input: LibraryUsageRecordInput
+  ): Promise<LibraryUsageRecordResult> {
+    const agent = await this.requireAgent(agentId)
+    if (!Array.isArray(input.itemIds) || input.itemIds.length === 0) {
+      throw new LibraryServiceError('validation_error', 'itemIds must include at least one item id', 400)
+    }
+    if (!isValidSourceType(input.consumerFeature)) {
+      throw new LibraryServiceError('validation_error', 'consumerFeature is invalid', 400)
+    }
+
+    const itemIds = [...new Set(input.itemIds
+      .filter((itemId): itemId is string => typeof itemId === 'string')
+      .map((itemId) => itemId.trim())
+      .filter(Boolean))]
+      .slice(0, MAX_USAGE_ITEMS)
+    const query = normalizeOptionalText(input.query, MAX_CONTEXT_QUERY_CHARS)
+    const consumerSourceId = normalizeOptionalText(input.consumerSourceId, 200)
+
+    if (itemIds.length === 0) {
+      throw new LibraryServiceError('validation_error', 'itemIds must include at least one item id', 400)
+    }
+
+    try {
+      const items = await LibraryRepository.listItemsByIds(itemIds)
+      const recordable = items.filter((item) => canUseItemInPrompt(agent.id, item, 0))
+      const now = new Date().toISOString()
+      const records: LibraryUsageEvent[] = recordable.map((item) => ({
+        id: generateId('library_usage'),
+        itemId: item.id,
+        agentId: agent.id,
+        consumerFeature: input.consumerFeature,
+        consumerSourceId,
+        query,
+        relevanceScore: clampConfidence(input.relevanceScores?.[item.id] ?? 0),
+        usedAt: now,
+        payload: {},
+      }))
+      const usageEvents = await LibraryRepository.recordUsageEvents(records)
+      const recordedItemIds = usageEvents.map((event) => event.itemId)
+
+      return {
+        success: true,
+        recordedItemIds,
+        skippedItemIds: itemIds.filter((itemId) => !recordedItemIds.includes(itemId)),
+        usageEvents,
+        recordedAt: usageEvents.length > 0 ? now : undefined,
+      }
+    } catch {
+      return {
+        success: false,
+        recordedItemIds: [],
+        skippedItemIds: itemIds,
+        usageEvents: [],
+        error: 'Library usage recording failed.',
+      }
+    }
   }
 
   static async acceptReviewItem(agentId: string, itemId: string, input: LibraryActionInput = { action: 'accept' }): Promise<LibraryMutationResponse> {

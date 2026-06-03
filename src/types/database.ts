@@ -2944,6 +2944,56 @@ export interface LibraryUsageEvent {
   payload: Record<string, unknown>
 }
 
+export type LibraryContextStatus = 'loaded' | 'skipped' | 'failed'
+
+export interface LibraryContextSourceSummary {
+  sourceType: LibrarySourceType
+  sourceId: string
+  sourceTitle?: string
+  sourceTimestamp?: string
+  evidenceSummary: string
+}
+
+export interface LibraryContextItem {
+  id: string
+  title: string
+  claim: string
+  bodyExcerpt: string
+  category: LibraryCategory
+  confidence: number
+  tags: string[]
+  relevanceScore: number
+  source: LibraryContextSourceSummary
+  promptText: string
+}
+
+export interface LibraryContextPacket {
+  agentId: string
+  status: LibraryContextStatus
+  query?: string
+  items: LibraryContextItem[]
+  itemIds: string[]
+  promptText: string
+  totalChars: number
+  limits: {
+    limit: number
+    maxChars: number
+    minConfidence: number
+    status: 'validated'
+  }
+  skippedReason?: string
+  error?: string
+}
+
+export interface LibraryUsageRecordResult {
+  success: boolean
+  recordedItemIds: string[]
+  skippedItemIds: string[]
+  usageEvents: LibraryUsageEvent[]
+  recordedAt?: string
+  error?: string
+}
+
 export interface LibraryItemSummary {
   id: string
   agentId?: string

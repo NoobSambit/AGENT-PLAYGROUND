@@ -1976,6 +1976,33 @@ async function createArenaLibraryCandidates(run: ArenaRun, events: ArenaEvent[],
   ))
 }
 
+async function createArenaLibraryCandidatesSafely(run: ArenaRun, events: ArenaEvent[], report: ArenaReport) {
+  try {
+    await createArenaLibraryCandidates(run, events, report)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Library candidate extraction failed.'
+    updateArenaLibraryCandidateMetadata(run, {
+      libraryCandidateStatus: 'failed',
+      libraryCandidateIds: [],
+      libraryCandidateError: message,
+      libraryCandidateExtractor: 'deterministic',
+    })
+    run.latestStage = 'completed'
+
+    try {
+      await saveRun(run)
+      await appendArenaEvent(run, events, makeArenaLibraryEvent(
+        run,
+        'Library extraction failed',
+        'Arena output remains saved. Library candidate extraction failed and can be retried later.',
+        run.payload || {}
+      ))
+    } catch {
+      // Best effort only: Library candidates must not fail a completed arena run.
+    }
+  }
+}
+
 async function generateStructuredOutput<T>({
   system,
   user,
@@ -3101,7 +3128,7 @@ export class ArenaService {
       run.eventCount += 1
       await saveRun(run)
       await relationshipOrchestrator.applyArenaOutcome(run, events)
-      await createArenaLibraryCandidates(run, events, report)
+      await createArenaLibraryCandidatesSafely(run, events, report)
 
       return { run, events }
     } catch (error) {

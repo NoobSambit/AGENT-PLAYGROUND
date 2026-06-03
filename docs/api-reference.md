@@ -46,6 +46,8 @@
 - `GET|POST /api/collective-intelligence`
 - `GET|POST /api/knowledge` remains legacy shared-knowledge compatibility.
 - `GET /api/agents/[id]/library`
+- `POST /api/agents/[id]/library/context`
+- `POST /api/agents/[id]/library/usage`
 - `POST /api/agents/[id]/library/items`
 - `GET /api/agents/[id]/library/items/[itemId]`
 - `POST /api/agents/[id]/library/items/[itemId]/actions`
@@ -133,6 +135,8 @@ Legacy simulation compatibility routes still exist:
 - `POST /api/arena/runs/[runId]/cancel` requests cooperative cancellation; the active executor stops at the next safe boundary and persists a cancellation event.
 - `GET /api/scenarios` returns branch point options, intervention templates, and recent saved runs for one agent.
 - `GET /api/agents/[id]/library` returns the Knowledge Library workspace bootstrap with list summaries, selected detail, stats, filters, and stale state. It accepts `status`, `category`, `sourceType`, `search`, `sort`, `scope`, `limit`, and numeric `cursor`.
+- `POST /api/agents/[id]/library/context` returns a prompt-safe `LibraryContextPacket`. Defaults are `limit=3`, `maxChars=1200`, `minConfidence=0.55`, and `status=validated`; the packet includes only bounded item summaries and source evidence summaries, never raw item payloads.
+- `POST /api/agents/[id]/library/usage` records Library context usage for accessible validated item IDs. Body fields are `itemIds`, `consumerFeature`, optional `consumerSourceId`, `query`, and either `relevanceScores` or `items: [{ itemId, relevanceScore }]`; the route appends usage events and updates `usageCount`/`lastUsedAt`.
 - `POST /api/agents/[id]/library/items` creates a manual Library item. Required fields are `title`, `claim`, `body`, and `category`; optional fields include `status`, `scope`, `visibility`, `tags`, `relatedAgentIds`, and `sourceRef`.
 - `GET /api/agents/[id]/library/items/[itemId]` returns the full Library item detail with sources, validations, usage events, and related-item placeholder data.
 - `POST /api/agents/[id]/library/items/[itemId]/actions` supports `accept`, `reject`, `endorse`, `dispute`, `resolve`, and `retire`. Rationale is required for `reject`, `dispute`, `resolve`, and `retire`; invalid transitions return `409`.
