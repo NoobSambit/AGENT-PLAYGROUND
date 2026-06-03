@@ -9,6 +9,7 @@ import {
   type CreateManualLibraryItemInput,
   type LibraryActionInput,
   type LibraryBootstrapQuery,
+  type LibraryItemEditableFields,
 } from '@/lib/services/libraryService'
 
 type ErrorCode = 'validation_error' | 'not_found' | 'invalid_transition' | 'internal_error'
@@ -125,6 +126,9 @@ export function parseCreateManualBody(value: unknown): CreateManualLibraryItemIn
 export function parseActionBody(value: unknown): LibraryActionInput {
   const body = asRecord(value)
   const action = body.action
+  const editedItem = body.editedItem && typeof body.editedItem === 'object' && !Array.isArray(body.editedItem)
+    ? body.editedItem as Partial<LibraryItemEditableFields>
+    : undefined
 
   if (
     action !== 'accept' &&
@@ -142,5 +146,6 @@ export function parseActionBody(value: unknown): LibraryActionInput {
     actorAgentId: typeof body.actorAgentId === 'string' ? body.actorAgentId : undefined,
     actorName: typeof body.actorName === 'string' ? body.actorName : undefined,
     rationale: typeof body.rationale === 'string' ? body.rationale : undefined,
+    editedItem,
   }
 }

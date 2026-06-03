@@ -10,7 +10,12 @@ export async function POST(
     const { runId } = await params
     const providerInfo = getProviderInfoForRequest(request)
     const detail = await arenaService.executeRun(runId, providerInfo)
-    return NextResponse.json(detail)
+    return NextResponse.json({
+      ...detail,
+      staleDomains: detail.run.payload?.libraryCandidateStatus === 'created'
+        ? ['knowledge-library']
+        : [],
+    })
   } catch (error) {
     console.error('Arena execute error:', error)
     return NextResponse.json(

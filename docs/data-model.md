@@ -39,6 +39,10 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 ## Shared And Network Tables
 
 - `shared_knowledge`
+- `library_items`
+- `library_item_sources`
+- `library_item_validations`
+- `library_item_usage_events`
 - `collective_broadcasts`
 - `conflicts`
 - `challenge_runs`
@@ -89,6 +93,9 @@ The canonical runtime store is PostgreSQL. Firestore is now treated as a legacy 
 - `challenge_events` is append-only by `run_id` and `sequence`, allowing the UI to show live stage and model-call progress instead of a generic loading state.
 - `challenge_participant_results` supports per-agent challenge history and idempotent counter application through `ChallengeRun.progressAppliedAt`.
 - Legacy rows are generally preserved and treated as `legacy_unvalidated` when quality fields are absent. Challenge Lab is the exception: old `challenges` rows are a hard replacement and are not rendered or migrated.
+- The Knowledge Library rebuild stores reusable claims in `library_items`, evidence in `library_item_sources`, lifecycle decisions in `library_item_validations`, and reuse telemetry in `library_item_usage_events`. Only validated items with payload `contextPolicy.allowPromptUse=true` should be eligible for downstream prompt context.
+- `shared_knowledge` remains a compatibility table for `/api/knowledge`. Phase 1 provides a dry-run-first one-way copy into the Library tables through `npm run db:backfill-library`; it does not delete or rewrite legacy rows.
+- Backfilled `shared_knowledge` records use `legacy_shared_${shared_knowledge.id}` Library IDs, keep `quality_status='legacy_unvalidated'`, map undisputed records to `validated`, and map disputed records to `disputed`.
 
 ## Detailed References
 

@@ -168,6 +168,28 @@ function artifactBadgeTone(score?: number) {
   return 'text-pastel-red'
 }
 
+function getLibraryCandidateBadgeClass(status?: CreativeSession['libraryCandidateStatus']) {
+  if (status === 'created') return 'border-pastel-green/30 bg-pastel-green/5 text-pastel-green'
+  if (status === 'failed') return 'border-pastel-red/30 bg-pastel-red/5 text-pastel-red'
+  if (status === 'skipped') return 'border-pastel-yellow/30 bg-pastel-yellow/5 text-pastel-yellow'
+  return 'border-border/40 bg-muted/20 text-muted-foreground'
+}
+
+function getLibraryCandidateCopy(session?: CreativeSession | null) {
+  const status = session?.libraryCandidateStatus
+  const ids = session?.libraryCandidateIds || []
+  if (status === 'created') {
+    return `${ids.length} review candidate${ids.length === 1 ? '' : 's'} ready in the Library Review Queue.`
+  }
+  if (status === 'failed') {
+    return session?.libraryCandidateError || 'Library candidate extraction failed after publish.'
+  }
+  if (status === 'skipped') {
+    return session?.libraryCandidateError || 'No reusable Library claim was created.'
+  }
+  return null
+}
+
 function getArtifactTitle(title: string | undefined, format?: CreativeFormat) {
   const trimmed = (title || '').trim()
   if (!trimmed || trimmed.length < 3) {
@@ -371,6 +393,7 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
       && finalArtifact?.validation?.pass
       && finalArtifact.evaluation?.pass
   )
+  const libraryCandidateCopy = getLibraryCandidateCopy(detail?.session)
 
   const handleBriefChange = <K extends keyof CreativeBrief>(key: K, value: CreativeBrief[K]) => {
     setBrief((current) => current ? { ...current, [key]: value } : current)
@@ -569,6 +592,26 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
           </div>
         </div>
       )}
+
+      {libraryCandidateCopy && detail?.session?.libraryCandidateStatus ? (
+        <div className={`rounded-md border px-4 py-3 text-[13px] flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between ${getLibraryCandidateBadgeClass(detail.session.libraryCandidateStatus)}`}>
+          <div className="flex items-start gap-3">
+            {detail.session.libraryCandidateStatus === 'failed'
+              ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
+            <div>
+              <div className="font-bold uppercase tracking-[0.14em]">Library candidates {detail.session.libraryCandidateStatus}</div>
+              <div className="mt-0.5 text-[12px] opacity-90">{libraryCandidateCopy}</div>
+            </div>
+          </div>
+          <a
+            href={`/agents/${encodeURIComponent(agentId)}?tab=knowledge-library`}
+            className="shrink-0 text-[11px] font-bold uppercase tracking-[0.16em] underline-offset-4 hover:underline"
+          >
+            Review Queue
+          </a>
+        </div>
+      ) : null}
 
       {/* Metrics Bento - Hidden on XL to save space for the 3-column layout */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0 xl:hidden">

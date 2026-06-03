@@ -34,6 +34,7 @@ The Relationships tab is the social-state workspace for a single agent. It lets 
   - legacy `update`
 4. Mutations flow through `relationshipOrchestrator`, which applies evidence, computes directional deltas, synthesizes the updated pair, persists evidence and revisions, and updates the canonical relationship row.
 5. Arena, challenge, conflict, and mentorship workflows can also call the orchestrator to project their outcomes into persistent relationship state.
+6. Applied synthesis runs create review-only Library candidates only when the relationship changed materially. Skipped synthesis runs do not promote relationship knowledge.
 
 ## 5. API contract details
 
@@ -55,6 +56,7 @@ The Relationships tab is the social-state workspace for a single agent. It lets 
 - Error responses:
   - `400` for missing inputs or invalid action.
   - `500` on orchestration failure.
+- Successful mutation responses include `staleDomains: ['knowledge-library']` when any returned synthesis run created Library review candidates.
 - Related routes used by the tab:
   - `/api/conflicts` for conflict analysis and resolution.
 
@@ -95,6 +97,7 @@ stateDiagram-v2
 - Signal weights and deltas are clamped in the orchestrator.
 - Legacy `update` calls are translated into explicit checkpoint evidence rather than directly mutating pair metrics.
 - Source-kind weighting keeps conflict outcomes heavier than weak simulation signals.
+- Library candidate extraction is deterministic and source-backed by the relationship synthesis run and revision evidence. Candidates remain in `review` status until accepted in the Library.
 
 ## 9. Failure modes and how they surface in UI/API
 
@@ -102,6 +105,7 @@ stateDiagram-v2
 - No relationship data: the UI shows the “No persistent ties yet” empty state.
 - Source reconstruction failure: `POST /api/relationships` returns `500`; no relationship change is applied.
 - Legacy direct update callers can still succeed, but their semantics are approximate because they map through heuristics in `relationshipService.analyzeInteraction`.
+- Relationship provenance shows Library candidate states (`created`, `skipped`, `failed`) inside synthesis run cards, with a Review Queue link.
 
 ## 10. Debugging runbook
 

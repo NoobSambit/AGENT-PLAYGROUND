@@ -3,6 +3,16 @@ import { relationshipOrchestrator } from '@/lib/services/relationshipOrchestrato
 import { relationshipService } from '@/lib/services/relationshipService'
 import type { RelationshipSignalKind, RelationshipSourceKind } from '@/types/database'
 
+function hasCreatedLibraryCandidates(result: unknown): boolean {
+  const entries = Array.isArray(result) ? result : [result]
+  return entries.some((entry) => (
+    entry &&
+    typeof entry === 'object' &&
+    'synthesisRun' in entry &&
+    (entry as { synthesisRun?: { libraryCandidateStatus?: string } }).synthesisRun?.libraryCandidateStatus === 'created'
+  ))
+}
+
 function legacyEventTypeToSignal(eventType: string): RelationshipSignalKind {
   if (eventType === 'guidance') return 'guidance'
   if (eventType === 'help') return 'support'
@@ -70,7 +80,13 @@ export async function POST(request: NextRequest) {
         metadata,
       })
 
-      return NextResponse.json({ success: true, result })
+      return NextResponse.json({
+        success: true,
+        result,
+        staleDomains: hasCreatedLibraryCandidates(result)
+          ? ['knowledge-library']
+          : [],
+      })
     }
 
     if (action === 'recompute_pair') {
@@ -82,7 +98,13 @@ export async function POST(request: NextRequest) {
       }
 
       const result = await relationshipOrchestrator.recomputePair(body.pairId)
-      return NextResponse.json({ success: true, result })
+      return NextResponse.json({
+        success: true,
+        result,
+        staleDomains: hasCreatedLibraryCandidates(result)
+          ? ['knowledge-library']
+          : [],
+      })
     }
 
     if (action === 'rebuild_from_source') {
@@ -97,7 +119,13 @@ export async function POST(request: NextRequest) {
         body.sourceKind as RelationshipSourceKind,
         body.sourceId
       )
-      return NextResponse.json({ success: true, result })
+      return NextResponse.json({
+        success: true,
+        result,
+        staleDomains: hasCreatedLibraryCandidates(result)
+          ? ['knowledge-library']
+          : [],
+      })
     }
 
     // Legacy compatibility path: convert the old direct update contract into a manual checkpoint.
@@ -129,7 +157,13 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      return NextResponse.json({ success: true, result })
+      return NextResponse.json({
+        success: true,
+        result,
+        staleDomains: hasCreatedLibraryCandidates(result)
+          ? ['knowledge-library']
+          : [],
+      })
     }
 
     return NextResponse.json(

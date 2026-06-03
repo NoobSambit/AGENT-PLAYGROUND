@@ -40,6 +40,7 @@ The Journal tab is the private reflection workspace. It drafts self-reflective j
 5. The service validates content fields, source refs, and text quality, then runs `applyFinalQualityGate`.
 6. It writes session, entry artifacts, and pipeline events through `JournalWorkspaceRepository` or Firestore compatibility writers.
 7. `saveSessionEntry` throws `JournalSaveBlockedError` when the final entry is still blocked.
+8. After save, the service may create at most one review-only Library candidate from a high-quality saved entry with a durable insight plus theme or action evidence.
 
 ## 5. API contract details
 
@@ -53,7 +54,7 @@ The Journal tab is the private reflection workspace. It drafts self-reflective j
 - `POST /api/agents/[id]/journal/sessions/[sessionId]/generate`
   - returns updated `JournalSessionDetail`.
 - `POST /api/agents/[id]/journal/sessions/[sessionId]/save`
-  - success returns updated detail.
+  - success returns updated detail, plus `staleDomains: ['knowledge-library']` when a Library review candidate was created.
   - blocked save returns `409` with `saveBlockers` containing blocker reasons, quality state, validation, and evaluation.
 - Edge cases:
   - the component uses a placeholder detail while generation is in flight.
@@ -95,12 +96,14 @@ stateDiagram-v2
 - Focus values are normalized to known `JournalFocus` values only.
 - Output is validated for required text fields, source refs, shared artifact text quality, and gate flags.
 - Save is blocked if validation fails or quality status is not acceptable.
+- Library candidate creation is skipped for ordinary journal thoughts, low-scoring saved entries, or entries without durable lesson evidence.
 
 ## 9. Failure modes and how they surface in UI/API
 
 - Daily limit exceeded or session creation failure: route returns `500` with the service error.
 - Missing session: detail route returns `404`.
 - Save block: `409` with explicit `saveBlockers`; the UI preserves the draft and shows the blocker details.
+- Library candidate extraction after save can be `created`, `skipped`, or `failed`; the UI keeps the saved entry visible and links to the Library Review Queue when candidate metadata exists.
 - Legacy archive entry: rendered as legacy/unvalidated instead of treated as a passed artifact.
 
 ## 10. Debugging runbook

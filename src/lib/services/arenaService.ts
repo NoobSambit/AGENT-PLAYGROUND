@@ -16,6 +16,7 @@ import {
 } from '@/lib/arena/firestoreStore'
 import { resolveProviderInfoModel } from '@/lib/llm/ollama'
 import { AgentService } from '@/lib/services/agentService'
+import { LibraryCandidateExtractor } from '@/lib/services/libraryCandidateExtractor'
 import { relationshipOrchestrator } from '@/lib/services/relationshipOrchestrator'
 import { generateText } from '@/lib/llm/provider'
 import type { LLMProviderInfo } from '@/lib/llmConfig'
@@ -1804,6 +1805,177 @@ async function saveEvent(record: ArenaEvent): Promise<ArenaEvent> {
   })
 }
 
+function updateArenaLibraryCandidateMetadata(
+  run: ArenaRun,
+  metadata: NonNullable<ArenaRun['payload']>
+) {
+  run.payload = {
+    ...(run.payload || {}),
+    ...metadata,
+  }
+  run.updatedAt = new Date().toISOString()
+}
+
+async function appendArenaEvent(run: ArenaRun, events: ArenaEvent[], event: ArenaEvent) {
+  await saveEvent(event)
+  events.push(event)
+  run.eventCount = event.sequence
+  run.updatedAt = new Date().toISOString()
+  await saveRun(run)
+}
+
+function makeArenaLibraryEvent(
+  run: ArenaRun,
+  title: string,
+  content: string,
+  payload: Record<string, unknown> = {}
+): ArenaEvent {
+  return {
+    id: generateId('arena_event'),
+    runId: run.id,
+    sequence: run.eventCount + 1,
+    stage: 'library_candidates',
+    kind: 'library_candidate_extraction',
+    speakerType: 'system',
+    title,
+    content,
+    summary: content,
+    payload,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+function buildArenaLibraryCandidates(run: ArenaRun, participant: ArenaRun['participants'][number], report: ArenaReport) {
+  const scorecard = report.scorecards.find((entry) => entry.agentId === participant.id)
+    || run.scorecardSnapshot.find((entry) => entry.agentId === participant.id)
+  const decisiveMoment = report.decisiveMoments.find((moment) => moment.agentId === participant.id)
+  const evidenceSummary = `${report.verdictSummary} ${participant.name} scored ${scorecard?.total ?? 'unknown'} in arena run ${run.id}.`
+  const strongestDimension = scorecard
+    ? ([
+        ['clarity', scorecard.clarity],
+        ['pressure', scorecard.pressure],
+        ['responsiveness', scorecard.responsiveness],
+        ['consistency', scorecard.consistency],
+      ].sort((left, right) => right[1] - left[1])[0]?.[0] || 'debate')
+    : 'debate'
+
+  return [
+    {
+      title: `${participant.name} arena pattern`,
+      claim: `${participant.name} showed a reusable arena debate pattern around ${strongestDimension}.`,
+      body: `${scorecard?.summary || participant.name} produced review-worthy debate evidence in arena run ${run.id}. ${evidenceSummary}`,
+      category: 'behavior_pattern',
+      confidence: 0.58,
+      tags: ['arena', 'debate', String(strongestDimension)],
+      evidenceSummary,
+      relatedAgentIds: [participant.id],
+    },
+    decisiveMoment && {
+      title: `${participant.name} decisive arena moment`,
+      claim: `${participant.name} produced a reusable arena lesson: ${decisiveMoment.summary}`,
+      body: `Arena run ${run.id} recorded this decisive moment for future review. ${evidenceSummary}`,
+      category: 'lesson',
+      confidence: 0.6,
+      tags: ['arena', 'decisive-moment'],
+      evidenceSummary,
+      relatedAgentIds: [participant.id],
+    },
+  ].filter(Boolean)
+}
+
+async function createArenaLibraryCandidates(run: ArenaRun, events: ArenaEvent[], report: ArenaReport) {
+  if (run.status !== 'completed' || !report.verdictSummary) {
+    updateArenaLibraryCandidateMetadata(run, {
+      libraryCandidateStatus: 'skipped',
+      libraryCandidateIds: [],
+      libraryCandidateError: 'Skipped because the arena run did not complete with a final report.',
+      libraryCandidateExtractor: 'deterministic',
+    })
+    await saveRun(run)
+    await appendArenaEvent(run, events, makeArenaLibraryEvent(
+      run,
+      'Library update skipped',
+      'Library candidate extraction skipped because this arena run was not eligible.',
+      run.payload || {}
+    ))
+    return
+  }
+
+  updateArenaLibraryCandidateMetadata(run, {
+    libraryCandidateStatus: 'running',
+    libraryCandidateIds: [],
+    libraryCandidateExtractor: 'deterministic',
+  })
+  run.latestStage = 'library_candidates'
+  await saveRun(run)
+  await appendArenaEvent(run, events, makeArenaLibraryEvent(
+    run,
+    'Preparing Library candidates',
+    'Extracting source-backed review candidates from the completed arena report.',
+    run.payload || {}
+  ))
+
+  const createdIds: string[] = []
+  const errors: string[] = []
+  const skipped: string[] = []
+
+  for (const participant of run.participants) {
+    const sourceSummary = `${report.verdictSummary} Arena participant ${participant.name}; winner ${report.winnerAgentName}.`
+    const extraction = await LibraryCandidateExtractor.extractAndSaveCandidates({
+      agentId: participant.id,
+      agentName: participant.name,
+      sourceType: 'arena',
+      sourceId: run.id,
+      sourceTitle: `Arena: ${run.config.topic}`,
+      sourceSummary,
+      sourceTimestamp: run.completedAt,
+      featurePayload: {
+        libraryCandidates: buildArenaLibraryCandidates(run, participant, report),
+        report,
+        scorecard: report.scorecards.find((entry) => entry.agentId === participant.id),
+      },
+      mode: 'deterministic',
+      maxCandidates: 1,
+    })
+
+    createdIds.push(...extraction.metadata.createdCandidateIds)
+    if (extraction.metadata.failedExtractionReason) {
+      errors.push(`${participant.name}: ${extraction.metadata.failedExtractionReason}`)
+    } else if (extraction.metadata.skippedReason) {
+      skipped.push(`${participant.name}: ${extraction.metadata.skippedReason}`)
+    }
+  }
+
+  const failed = errors.length > 0 && createdIds.length === 0
+  updateArenaLibraryCandidateMetadata(run, {
+    libraryCandidateStatus: createdIds.length > 0 ? 'created' : failed ? 'failed' : 'skipped',
+    libraryCandidateIds: createdIds,
+    libraryCandidateCreatedAt: createdIds.length > 0 ? new Date().toISOString() : undefined,
+    libraryCandidateError: errors[0] || skipped[0],
+    libraryCandidateExtractor: 'deterministic',
+  })
+  run.latestStage = 'completed'
+  await saveRun(run)
+  await appendArenaEvent(run, events, makeArenaLibraryEvent(
+    run,
+    createdIds.length > 0
+      ? 'Library review candidates created'
+      : failed
+        ? 'Library extraction failed'
+        : 'Library update skipped',
+    createdIds.length > 0
+      ? `${createdIds.length} source-backed candidate${createdIds.length === 1 ? '' : 's'} saved to Library review.`
+      : failed
+        ? 'Arena output remains saved. Library candidate extraction failed and can be retried later.'
+        : `Library candidate extraction skipped: ${skipped[0] || 'no reusable claim found'}.`,
+    {
+      ...(run.payload || {}),
+      skipped,
+      errors,
+    }
+  ))
+}
+
 async function generateStructuredOutput<T>({
   system,
   user,
@@ -2929,6 +3101,7 @@ export class ArenaService {
       run.eventCount += 1
       await saveRun(run)
       await relationshipOrchestrator.applyArenaOutcome(run, events)
+      await createArenaLibraryCandidates(run, events, report)
 
       return { run, events }
     } catch (error) {

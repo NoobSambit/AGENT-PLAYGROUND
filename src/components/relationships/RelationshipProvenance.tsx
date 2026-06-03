@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertTriangle, GitBranch, Sparkles, Users } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, GitBranch, Sparkles, Users } from 'lucide-react'
 import type {
   RelationshipAlertFlag,
   RelationshipRevision,
@@ -46,13 +46,35 @@ function RevisionCard({ revision }: { revision: RelationshipRevision }) {
 }
 
 // ─── SynthesisRunCard ─────────────────────────────────────────────────────────
-function SynthesisRunCard({ run }: { run: RelationshipSynthesisRun }) {
+function libraryCandidateClass(status?: RelationshipSynthesisRun['libraryCandidateStatus']) {
+  if (status === 'created') return 'border-pastel-green/30 bg-pastel-green/5 text-pastel-green'
+  if (status === 'failed') return 'border-pastel-red/30 bg-pastel-red/5 text-pastel-red'
+  if (status === 'skipped') return 'border-pastel-yellow/30 bg-pastel-yellow/5 text-pastel-yellow'
+  return 'border-border/40 bg-muted/20 text-muted-foreground'
+}
+
+function libraryCandidateCopy(run: RelationshipSynthesisRun) {
+  const ids = run.libraryCandidateIds || []
+  if (run.libraryCandidateStatus === 'created') {
+    return `${ids.length} review candidate${ids.length === 1 ? '' : 's'} created.`
+  }
+  if (run.libraryCandidateStatus === 'failed') {
+    return run.libraryCandidateError || 'Library candidate extraction failed.'
+  }
+  if (run.libraryCandidateStatus === 'skipped') {
+    return run.libraryCandidateError || 'No reusable relationship claim was created.'
+  }
+  return null
+}
+
+function SynthesisRunCard({ run, agentId }: { run: RelationshipSynthesisRun; agentId: string }) {
   const statusClass =
     run.status === 'applied'
       ? 'bg-pastel-green/10 text-pastel-green'
       : run.status === 'skipped'
         ? 'bg-pastel-yellow/10 text-pastel-yellow'
         : 'bg-pastel-red/10 text-pastel-red'
+  const candidateCopy = libraryCandidateCopy(run)
 
   return (
     <div className={`${subPanel} p-3`}>
@@ -70,6 +92,27 @@ function SynthesisRunCard({ run }: { run: RelationshipSynthesisRun }) {
       <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         {formatDateTime(run.createdAt)}
       </div>
+      {candidateCopy && run.libraryCandidateStatus ? (
+        <div className={`mt-3 rounded-sm border px-2.5 py-2 ${libraryCandidateClass(run.libraryCandidateStatus)}`}>
+          <div className="flex items-start gap-2">
+            {run.libraryCandidateStatus === 'failed'
+              ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              : <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+            <div className="min-w-0">
+              <div className="text-[9px] font-bold uppercase tracking-[0.16em]">
+                Library candidates {run.libraryCandidateStatus}
+              </div>
+              <div className="mt-1 text-[10px] leading-relaxed opacity-90">{candidateCopy}</div>
+              <a
+                href={`/agents/${encodeURIComponent(agentId)}?tab=knowledge-library`}
+                className="mt-1 inline-block text-[9px] font-bold uppercase tracking-[0.16em] underline-offset-4 hover:underline"
+              >
+                Review Queue
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -154,7 +197,7 @@ export function RelationshipProvenance({
           </div>
           {selectedPair?.synthesisRuns.length ? (
             selectedPair.synthesisRuns.map((r) => (
-              <SynthesisRunCard key={r.id} run={r} />
+              <SynthesisRunCard key={r.id} run={r} agentId={bootstrap.agent.id} />
             ))
           ) : (
             <EmptyInline text="No synthesis runs stored for this pair yet." />

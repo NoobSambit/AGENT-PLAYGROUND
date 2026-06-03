@@ -52,9 +52,15 @@ export interface LibraryListParams {
 }
 
 export interface LibraryItemLifecycleUpdate {
+  title?: string
+  claim?: string
+  body?: string
+  category?: LibraryCategory
   status?: LibraryItemStatus
   confidence?: number
   updatedAt?: string
+  tags?: string[]
+  relatedAgentIds?: string[]
   usageCount?: number
   lastUsedAt?: string | null
   acceptedAt?: string | null
@@ -343,8 +349,14 @@ function toLifecycleSet(updates: LibraryItemLifecycleUpdate): Partial<LibraryIte
     updatedAt: asIsoString(updates.updatedAt),
   }
 
+  if (updates.title !== undefined) set.title = updates.title
+  if (updates.claim !== undefined) set.claim = updates.claim
+  if (updates.body !== undefined) set.body = updates.body
+  if (updates.category !== undefined) set.category = updates.category
   if (updates.status !== undefined) set.status = updates.status
   if (updates.confidence !== undefined) set.confidence = updates.confidence
+  if (updates.tags !== undefined) set.tags = updates.tags
+  if (updates.relatedAgentIds !== undefined) set.relatedAgentIds = updates.relatedAgentIds
   if (updates.usageCount !== undefined) set.usageCount = updates.usageCount
   if (updates.lastUsedAt !== undefined) set.lastUsedAt = updates.lastUsedAt ? asIsoString(updates.lastUsedAt) : null
   if (updates.acceptedAt !== undefined) set.acceptedAt = updates.acceptedAt ? asIsoString(updates.acceptedAt) : null

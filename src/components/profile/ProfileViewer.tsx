@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock3,
   Languages,
+  Library,
   Loader2,
   MessageSquareQuote,
   RefreshCw,
@@ -39,6 +40,7 @@ interface ProfileViewerProps {
   agent: AgentRecord
   refreshToken?: number
   preferredModel?: string
+  onOpenLibraryReview?: () => void
 }
 
 interface EvolutionResponse {
@@ -226,7 +228,7 @@ function EmptyState({ title, copy }: { title: string; copy: string }) {
   )
 }
 
-export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: ProfileViewerProps) {
+export function ProfileViewer({ agent, refreshToken = 0, preferredModel, onOpenLibraryReview }: ProfileViewerProps) {
   const selectedProvider = useLLMPreferenceStore((state) => state.provider)
   const activeModel = useMemo(() => preferredModel || getClientModelForProvider(selectedProvider), [preferredModel, selectedProvider])
 
@@ -467,6 +469,7 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                       {detail.run.failureReason}
                     </div>
                   )}
+                  <ProfileLibraryCandidateStatus run={detail?.run || null} onOpenLibraryReview={onOpenLibraryReview} />
                 </div>
               </div>
 
@@ -483,21 +486,29 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel }: Profi
                     ['synthesis', 'Synthesis'],
                     ['evaluation', 'Evaluation'],
                     ['repair', 'Repair'],
+                    ['library_candidates', 'Library candidates'],
                     ['completed', 'Completed'],
                   ].map(([stage, label]) => {
                     const active = detail?.run?.latestStage === stage
                     const completed = (detail?.pipelineEvents || []).some((event) => event.stage === stage && event.status === 'completed')
+                    const failed = (detail?.pipelineEvents || []).some((event) => event.stage === stage && event.status === 'failed')
+                    const skipped = (detail?.pipelineEvents || []).some((event) => event.stage === stage && event.status === 'skipped')
+                    const runningStage = (detail?.pipelineEvents || []).some((event) => event.stage === stage && event.status === 'running')
                     return (
                       <div
                         key={stage}
                         className={`flex items-center justify-between rounded-sm border px-3 py-2 text-[12px] ${
                           active
                             ? 'border-violet-500/40 bg-violet-500/10 text-foreground'
+                            : failed
+                              ? 'border-red-500/30 bg-red-500/5 text-red-200'
+                              : skipped
+                                ? 'border-amber-500/30 bg-amber-500/5 text-amber-200'
                             : 'border-border/30 bg-muted/5 text-muted-foreground'
                         }`}
                       >
                         <span>{label}</span>
-                        <span className="text-[10px] font-bold uppercase tracking-wider">{completed ? 'done' : active ? 'live' : 'queued'}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider">{completed ? 'done' : failed ? 'failed' : skipped ? 'skipped' : active || runningStage ? 'live' : 'queued'}</span>
                       </div>
                     )
                   })}
@@ -1252,6 +1263,57 @@ function ClaimEvidenceBlock({ title, items, emptyCopy }: { title: string; items:
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function ProfileLibraryCandidateStatus({
+  run,
+  onOpenLibraryReview,
+}: {
+  run: ProfileAnalysisRun | null
+  onOpenLibraryReview?: () => void
+}) {
+  const metadata = run?.payload
+  const status = metadata?.libraryCandidateStatus
+  if (!status) return null
+
+  const ids = metadata.libraryCandidateIds || []
+  const created = status === 'created' && ids.length > 0
+  const failed = status === 'failed'
+  const skipped = status === 'skipped'
+
+  return (
+    <div className={`mt-3 rounded-sm border px-3 py-2 text-xs leading-5 ${
+      created
+        ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-200'
+        : failed
+          ? 'border-red-500/20 bg-red-500/5 text-red-200'
+          : skipped
+            ? 'border-amber-500/20 bg-amber-500/5 text-amber-200'
+            : 'border-zinc-700/60 bg-zinc-900/40 text-muted-foreground'
+    }`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2">
+          <Library className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <div className="font-bold uppercase tracking-[0.16em]">Library candidates {status.replaceAll('_', ' ')}</div>
+            <div className="mt-1 text-foreground/75">
+              {created
+                ? `${ids.length} review candidate${ids.length === 1 ? '' : 's'} ready in the Library.`
+                : failed
+                  ? 'Profile output stayed saved. Library extraction failed and can be retried later.'
+                  : metadata.libraryCandidateError || 'No reusable Library claim was created.'}
+            </div>
+          </div>
+        </div>
+        {created && onOpenLibraryReview && (
+          <Button variant="outline" size="sm" onClick={onOpenLibraryReview} className="h-8 gap-1.5 border-zinc-700/60 text-[10px] font-bold uppercase tracking-wider">
+            <Library className="h-3.5 w-3.5" />
+            Review
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

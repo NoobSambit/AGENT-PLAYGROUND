@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,7 +36,7 @@ import { ChatMessageContent } from '@/components/chat/ChatMessageContent'
 
 // Phase 3 Components
 import { KnowledgeGraph } from '@/components/knowledge/KnowledgeGraph'
-import { SharedKnowledgeLibrary } from '@/components/knowledge/SharedKnowledgeLibrary'
+import { KnowledgeLibraryWorkspace } from '@/components/library/KnowledgeLibraryWorkspace'
 import { MentorshipHub } from '@/components/mentorship/MentorshipHub'
 import { CollectiveIntelligencePanel } from '@/components/collective/CollectiveIntelligencePanel'
 import { NeuralActivityView } from '@/components/neural/NeuralActivityView'
@@ -106,6 +106,7 @@ const TAB_CONFIG = [
 export default function AgentDetail() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const agentId = params.id as string
 
   const { agents, currentAgent, setCurrentAgent, fetchAgentById, fetchAgents, updateAgent } = useAgentStore()
@@ -155,6 +156,13 @@ export default function AgentDetail() {
       ? latestModelForProvider.metadata.model
       : getClientModelForProvider(selectedProvider)
   }, [messages, selectedProvider])
+
+  useEffect(() => {
+    const requestedTab = searchParams.get('tab')
+    if (requestedTab && TAB_CONFIG.some((tab) => tab.id === requestedTab)) {
+      setActiveTab(requestedTab as TabType)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     const loadCurrentAgent = async () => {
@@ -1162,6 +1170,7 @@ export default function AgentDetail() {
                 agent={currentAgent as AgentRecord}
                 refreshToken={profileRefreshToken}
                 preferredModel={activeProviderModel}
+                onOpenLibraryReview={() => setActiveTab('knowledge-library')}
               />
             ) : activeTab === 'challenges' ? (
               <ChallengeLab
@@ -1169,6 +1178,7 @@ export default function AgentDetail() {
                 agentName={currentAgent.name}
                 agents={agents as unknown as AgentRecord[]}
                 activeModel={activeProviderModel}
+                onOpenLibraryReview={() => setActiveTab('knowledge-library')}
               />
             ) : activeTab === 'knowledge-graph' ? (
               /* Phase 3: Knowledge Graph Tab */
@@ -1189,27 +1199,10 @@ export default function AgentDetail() {
                 </CardContent>
               </Card>
             ) : activeTab === 'knowledge-library' ? (
-              /* Phase 3: Shared Knowledge Library Tab */
-              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                <CardHeader className="space-y-4">
-                  <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 rounded-sm bg-[var(--color-pastel-blue)]/20">
-                      <Library className="h-6 w-6 text-[var(--color-pastel-blue)]" />
-                    </div>
-                    Shared Knowledge Library
-                  </CardTitle>
-                  <CardDescription>
-                    Browse and contribute to the collective knowledge base shared by all agents
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <SharedKnowledgeLibrary
-                    agentId={currentAgent.id}
-                    agentName={currentAgent.name}
-                    showContribute={true}
-                  />
-                </CardContent>
-              </Card>
+              <KnowledgeLibraryWorkspace
+                agentId={currentAgent.id}
+                agentName={currentAgent.name}
+              />
             ) : activeTab === 'collective' ? (
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
                 <CardHeader className="space-y-4">

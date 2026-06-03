@@ -44,7 +44,11 @@
 - `GET|POST /api/relationships`
 - `GET|POST /api/conflicts`
 - `GET|POST /api/collective-intelligence`
-- `GET|POST /api/knowledge`
+- `GET|POST /api/knowledge` remains legacy shared-knowledge compatibility.
+- `GET /api/agents/[id]/library`
+- `POST /api/agents/[id]/library/items`
+- `GET /api/agents/[id]/library/items/[itemId]`
+- `POST /api/agents/[id]/library/items/[itemId]/actions`
 - `GET|POST /api/mentorship`
 
 ## Challenge Lab
@@ -128,6 +132,11 @@ Legacy simulation compatibility routes still exist:
 - `GET /api/arena/runs/[runId]` returns one arena run plus its append-only event feed for live polling or replay.
 - `POST /api/arena/runs/[runId]/cancel` requests cooperative cancellation; the active executor stops at the next safe boundary and persists a cancellation event.
 - `GET /api/scenarios` returns branch point options, intervention templates, and recent saved runs for one agent.
+- `GET /api/agents/[id]/library` returns the Knowledge Library workspace bootstrap with list summaries, selected detail, stats, filters, and stale state. It accepts `status`, `category`, `sourceType`, `search`, `sort`, `scope`, `limit`, and numeric `cursor`.
+- `POST /api/agents/[id]/library/items` creates a manual Library item. Required fields are `title`, `claim`, `body`, and `category`; optional fields include `status`, `scope`, `visibility`, `tags`, `relatedAgentIds`, and `sourceRef`.
+- `GET /api/agents/[id]/library/items/[itemId]` returns the full Library item detail with sources, validations, usage events, and related-item placeholder data.
+- `POST /api/agents/[id]/library/items/[itemId]/actions` supports `accept`, `reject`, `endorse`, `dispute`, `resolve`, and `retire`. Rationale is required for `reject`, `dispute`, `resolve`, and `retire`; invalid transitions return `409`.
+- Old `/api/knowledge` is intentionally separate from the new Library workspace. It continues to read and mutate `shared_knowledge` for compatibility callers and is not used by the Library tab.
 - `GET /api/scenarios` also returns `analytics` with best interventions, common quality flags, and playbook notes.
 - `POST /api/scenarios` requires `agentId`, `branchPointId`, `branchPointKind`, and `intervention`, then returns a saved `scenarioRun`.
 - `GET /api/scenarios/[id]` returns one persisted scenario run with branch context, turn diffs, comparison output, and additive `qualityStatus`, `qualityScore`, `promptVersion`, `validation`, and `evaluation` fields when the run was created by the upgraded pipeline.

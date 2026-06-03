@@ -85,6 +85,7 @@ const STAGE_LABELS: Record<JournalPipelineStage, string> = {
   repair_entry: 'Repair Entry',
   ready: 'Ready',
   saved: 'Saved',
+  library_candidates: 'Library Candidates',
   failed: 'Failed',
 }
 
@@ -134,6 +135,28 @@ function getQualityBadgeClass(status?: string) {
   if (status === 'failed') return 'border-pastel-red/40 bg-pastel-red/10 text-pastel-red'
   if (status === 'legacy_unvalidated') return 'border-pastel-yellow/40 bg-pastel-yellow/10 text-pastel-yellow'
   return 'border-border/40 bg-muted/20 text-muted-foreground'
+}
+
+function getLibraryCandidateBadgeClass(status?: JournalSession['libraryCandidateStatus']) {
+  if (status === 'created') return 'border-pastel-green/30 bg-pastel-green/5 text-pastel-green'
+  if (status === 'failed') return 'border-pastel-red/30 bg-pastel-red/5 text-pastel-red'
+  if (status === 'skipped') return 'border-pastel-yellow/30 bg-pastel-yellow/5 text-pastel-yellow'
+  return 'border-border/40 bg-muted/20 text-muted-foreground'
+}
+
+function getLibraryCandidateCopy(session?: JournalSession | null) {
+  const status = session?.libraryCandidateStatus
+  const ids = session?.libraryCandidateIds || []
+  if (status === 'created') {
+    return `${ids.length} review candidate${ids.length === 1 ? '' : 's'} ready in the Library Review Queue.`
+  }
+  if (status === 'failed') {
+    return session?.libraryCandidateError || 'Library candidate extraction failed after save.'
+  }
+  if (status === 'skipped') {
+    return session?.libraryCandidateError || 'No durable journal Library claim was created.'
+  }
+  return null
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
@@ -353,6 +376,7 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
     && finalEntry
     && canRenderEntry(finalEntry)
   )
+  const libraryCandidateCopy = getLibraryCandidateCopy(detail?.session)
 
   const createSession = async () => {
     setError(null)
@@ -537,6 +561,25 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
         }`}>
           {saveBlockers ? <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" /> : <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />}
           <span>{saveStatus}</span>
+        </div>
+      ) : null}
+      {libraryCandidateCopy && detail?.session?.libraryCandidateStatus ? (
+        <div className={`rounded-md border px-4 py-3 text-[13px] flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between ${getLibraryCandidateBadgeClass(detail.session.libraryCandidateStatus)}`}>
+          <div className="flex items-start gap-3">
+            {detail.session.libraryCandidateStatus === 'failed'
+              ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
+            <div>
+              <div className="font-bold uppercase tracking-[0.14em]">Library candidates {detail.session.libraryCandidateStatus}</div>
+              <div className="mt-0.5 text-[12px] opacity-90">{libraryCandidateCopy}</div>
+            </div>
+          </div>
+          <a
+            href={`/agents/${encodeURIComponent(agentId)}?tab=knowledge-library`}
+            className="shrink-0 text-[11px] font-bold uppercase tracking-[0.16em] underline-offset-4 hover:underline"
+          >
+            Review Queue
+          </a>
         </div>
       ) : null}
 

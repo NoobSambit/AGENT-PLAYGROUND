@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Crown,
   Database,
+  Library,
   Loader2,
   Orbit,
   PauseCircle,
@@ -72,6 +73,7 @@ const EVENT_KIND_META: Record<string, { label: string; color: string }> = {
   round_summary: { label: 'Round Summary', color: 'text-pastel-purple' },
   score_update: { label: 'Score Update', color: 'text-pastel-green' },
   report_published: { label: 'Final Report', color: 'text-pastel-yellow' },
+  library_candidate_extraction: { label: 'Library Candidates', color: 'text-pastel-blue' },
   run_prepared: { label: 'Run Prepared', color: 'text-muted-foreground' },
   seat_generated: { label: 'Seats Generated', color: 'text-muted-foreground' },
   phase_started: { label: 'Phase Started', color: 'text-pastel-purple' },
@@ -856,6 +858,8 @@ export default function SimulationPage() {
                       <p className="text-[14px] leading-relaxed text-foreground/95 font-medium">{selectedRun.finalReport.verdictSummary}</p>
                     </div>
 
+                    <ArenaLibraryCandidateStatus run={selectedRun} />
+
                     {selectedRun.finalReport.decisiveMoments.length > 0 && (
                       <div>
                         <div className={`${labelStyle} flex items-center gap-2 mb-3.5 text-pastel-blue`}>
@@ -1098,6 +1102,52 @@ function SeatEditorCard({ seat, accentIndex, onChange }: {
   )
 }
 
+function ArenaLibraryCandidateStatus({ run }: { run: ArenaRun }) {
+  const metadata = run.payload
+  const status = metadata?.libraryCandidateStatus
+  if (!status) return null
+
+  const ids = metadata.libraryCandidateIds || []
+  const created = status === 'created' && ids.length > 0
+  const failed = status === 'failed'
+  const firstParticipantId = run.participantIds[0]
+
+  return (
+    <div className={`rounded-md border px-4 py-3 text-xs ${
+      created
+        ? 'border-pastel-green/30 bg-pastel-green/5 text-pastel-green'
+        : failed
+          ? 'border-pastel-red/30 bg-pastel-red/5 text-pastel-red'
+          : 'border-pastel-yellow/30 bg-pastel-yellow/5 text-pastel-yellow'
+    }`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <Library className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <div className="font-bold uppercase tracking-[0.18em]">Library candidates {status.replaceAll('_', ' ')}</div>
+            <div className="mt-1 text-foreground/75">
+              {created
+                ? `${ids.length} review candidate${ids.length === 1 ? '' : 's'} ready across arena participants.`
+                : failed
+                  ? 'Arena output stayed saved. Library extraction failed and can be retried later.'
+                  : metadata.libraryCandidateError || 'No reusable Library claim was created.'}
+            </div>
+          </div>
+        </div>
+        {created && firstParticipantId && (
+          <a
+            href={`/agents/${encodeURIComponent(firstParticipantId)}?tab=knowledge-library`}
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-sm border border-border/40 px-3 text-[10px] font-bold uppercase tracking-wider text-foreground transition-colors hover:bg-muted/40"
+          >
+            <Library className="h-3.5 w-3.5" />
+            Review
+          </a>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ArenaEventCard({ event, seats, seat, seatIndex, isExpanded, onToggleExpand }: {
   event: ArenaEvent; seats: ArenaSeat[]; seat?: ArenaSeat; seatIndex: number
   isExpanded: boolean; onToggleExpand: () => void
@@ -1203,6 +1253,7 @@ function ArenaEventCard({ event, seats, seat, seatIndex, isExpanded, onToggleExp
     event.kind === 'phase_completed' ||
     event.kind === 'run_prepared' ||
     event.kind === 'seat_generated' ||
+    event.kind === 'library_candidate_extraction' ||
     event.kind === 'run_cancelled' ||
     event.kind === 'run_failed'
   ) {

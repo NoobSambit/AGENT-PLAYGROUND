@@ -12,6 +12,7 @@ import { RelationshipRevisionRepository } from '@/lib/repositories/relationshipR
 import { RelationshipSynthesisRunRepository } from '@/lib/repositories/relationshipSynthesisRunRepository'
 import { agentProgressService } from '@/lib/services/agentProgressService'
 import { AgentService } from '@/lib/services/agentService'
+import { LibraryCandidateExtractor } from '@/lib/services/libraryCandidateExtractor'
 import type {
   AgentRecord,
   AgentRelationship,
@@ -385,6 +386,70 @@ function buildSynthesisSummary(sourceKind: RelationshipSourceKind, before: Agent
   }
 
   return `${sourceKind} updated the relationship without a decisive social swing.`
+}
+
+function strongestRelationshipDelta(delta: RelationshipProjectionDelta): string {
+  const entries = [
+    ...Object.entries(delta.shared).map(([key, value]) => ({ key, value: value || 0 })),
+    ...Object.entries(delta.left).map(([key, value]) => ({ key: `left ${key}`, value: value || 0 })),
+    ...Object.entries(delta.right).map(([key, value]) => ({ key: `right ${key}`, value: value || 0 })),
+  ].filter((entry) => entry.value !== 0)
+    .sort((left, right) => Math.abs(right.value) - Math.abs(left.value))
+
+  const strongest = entries[0]
+  if (!strongest) {
+    return 'relationship stability'
+  }
+
+  return `${strongest.key} ${strongest.value > 0 ? 'increased' : 'decreased'} by ${Math.abs(strongest.value).toFixed(2)}`
+}
+
+function updateRelationshipLibraryCandidateMetadata(
+  run: RelationshipSynthesisRun,
+  metadata: Pick<RelationshipSynthesisRun,
+    'libraryCandidateStatus' |
+    'libraryCandidateIds' |
+    'libraryCandidateError' |
+    'libraryCandidateCreatedAt' |
+    'libraryCandidateExtractor'
+  >
+): RelationshipSynthesisRun {
+  return {
+    ...run,
+    ...metadata,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function buildRelationshipLibraryCandidate(params: {
+  agent: AgentRecord
+  otherAgent: AgentRecord
+  run: RelationshipSynthesisRun
+  revision: RelationshipRevision
+}) {
+  const deltaSignal = strongestRelationshipDelta(params.revision.delta)
+  const evidenceSummary = [
+    params.revision.summary,
+    `Relationship synthesis ${params.run.id} applied ${params.revision.supportingEvidenceIds.length} evidence item${params.revision.supportingEvidenceIds.length === 1 ? '' : 's'}.`,
+    `Strongest change: ${deltaSignal}.`,
+  ].join(' ')
+
+  const category = params.revision.delta.shared.trust && Math.abs(params.revision.delta.shared.trust) >= 0.02
+    ? 'relationship'
+    : params.revision.delta.left.grievance || params.revision.delta.right.grievance
+      ? 'risk'
+      : 'strategy'
+
+  return [{
+    title: `${params.otherAgent.name} relationship insight`,
+    claim: `${params.agent.name}'s relationship with ${params.otherAgent.name} materially changed: ${params.revision.summary}`,
+    body: `This candidate is review-only relationship knowledge for future collaboration. ${evidenceSummary}`,
+    category,
+    confidence: Math.max(0.55, Math.min(0.72, params.revision.confidence)),
+    tags: ['relationship', params.run.triggerSourceKind, category],
+    evidenceSummary,
+    relatedAgentIds: [params.otherAgent.id],
+  }]
 }
 
 function synthesizeRelationship(params: {
@@ -934,6 +999,7 @@ export class RelationshipOrchestrator {
 
     const synthesisRunId = generateId('relationship_synthesis')
     let revisionId: string | undefined
+    let savedRevision: RelationshipRevision | undefined
 
     if (outcome.applied) {
       const next = normalizeRelationship({
@@ -961,12 +1027,12 @@ export class RelationshipOrchestrator {
         afterSnapshot: next,
         createdAt: new Date().toISOString(),
       }
-      const savedRevision = await persistRevision(revision)
+      savedRevision = await persistRevision(revision)
       revisionId = savedRevision.id
       outcome.relationship = next
     }
 
-    const synthesisRun: RelationshipSynthesisRun = {
+    let synthesisRun: RelationshipSynthesisRun = {
       id: synthesisRunId,
       pairId: current.id,
       agentId1: current.agentId1,
@@ -994,17 +1060,113 @@ export class RelationshipOrchestrator {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
-    await persistSynthesisRun(synthesisRun)
+
+    if (!outcome.applied) {
+      synthesisRun = updateRelationshipLibraryCandidateMetadata(synthesisRun, {
+        libraryCandidateStatus: 'skipped',
+        libraryCandidateIds: [],
+        libraryCandidateError: 'Skipped because relationship synthesis did not materially change the pair.',
+        libraryCandidateExtractor: 'deterministic',
+      })
+    }
+
+    let savedSynthesisRun = await persistSynthesisRun(synthesisRun)
+    if (outcome.applied && savedRevision) {
+      savedSynthesisRun = await this.createRelationshipLibraryCandidates(savedSynthesisRun, savedRevision)
+    }
 
     return {
       pairId: current.id,
       relationship: outcome.relationship,
-      synthesisRun,
+      synthesisRun: savedSynthesisRun,
       applied: outcome.applied,
       summary: outcome.summary,
       confidence: outcome.confidence,
       revisionId,
     }
+  }
+
+  private async createRelationshipLibraryCandidates(
+    run: RelationshipSynthesisRun,
+    revision: RelationshipRevision
+  ): Promise<RelationshipSynthesisRun> {
+    const [leftAgent, rightAgent] = await Promise.all([
+      AgentService.getAgentById(run.agentId1),
+      AgentService.getAgentById(run.agentId2),
+    ])
+
+    if (!leftAgent || !rightAgent) {
+      const failed = updateRelationshipLibraryCandidateMetadata(run, {
+        libraryCandidateStatus: 'failed',
+        libraryCandidateIds: [],
+        libraryCandidateError: 'Library candidate extraction failed because one relationship agent could not be loaded.',
+        libraryCandidateExtractor: 'deterministic',
+      })
+      return persistSynthesisRun(failed)
+    }
+
+    const participantPairs = [
+      { agent: leftAgent, otherAgent: rightAgent },
+      { agent: rightAgent, otherAgent: leftAgent },
+    ]
+    const createdIds: string[] = []
+    const errors: string[] = []
+    const skipped: string[] = []
+
+    for (const pair of participantPairs) {
+      const sourceSummary = `${revision.summary} Relationship with ${pair.otherAgent.name}; ${strongestRelationshipDelta(revision.delta)}.`
+      const extraction = await LibraryCandidateExtractor.extractAndSaveCandidates({
+        agentId: pair.agent.id,
+        agentName: pair.agent.name,
+        sourceType: 'relationship',
+        sourceId: run.id,
+        sourceTitle: `Relationship synthesis: ${leftAgent.name} and ${rightAgent.name}`,
+        sourceSummary,
+        sourceTimestamp: run.createdAt,
+        featurePayload: {
+          libraryCandidates: buildRelationshipLibraryCandidate({
+            agent: pair.agent,
+            otherAgent: pair.otherAgent,
+            run,
+            revision,
+          }),
+          synthesisRun: {
+            id: run.id,
+            triggerSourceKind: run.triggerSourceKind,
+            triggerSourceId: run.triggerSourceId,
+            evidenceWindow: run.evidenceWindow,
+            validatorResult: run.validatorResult,
+          },
+          revision: {
+            id: revision.id,
+            summary: revision.summary,
+            confidence: revision.confidence,
+            delta: revision.delta,
+            supportingEvidenceIds: revision.supportingEvidenceIds,
+          },
+        },
+        mode: 'deterministic',
+        maxCandidates: 1,
+      })
+
+      createdIds.push(...extraction.metadata.createdCandidateIds)
+      if (extraction.metadata.failedExtractionReason) {
+        errors.push(`${pair.agent.name}: ${extraction.metadata.failedExtractionReason}`)
+      } else if (extraction.metadata.skippedReason) {
+        skipped.push(`${pair.agent.name}: ${extraction.metadata.skippedReason}`)
+      }
+    }
+
+    const failed = errors.length > 0 && createdIds.length === 0
+    const updated = updateRelationshipLibraryCandidateMetadata(run, {
+      libraryCandidateStatus: createdIds.length > 0 ? 'created' : failed ? 'failed' : 'skipped',
+      libraryCandidateIds: createdIds,
+      libraryCandidateCreatedAt: createdIds.length > 0 ? new Date().toISOString() : undefined,
+      libraryCandidateError: errors[0] || skipped[0],
+      libraryCandidateExtractor: 'deterministic',
+    })
+
+    return persistSynthesisRun(updated)
   }
 }
 

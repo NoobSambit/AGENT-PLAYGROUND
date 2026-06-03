@@ -23,6 +23,7 @@ import {
 import { AgentService } from '@/lib/services/agentService'
 import { agentProgressService } from '@/lib/services/agentProgressService'
 import { MemoryService } from '@/lib/services/memoryService'
+import { LibraryCandidateExtractor } from '@/lib/services/libraryCandidateExtractor'
 import { relationshipOrchestrator } from '@/lib/services/relationshipOrchestrator'
 import { generateText } from '@/lib/llm/provider'
 import { resolveProviderInfoModel } from '@/lib/llm/ollama'
@@ -339,6 +340,160 @@ async function appendEvent(run: ChallengeRun, events: ChallengeEvent[], event: C
   run.eventCount = event.sequence
   run.updatedAt = new Date().toISOString()
   await persistRun(run)
+}
+
+function updateChallengeLibraryCandidateMetadata(
+  run: ChallengeRun,
+  metadata: NonNullable<ChallengeRun['payload']>
+) {
+  run.payload = {
+    ...(run.payload || {}),
+    ...metadata,
+  }
+  run.updatedAt = new Date().toISOString()
+}
+
+function buildChallengeLibraryCandidates(run: ChallengeRun, report: ChallengeRunReport) {
+  const candidates = []
+  const primaryScorecard = report.scorecards.find((scorecard) => scorecard.agentId === run.primaryAgentId) || report.scorecards[0]
+  const primaryAgentName = primaryScorecard?.agentName || run.participants.find((participant) => participant.id === run.primaryAgentId)?.name || 'The agent'
+  const evidenceSummary = `${run.templateId.replace(/_/g, ' ')} scored ${report.overallScore}. ${report.verdictSummary}`
+
+  if (primaryScorecard?.strengths?.[0]) {
+    candidates.push({
+      title: `${primaryAgentName} challenge strength`,
+      claim: `${primaryAgentName} showed a reusable strength: ${primaryScorecard.strengths[0]}`,
+      body: `${primaryAgentName} showed this strength during challenge run ${run.id}. ${evidenceSummary}`,
+      category: 'strength',
+      confidence: 0.62,
+      tags: ['challenge', run.templateId, 'strength'],
+      evidenceSummary,
+      relatedAgentIds: [primaryScorecard.agentId],
+    })
+  }
+
+  if (primaryScorecard?.weaknesses?.[0]) {
+    candidates.push({
+      title: `${primaryAgentName} challenge growth area`,
+      claim: `${primaryAgentName} has a review-worthy challenge weakness: ${primaryScorecard.weaknesses[0]}`,
+      body: `${primaryAgentName} showed this growth area during challenge run ${run.id}. ${evidenceSummary}`,
+      category: 'weakness',
+      confidence: 0.55,
+      tags: ['challenge', run.templateId, 'weakness'],
+      evidenceSummary,
+      relatedAgentIds: [primaryScorecard.agentId],
+    })
+  }
+
+  if (report.strengths[0] || report.weaknesses[0]) {
+    candidates.push({
+      title: 'Challenge lesson',
+      claim: `${primaryAgentName} learned a reusable lesson from ${run.templateId.replace(/_/g, ' ')}: ${report.strengths[0] || report.weaknesses[0]}`,
+      body: `Challenge run ${run.id} produced a reusable lesson for future behavior. ${evidenceSummary}`,
+      category: 'lesson',
+      confidence: 0.58,
+      tags: ['challenge', run.templateId, 'lesson'],
+      evidenceSummary,
+      relatedAgentIds: run.participantIds,
+    })
+  }
+
+  return candidates
+}
+
+async function createChallengeLibraryCandidates(
+  run: ChallengeRun,
+  events: ChallengeEvent[],
+  report: ChallengeRunReport
+) {
+  if (run.qualityStatus !== 'passed') {
+    updateChallengeLibraryCandidateMetadata(run, {
+      libraryCandidateStatus: 'skipped',
+      libraryCandidateIds: [],
+      libraryCandidateError: 'Skipped because the challenge run did not pass the quality gate.',
+      libraryCandidateExtractor: 'deterministic',
+    })
+    await persistRun(run)
+    await appendEvent(run, events, makeEvent(
+      run,
+      'library_candidate_extraction',
+      'library_candidates',
+      'Library update skipped',
+      'Library candidate extraction skipped because this challenge was not a passing run.',
+      {
+        payload: run.payload,
+      }
+    ))
+    return
+  }
+
+  updateChallengeLibraryCandidateMetadata(run, {
+    libraryCandidateStatus: 'running',
+    libraryCandidateIds: [],
+    libraryCandidateExtractor: 'deterministic',
+  })
+  run.latestStage = 'library_candidates'
+  await persistRun(run)
+  await appendEvent(run, events, makeEvent(
+    run,
+    'library_candidate_extraction',
+    'library_candidates',
+    'Preparing Library candidates',
+    'Extracting source-backed review candidates from the completed challenge report.',
+    {
+      payload: run.payload,
+    }
+  ))
+
+  const sourceSummary = `${report.verdictSummary} Overall score ${report.overallScore}; quality ${run.qualityStatus}.`
+  const extraction = await LibraryCandidateExtractor.extractAndSaveCandidates({
+    agentId: run.primaryAgentId,
+    agentName: run.participants.find((participant) => participant.id === run.primaryAgentId)?.name || run.primaryAgentId,
+    sourceType: 'challenge',
+    sourceId: run.id,
+    sourceTitle: `${run.templateId.replace(/_/g, ' ')} challenge`,
+    sourceSummary,
+    sourceTimestamp: run.completedAt || report.createdAt,
+    featurePayload: {
+      libraryCandidates: buildChallengeLibraryCandidates(run, report),
+      report,
+      scorecards: report.scorecards,
+    },
+    mode: 'deterministic',
+    maxCandidates: 3,
+  })
+
+  const created = extraction.metadata.createdCandidateIds
+  updateChallengeLibraryCandidateMetadata(run, {
+    libraryCandidateStatus: extraction.status === 'created' ? 'created' : extraction.status,
+    libraryCandidateIds: created,
+    libraryCandidateCreatedAt: created.length > 0 ? new Date().toISOString() : undefined,
+    libraryCandidateError: extraction.metadata.failedExtractionReason || extraction.metadata.skippedReason,
+    libraryCandidateExtractor: extraction.metadata.extractorMode === 'llm' ? 'llm' : 'deterministic',
+  })
+  run.latestStage = 'completed'
+  await persistRun(run)
+  await appendEvent(run, events, makeEvent(
+    run,
+    'library_candidate_extraction',
+    'library_candidates',
+    created.length > 0
+      ? 'Library review candidates created'
+      : extraction.status === 'failed'
+        ? 'Library extraction failed'
+        : 'Library update skipped',
+    created.length > 0
+      ? `${created.length} source-backed candidate${created.length === 1 ? '' : 's'} saved to Library review.`
+      : extraction.status === 'failed'
+        ? 'Challenge output remains saved. Library candidate extraction failed and can be retried later.'
+        : `Library candidate extraction skipped: ${extraction.metadata.skippedReason || 'no reusable claim found'}.`,
+    {
+      payload: {
+        ...run.payload,
+        extractionMetadata: extraction.metadata,
+      },
+    }
+  ))
 }
 
 function defaultScenario(template: ChallengeTemplate, participants: ChallengeRun['participants']): string {
@@ -1007,6 +1162,7 @@ export class ChallengeLabService {
         scoreSnapshot: { overallScore: report.overallScore, perAgent: Object.fromEntries(report.scorecards.map((entry) => [entry.agentId, entry.totalScore])) },
         payload: { report },
       }))
+      await createChallengeLibraryCandidates(run, events, report)
       return { run, events, participantResults: results }
     } catch (error) {
       run.status = 'failed'

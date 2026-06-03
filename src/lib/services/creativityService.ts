@@ -7,6 +7,7 @@ import type { LLMProviderInfo } from '@/lib/llmConfig'
 import { generateText } from '@/lib/llm/provider'
 import { CreativeStudioRepository } from '@/lib/repositories/creativeStudioRepository'
 import { FeatureContentRepository } from '@/lib/repositories/featureContentRepository'
+import { LibraryCandidateExtractor } from '@/lib/services/libraryCandidateExtractor'
 import {
   createPendingTrackedFields,
   syncTrackedQualityState,
@@ -88,6 +89,60 @@ const FORMAT_GUIDANCE: Record<CreativeFormat, string> = {
   song: 'Write structured lyrics with a strong hook and at least one repeated phrase or chorus.',
   dialogue: 'Write a scene driven by spoken exchange, subtext, and character contrast.',
   essay: 'Write a reflective creative essay with a clear throughline and vivid specificity.',
+}
+
+function summarizeForLibrary(value: string | undefined, maxLength = 260): string {
+  const cleaned = (value || '').replace(/\s+/g, ' ').trim()
+  return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength - 3)}...` : cleaned
+}
+
+function updateCreativeLibraryCandidateMetadata(
+  session: CreativeSession,
+  metadata: Pick<CreativeSession,
+    'libraryCandidateStatus' |
+    'libraryCandidateIds' |
+    'libraryCandidateError' |
+    'libraryCandidateCreatedAt' |
+    'libraryCandidateExtractor'
+  >
+): CreativeSession {
+  return {
+    ...session,
+    ...metadata,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function buildCreativeLibraryCandidates(agent: AgentRecord, artifact: CreativeArtifact) {
+  const evidenceSummary = [
+    `Published ${artifact.format} "${artifact.title}" passed creative quality review with score ${artifact.evaluation?.overallScore ?? artifact.qualityScore ?? 'unknown'}.`,
+    artifact.summary,
+  ].filter(Boolean).join(' ')
+  const strongestTheme = artifact.themes[0]
+  const strongestEvaluationSignal = artifact.evaluation?.strengths[0]
+
+  return [
+    {
+      title: `${agent.name} creative style signal`,
+      claim: `${agent.name}'s published ${artifact.format} work shows a reusable ${artifact.tone} creative style preference.`,
+      body: `The published artifact "${artifact.title}" was accepted after quality gating. ${summarizeForLibrary(artifact.summary || artifact.inspiration, 360)}`,
+      category: 'creative_style',
+      confidence: 0.64,
+      tags: ['creative', artifact.format, artifact.tone],
+      evidenceSummary,
+      relatedAgentIds: [agent.id],
+    },
+    strongestTheme && strongestEvaluationSignal ? {
+      title: `${agent.name} successful creative motif`,
+      claim: `${agent.name} can reuse the motif "${strongestTheme}" when ${strongestEvaluationSignal.toLowerCase()}.`,
+      body: `Creative publish evidence from "${artifact.title}" links the motif "${strongestTheme}" to a passing artifact. Reviewer strength: ${strongestEvaluationSignal}`,
+      category: 'creative_style',
+      confidence: 0.6,
+      tags: ['creative', 'motif', artifact.format],
+      evidenceSummary,
+      relatedAgentIds: [agent.id],
+    } : null,
+  ].filter(Boolean)
 }
 
 function clamp(value: number, min = 0, max = 100): number {
@@ -815,12 +870,122 @@ class CreativityService {
       createdAt: new Date().toISOString(),
     })
 
+    const sessionWithLibraryMetadata = await this.createPublishedArtifactLibraryCandidates({
+      agent,
+      session: publishedSession,
+      artifact,
+    })
+
     return {
-      session: this.hydrateSessionQuality(publishedSession),
+      session: this.hydrateSessionQuality(sessionWithLibraryMetadata),
       artifacts: (await CreativeStudioRepository.listArtifactsForSession(sessionId))
         .map((artifact) => this.hydrateArtifactQuality(artifact)),
       pipelineEvents: await CreativeStudioRepository.listPipelineEvents(sessionId),
     }
+  }
+
+  private async createPublishedArtifactLibraryCandidates(params: {
+    agent: AgentRecord | null
+    session: CreativeSession
+    artifact: CreativeArtifact
+  }): Promise<CreativeSession> {
+    if (!params.agent) {
+      const skipped = updateCreativeLibraryCandidateMetadata(params.session, {
+        libraryCandidateStatus: 'skipped',
+        libraryCandidateIds: [],
+        libraryCandidateError: 'Skipped because the publishing agent could not be loaded.',
+        libraryCandidateExtractor: 'deterministic',
+      })
+      await CreativeStudioRepository.updateSession(skipped.id, skipped)
+      await CreativeStudioRepository.savePipelineEvent({
+        id: generateId('creative_event'),
+        sessionId: skipped.id,
+        stage: 'library_candidates',
+        status: 'skipped',
+        summary: 'Library candidate extraction skipped because the publishing agent could not be loaded.',
+        payload: { libraryCandidateStatus: skipped.libraryCandidateStatus },
+        createdAt: new Date().toISOString(),
+      })
+      return skipped
+    }
+
+    const candidatePayload = buildCreativeLibraryCandidates(params.agent, params.artifact)
+    if (candidatePayload.length === 0) {
+      const skipped = updateCreativeLibraryCandidateMetadata(params.session, {
+        libraryCandidateStatus: 'skipped',
+        libraryCandidateIds: [],
+        libraryCandidateError: 'Skipped because the published artifact did not expose a reusable style, motif, or format-strength signal.',
+        libraryCandidateExtractor: 'deterministic',
+      })
+      await CreativeStudioRepository.updateSession(skipped.id, skipped)
+      await CreativeStudioRepository.savePipelineEvent({
+        id: generateId('creative_event'),
+        sessionId: skipped.id,
+        stage: 'library_candidates',
+        status: 'skipped',
+        summary: 'Library candidate extraction skipped: no reusable creative signal found.',
+        payload: { libraryCandidateStatus: skipped.libraryCandidateStatus },
+        createdAt: new Date().toISOString(),
+      })
+      return skipped
+    }
+
+    const extraction = await LibraryCandidateExtractor.extractAndSaveCandidates({
+      agentId: params.agent.id,
+      agentName: params.agent.name,
+      sourceType: 'creative',
+      sourceId: params.artifact.id,
+      sourceTitle: `Creative artifact: ${params.artifact.title}`,
+      sourceSummary: `${params.artifact.summary} Published ${params.artifact.format} with tone ${params.artifact.tone}.`,
+      sourceTimestamp: params.artifact.publishedAt || params.artifact.updatedAt,
+      featurePayload: {
+        libraryCandidates: candidatePayload,
+        artifact: {
+          id: params.artifact.id,
+          format: params.artifact.format,
+          tone: params.artifact.tone,
+          themes: params.artifact.themes,
+          qualityScore: params.artifact.qualityScore,
+          evaluation: params.artifact.evaluation,
+        },
+        sessionId: params.session.id,
+      },
+      mode: 'deterministic',
+      maxCandidates: 2,
+    })
+    const created = extraction.metadata.createdCandidateIds
+    const updated = updateCreativeLibraryCandidateMetadata(params.session, {
+      libraryCandidateStatus: extraction.status === 'created' ? 'created' : extraction.status,
+      libraryCandidateIds: created,
+      libraryCandidateCreatedAt: created.length > 0 ? new Date().toISOString() : undefined,
+      libraryCandidateError: extraction.metadata.failedExtractionReason || extraction.metadata.skippedReason,
+      libraryCandidateExtractor: extraction.metadata.extractorMode === 'llm' ? 'llm' : 'deterministic',
+    })
+
+    const saved = await CreativeStudioRepository.updateSession(updated.id, updated)
+    await CreativeStudioRepository.savePipelineEvent({
+      id: generateId('creative_event'),
+      sessionId: saved.id,
+      stage: 'library_candidates',
+      status: created.length > 0
+        ? 'completed'
+        : extraction.status === 'failed'
+          ? 'failed'
+          : 'skipped',
+      summary: created.length > 0
+        ? `${created.length} source-backed Library review candidate${created.length === 1 ? '' : 's'} created after publish.`
+        : extraction.status === 'failed'
+          ? 'Creative artifact stayed published. Library candidate extraction failed and can be retried later.'
+          : `Library candidate extraction skipped: ${extraction.metadata.skippedReason || 'no reusable claim found'}.`,
+      payload: {
+        libraryCandidateStatus: saved.libraryCandidateStatus,
+        libraryCandidateIds: saved.libraryCandidateIds || [],
+        extractionMetadata: extraction.metadata,
+      },
+      createdAt: new Date().toISOString(),
+    })
+
+    return saved
   }
 
   async getSessionDetail(agentId: string, sessionId: string): Promise<CreativeSessionDetail> {

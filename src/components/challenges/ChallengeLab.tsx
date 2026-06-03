@@ -12,6 +12,7 @@ import {
   FlaskConical,
   Gauge,
   History,
+  Library,
   Maximize2,
   PauseCircle,
   Play,
@@ -43,6 +44,7 @@ interface ChallengeLabProps {
   agentName: string
   agents: AgentRecord[]
   activeModel?: string
+  onOpenLibraryReview?: () => void
 }
 
 const STAGES: ChallengeStage[] = [
@@ -53,6 +55,7 @@ const STAGES: ChallengeStage[] = [
   'evaluate_outputs',
   'synthesize_relationship_evidence',
   'report',
+  'library_candidates',
   'completed',
 ]
 
@@ -65,6 +68,7 @@ const STAGE_LABELS: Record<ChallengeStage, string> = {
   synthesize_relationship_evidence: 'Relationship Evidence',
   report: 'Report',
   completed: 'Completed',
+  library_candidates: 'Library Candidates',
   failed: 'Failed',
 }
 
@@ -145,7 +149,7 @@ function ReaderModal({
   )
 }
 
-export function ChallengeLab({ agentId, agentName, agents, activeModel }: ChallengeLabProps) {
+export function ChallengeLab({ agentId, agentName, agents, activeModel, onOpenLibraryReview }: ChallengeLabProps) {
   const selectedProvider = useLLMPreferenceStore((state) => state.provider)
   const providerModel = activeModel || getClientModelForProvider(selectedProvider)
 
@@ -428,7 +432,7 @@ export function ChallengeLab({ agentId, agentName, agents, activeModel }: Challe
           <ChallengeEventFeed events={events} />
         </main>
 
-        <ChallengeReport run={activeRun} results={results} />
+        <ChallengeReport run={activeRun} results={results} onOpenLibraryReview={onOpenLibraryReview} />
       </div>
     </div>
   )
@@ -761,10 +765,11 @@ function ChallengeEventFeed({ events }: { events: ChallengeEvent[] }) {
   )
 }
 
-function ChallengeReportDetails({ run, results, roomy = false }: {
+function ChallengeReportDetails({ run, results, roomy = false, onOpenLibraryReview }: {
   run: ChallengeRun
   results: ChallengeParticipantResult[]
   roomy?: boolean
+  onOpenLibraryReview?: () => void
 }) {
   const report = run.report
   if (!report) return null
@@ -776,6 +781,7 @@ function ChallengeReportDetails({ run, results, roomy = false }: {
           Judge output was incomplete or malformed, so deterministic fallback scoring was used.
         </div>
       )}
+      <LibraryCandidateStatusBlock metadata={run.payload} onOpenLibraryReview={onOpenLibraryReview} />
       <p className={cn(
         'leading-relaxed text-foreground/85',
         roomy ? 'text-[16px]' : 'text-sm'
@@ -817,7 +823,7 @@ function ChallengeReportDetails({ run, results, roomy = false }: {
   )
 }
 
-function ChallengeReport({ run, results }: { run: ChallengeRun | null; results: ChallengeParticipantResult[] }) {
+function ChallengeReport({ run, results, onOpenLibraryReview }: { run: ChallengeRun | null; results: ChallengeParticipantResult[]; onOpenLibraryReview?: () => void }) {
   const [readerOpen, setReaderOpen] = useState(false)
 
   if (!run?.report) {
@@ -869,7 +875,7 @@ function ChallengeReport({ run, results }: { run: ChallengeRun | null; results: 
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
-        <ChallengeReportDetails run={run} results={results} />
+        <ChallengeReportDetails run={run} results={results} onOpenLibraryReview={onOpenLibraryReview} />
       </div>
       <ReaderModal
         open={readerOpen}
@@ -877,9 +883,57 @@ function ChallengeReport({ run, results }: { run: ChallengeRun | null; results: 
         eyebrow={`Overall score ${report.overallScore}`}
         title="Expanded Challenge Report"
       >
-        <ChallengeReportDetails run={run} results={results} roomy />
+        <ChallengeReportDetails run={run} results={results} roomy onOpenLibraryReview={onOpenLibraryReview} />
       </ReaderModal>
     </section>
+  )
+}
+
+function LibraryCandidateStatusBlock({
+  metadata,
+  onOpenLibraryReview,
+}: {
+  metadata?: ChallengeRun['payload']
+  onOpenLibraryReview?: () => void
+}) {
+  const status = metadata?.libraryCandidateStatus
+  if (!status) return null
+
+  const ids = metadata.libraryCandidateIds || []
+  const created = status === 'created' && ids.length > 0
+  const failed = status === 'failed'
+  const skipped = status === 'skipped'
+
+  return (
+    <div className={cn(
+      'rounded-sm border px-3 py-2 text-xs',
+      created && 'border-pastel-green/30 bg-pastel-green/5 text-pastel-green',
+      failed && 'border-pastel-red/30 bg-pastel-red/5 text-pastel-red',
+      skipped && 'border-pastel-yellow/30 bg-pastel-yellow/5 text-pastel-yellow',
+      !created && !failed && !skipped && 'border-border/30 bg-muted/5 text-muted-foreground'
+    )}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2">
+          <Library className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="min-w-0">
+            <div className="font-bold uppercase tracking-[0.16em]">Library candidates {status.replaceAll('_', ' ')}</div>
+            <div className="mt-1 text-foreground/75">
+              {created
+                ? `${ids.length} review candidate${ids.length === 1 ? '' : 's'} ready in the Library.`
+                : failed
+                  ? 'Challenge output stayed saved. Library extraction failed and can be retried later.'
+                  : metadata.libraryCandidateError || 'No reusable Library claim was created.'}
+            </div>
+          </div>
+        </div>
+        {created && onOpenLibraryReview && (
+          <Button variant="outline" size="sm" onClick={onOpenLibraryReview} className="h-8 gap-1.5 border-border/40 text-[10px] font-bold uppercase tracking-wider">
+            <Library className="h-3.5 w-3.5" />
+            Review
+          </Button>
+        )}
+      </div>
+    </div>
   )
 }
 

@@ -66,6 +66,15 @@ export const LIBRARY_SORTS = ['updated', 'confidence', 'usage', 'created'] as co
 
 type LibraryAction = 'accept' | 'reject' | 'endorse' | 'dispute' | 'resolve' | 'retire'
 
+export interface LibraryItemEditableFields {
+  title: string
+  claim: string
+  body: string
+  category: LibraryCategory
+  tags: string[]
+  relatedAgentIds: string[]
+}
+
 export interface LibraryBootstrapQuery {
   status?: LibraryItemStatus | 'all'
   category?: LibraryCategory
@@ -95,6 +104,7 @@ export interface LibraryActionInput {
   actorAgentId?: string
   actorName?: string
   rationale?: string
+  editedItem?: Partial<LibraryItemEditableFields>
 }
 
 export class LibraryServiceError extends Error {
@@ -262,6 +272,60 @@ function validateManualInput(input: CreateManualLibraryItemInput): void {
   }
 }
 
+function normalizeEditedItem(
+  editedItem: Partial<LibraryItemEditableFields> | undefined
+): Partial<LibraryItemEditableFields> | undefined {
+  if (!editedItem) {
+    return undefined
+  }
+
+  const normalized: Partial<LibraryItemEditableFields> = {}
+
+  if (editedItem.title !== undefined) {
+    if (!isNonEmptyString(editedItem.title)) {
+      throw new LibraryServiceError('validation_error', 'edited title is required', 400)
+    }
+    normalized.title = normalizeText(editedItem.title)
+  }
+
+  if (editedItem.claim !== undefined) {
+    if (!isNonEmptyString(editedItem.claim)) {
+      throw new LibraryServiceError('validation_error', 'edited claim is required', 400)
+    }
+    normalized.claim = normalizeText(editedItem.claim)
+  }
+
+  if (editedItem.body !== undefined) {
+    if (!isNonEmptyString(editedItem.body)) {
+      throw new LibraryServiceError('validation_error', 'edited body is required', 400)
+    }
+    normalized.body = normalizeText(editedItem.body)
+  }
+
+  if (editedItem.category !== undefined) {
+    if (!isValidCategory(editedItem.category)) {
+      throw new LibraryServiceError('validation_error', 'edited category is invalid', 400)
+    }
+    normalized.category = editedItem.category
+  }
+
+  if (editedItem.tags !== undefined) {
+    if (!Array.isArray(editedItem.tags)) {
+      throw new LibraryServiceError('validation_error', 'edited tags must be an array', 400)
+    }
+    normalized.tags = uniqueStrings(editedItem.tags.filter((value): value is string => typeof value === 'string'))
+  }
+
+  if (editedItem.relatedAgentIds !== undefined) {
+    if (!Array.isArray(editedItem.relatedAgentIds)) {
+      throw new LibraryServiceError('validation_error', 'edited relatedAgentIds must be an array', 400)
+    }
+    normalized.relatedAgentIds = uniqueStrings(editedItem.relatedAgentIds.filter((value): value is string => typeof value === 'string'))
+  }
+
+  return normalized
+}
+
 export class LibraryService {
   static async bootstrapWorkspace(
     agentId: string,
@@ -384,6 +448,7 @@ export class LibraryService {
     assertTransition(detail.item.status === 'review', 'Only review items can be accepted.')
     const now = new Date().toISOString()
     const rationale = isNonEmptyString(input.rationale) ? normalizeText(input.rationale) : 'Accepted from Library review.'
+    const editedItem = normalizeEditedItem(input.editedItem)
 
     await LibraryRepository.addValidationEvent(makeValidation({
       itemId,
@@ -395,6 +460,7 @@ export class LibraryService {
     }))
 
     await LibraryRepository.updateItemLifecycle(itemId, {
+      ...editedItem,
       status: 'validated',
       confidence: clampConfidence(Math.max(detail.item.confidence, 0.7)),
       acceptedAt: now,

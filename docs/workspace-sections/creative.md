@@ -34,6 +34,7 @@ The Creative tab is the agent’s long-form artifact studio. It is used to draft
 5. The service writes the session, artifacts, and pipeline events through `CreativeStudioRepository` or Firestore store helpers.
 6. `publishSession` blocks publication if the final artifact or session quality state does not pass required checks.
 7. On publish, the session updates `publishedArtifactId` and the agent’s `creativeWorks` counter is advanced through progress services.
+8. After publish, the service extracts bounded review-only Library candidates for reusable style, motif, or format-strength signals. Drafts never create Library candidates.
 
 ## 5. API contract details
 
@@ -47,7 +48,7 @@ The Creative tab is the agent’s long-form artifact studio. It is used to draft
 - `POST /api/agents/[id]/creative/sessions/[sessionId]/generate`
   - returns updated session detail.
 - `POST /api/agents/[id]/creative/sessions/[sessionId]/publish`
-  - returns updated session detail on success.
+  - returns updated session detail on success, plus `staleDomains: ['knowledge-library']` when Library review candidates were created.
   - returns `409` with `publishBlockers` when publication is blocked.
 - Edge cases:
   - In non-Postgres modes the route still mirrors session/artifact/event writes into Firestore compatibility stores.
@@ -72,6 +73,7 @@ The Creative tab is the agent’s long-form artifact studio. It is used to draft
 - Session state progresses from draft composition to generated draft to publishable output.
 - Artifacts version within a session through `version` and role fields like draft/final/published.
 - Publication is explicit and blocked until quality requirements pass.
+- Published sessions may record `libraryCandidateStatus`, `libraryCandidateIds`, and a `library_candidates` pipeline event. Candidates are saved as `review`, never trusted automatically.
 
 ## 8. Quality gates/validation rules
 
@@ -85,6 +87,7 @@ The Creative tab is the agent’s long-form artifact studio. It is used to draft
 - Missing or invalid brief data: session creation fails with `500` and an explicit message.
 - Generation failure: the route returns `500`; pipeline events and `failureReason` are the main trace.
 - Publication block: `409` with structured blockers.
+- Library candidate extraction after publish can be `created`, `skipped`, or `failed`; the UI keeps the published artifact visible and links to the Library Review Queue when candidate metadata exists.
 - Firestore/Postgres drift: in dual-write modes a session can exist in one store but lag in the mirror.
 
 ## 10. Debugging runbook

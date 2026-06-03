@@ -14,6 +14,7 @@ import {
 import { JournalWorkspaceRepository } from '@/lib/repositories/journalWorkspaceRepository'
 import { RelationshipRepository } from '@/lib/repositories/relationshipRepository'
 import { FeatureContentRepository } from '@/lib/repositories/featureContentRepository'
+import { LibraryCandidateExtractor } from '@/lib/services/libraryCandidateExtractor'
 import {
   createPendingTrackedFields,
   syncTrackedQualityState,
@@ -97,6 +98,58 @@ const TYPE_LABELS: Record<JournalEntryType, string> = {
   relationship_checkpoint: 'Relationship Checkpoint',
   memory_revisit: 'Memory Revisit',
   idea_capture: 'Idea Capture',
+}
+
+function summarizeForLibrary(value: string | undefined, maxLength = 320): string {
+  const cleaned = (value || '').replace(/\s+/g, ' ').trim()
+  return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength - 3)}...` : cleaned
+}
+
+function updateJournalLibraryCandidateMetadata(
+  session: JournalSession,
+  metadata: Pick<JournalSession,
+    'libraryCandidateStatus' |
+    'libraryCandidateIds' |
+    'libraryCandidateError' |
+    'libraryCandidateCreatedAt' |
+    'libraryCandidateExtractor'
+  >
+): JournalSession {
+  return {
+    ...session,
+    ...metadata,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function buildJournalLibraryCandidate(agent: AgentRecord, entry: JournalEntry, session: JournalSession) {
+  const score = entry.qualityScore ?? entry.evaluation?.overallScore ?? session.latestEvaluation?.overallScore ?? 0
+  if (score < 85) {
+    return []
+  }
+
+  const insight = entry.structured.insights[0]
+  const nextAction = entry.structured.nextActions[0]
+  const theme = entry.structured.themes[0]
+  if (!insight || (!theme && !nextAction)) {
+    return []
+  }
+
+  const evidenceSummary = [
+    `Saved journal entry "${entry.title}" passed quality review with score ${score}.`,
+    entry.structured.conciseSummary || entry.summary,
+  ].filter(Boolean).join(' ')
+
+  return [{
+    title: `${agent.name} journal lesson`,
+    claim: `${agent.name}'s saved journal identifies a reusable lesson: ${insight}`,
+    body: `The saved entry connects this lesson to ${theme ? `the theme "${theme}"` : 'a concrete next action'}. ${nextAction ? `Next action evidence: ${nextAction}.` : ''} Entry summary: ${summarizeForLibrary(entry.summary || entry.structured.conciseSummary)}`,
+    category: 'lesson',
+    confidence: 0.62,
+    tags: ['journal', entry.type, theme || 'saved-reflection'],
+    evidenceSummary,
+    relatedAgentIds: [agent.id],
+  }]
 }
 
 const TYPE_GUIDANCE: Record<JournalEntryType, string> = {
@@ -801,7 +854,117 @@ class JournalService {
       })
     }
 
+    await this.createSavedEntryLibraryCandidate({
+      agent,
+      session: savedSession,
+      entry: savedEntry,
+    })
+
     return this.getSessionDetail(agentId, sessionId)
+  }
+
+  private async createSavedEntryLibraryCandidate(params: {
+    agent: AgentRecord
+    session: JournalSession
+    entry: JournalEntry
+  }): Promise<JournalSession> {
+    if (params.session.qualityStatus !== 'passed' || !params.session.latestEvaluation?.pass || params.entry.status !== 'saved') {
+      const skipped = updateJournalLibraryCandidateMetadata(params.session, {
+        libraryCandidateStatus: 'skipped',
+        libraryCandidateIds: [],
+        libraryCandidateError: 'Skipped because the saved journal entry did not pass the quality gate.',
+        libraryCandidateExtractor: 'deterministic',
+      })
+      await this.saveSession(skipped)
+      await this.savePipelineEvent(params.agent.id, {
+        id: generateId('journal_event'),
+        sessionId: skipped.id,
+        stage: 'library_candidates',
+        status: 'skipped',
+        summary: 'Library candidate extraction skipped because the journal entry was not eligible.',
+        payload: { libraryCandidateStatus: skipped.libraryCandidateStatus },
+        createdAt: new Date().toISOString(),
+      })
+      return skipped
+    }
+
+    const candidatePayload = buildJournalLibraryCandidate(params.agent, params.entry, params.session)
+    if (candidatePayload.length === 0) {
+      const skipped = updateJournalLibraryCandidateMetadata(params.session, {
+        libraryCandidateStatus: 'skipped',
+        libraryCandidateIds: [],
+        libraryCandidateError: 'Skipped because the saved journal entry did not expose a recurring pattern or durable lesson.',
+        libraryCandidateExtractor: 'deterministic',
+      })
+      await this.saveSession(skipped)
+      await this.savePipelineEvent(params.agent.id, {
+        id: generateId('journal_event'),
+        sessionId: skipped.id,
+        stage: 'library_candidates',
+        status: 'skipped',
+        summary: 'Library candidate extraction skipped: no durable journal lesson found.',
+        payload: { libraryCandidateStatus: skipped.libraryCandidateStatus },
+        createdAt: new Date().toISOString(),
+      })
+      return skipped
+    }
+
+    const extraction = await LibraryCandidateExtractor.extractAndSaveCandidates({
+      agentId: params.agent.id,
+      agentName: params.agent.name,
+      sourceType: 'journal',
+      sourceId: params.entry.id,
+      sourceTitle: `Journal entry: ${params.entry.title}`,
+      sourceSummary: params.entry.structured.conciseSummary || params.entry.summary,
+      sourceTimestamp: params.entry.savedAt || params.entry.updatedAt,
+      featurePayload: {
+        libraryCandidates: candidatePayload,
+        entry: {
+          id: params.entry.id,
+          type: params.entry.type,
+          focus: params.entry.metadata.focus,
+          themes: params.entry.structured.themes,
+          qualityScore: params.entry.qualityScore,
+          evaluation: params.entry.evaluation,
+        },
+        sessionId: params.session.id,
+      },
+      mode: 'deterministic',
+      maxCandidates: 1,
+    })
+    const created = extraction.metadata.createdCandidateIds
+    const updated = updateJournalLibraryCandidateMetadata(params.session, {
+      libraryCandidateStatus: extraction.status === 'created' ? 'created' : extraction.status,
+      libraryCandidateIds: created,
+      libraryCandidateCreatedAt: created.length > 0 ? new Date().toISOString() : undefined,
+      libraryCandidateError: extraction.metadata.failedExtractionReason || extraction.metadata.skippedReason,
+      libraryCandidateExtractor: extraction.metadata.extractorMode === 'llm' ? 'llm' : 'deterministic',
+    })
+
+    const saved = await this.saveSession(updated)
+    await this.savePipelineEvent(params.agent.id, {
+      id: generateId('journal_event'),
+      sessionId: saved.id,
+      stage: 'library_candidates',
+      status: created.length > 0
+        ? 'completed'
+        : extraction.status === 'failed'
+          ? 'failed'
+          : 'skipped',
+      summary: created.length > 0
+        ? 'One source-backed Library review candidate created from the saved journal entry.'
+        : extraction.status === 'failed'
+          ? 'Journal entry stayed saved. Library candidate extraction failed and can be retried later.'
+          : `Library candidate extraction skipped: ${extraction.metadata.skippedReason || 'no reusable claim found'}.`,
+      payload: {
+        libraryCandidateStatus: saved.libraryCandidateStatus,
+        libraryCandidateIds: saved.libraryCandidateIds || [],
+        extractionMetadata: extraction.metadata,
+      },
+      createdAt: new Date().toISOString(),
+    })
+
+    return saved
   }
 
   async listSavedEntries(agentId: string, options?: { type?: JournalEntryType; limit?: number }) {

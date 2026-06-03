@@ -24,6 +24,7 @@
     "db:migrate": "node --env-file=.env.local scripts/db-migrate.mjs",
     "db:export-firestore": "node --env-file=.env.local scripts/firestore-export.mjs",
     "db:backfill": "node --env-file=.env.local scripts/firestore-to-postgres.mjs",
+    "db:backfill-library": "node --env-file=.env.local scripts/backfill-shared-knowledge-library.mjs",
     "db:verify-parity": "node --env-file=.env.local scripts/verify-postgres-parity.mjs",
     "db:reset": "node --env-file=.env.local scripts/reset-postgres.mjs",
     "db:reset:firestore": "node --env-file=.env.local scripts/reset-firestore.mjs"

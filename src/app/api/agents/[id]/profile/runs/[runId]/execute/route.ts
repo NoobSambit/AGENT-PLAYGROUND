@@ -12,6 +12,9 @@ export async function POST(
     const detail = await profileAnalysisService.executeRun(agentId, runId, providerInfo)
     return NextResponse.json({
       ...detail,
+      staleDomains: detail.run.payload?.libraryCandidateStatus === 'created'
+        ? ['knowledge-library']
+        : [],
       interviewTurns: detail.interviewTurns.map((turn) => ({
         ...turn,
         prompt: turn.question,

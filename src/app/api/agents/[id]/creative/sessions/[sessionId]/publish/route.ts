@@ -25,7 +25,12 @@ export async function POST(
       }
     }
 
-    return NextResponse.json(detail)
+    return NextResponse.json({
+      ...detail,
+      staleDomains: detail.session.libraryCandidateStatus === 'created'
+        ? ['knowledge-library']
+        : [],
+    })
   } catch (error) {
     console.error('Creative publish error:', error)
     if (error instanceof CreativePublishBlockedError) {

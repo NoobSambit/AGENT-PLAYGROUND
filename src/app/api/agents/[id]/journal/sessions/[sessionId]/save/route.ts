@@ -8,7 +8,12 @@ export async function POST(
   try {
     const { id: agentId, sessionId } = await params
     const detail = await journalService.saveSessionEntry(agentId, sessionId)
-    return NextResponse.json(detail)
+    return NextResponse.json({
+      ...detail,
+      staleDomains: detail.session?.libraryCandidateStatus === 'created'
+        ? ['knowledge-library']
+        : [],
+    })
   } catch (error) {
     console.error('Journal save error:', error)
     if (error instanceof JournalSaveBlockedError) {

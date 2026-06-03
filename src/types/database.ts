@@ -555,6 +555,15 @@ export interface SimulationRecord {
 export type SimulationDocument = Omit<SimulationRecord, 'id'>
 
 export type ArenaRunStatus = 'draft' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface LibraryCandidateProducerMetadata {
+  libraryCandidateStatus?: 'not_applicable' | 'pending' | 'running' | 'created' | 'skipped' | 'failed'
+  libraryCandidateIds?: string[]
+  libraryCandidateError?: string
+  libraryCandidateCreatedAt?: string
+  libraryCandidateExtractor?: 'deterministic' | 'llm' | 'manual'
+}
+
 export type ArenaStage =
   | 'prepare'
   | 'seat_generation'
@@ -563,6 +572,7 @@ export type ArenaStage =
   | 'narrowing'
   | 'closing'
   | 'report'
+  | 'library_candidates'
   | 'completed'
 export type ArenaResponseBudget = 'tight' | 'balanced' | 'expanded'
 export type ArenaSpeakerType = 'head' | 'debater' | 'system'
@@ -577,6 +587,7 @@ export type ArenaEventKind =
   | 'score_update'
   | 'phase_completed'
   | 'report_published'
+  | 'library_candidate_extraction'
   | 'run_cancelled'
   | 'run_failed'
 
@@ -717,6 +728,7 @@ export interface ArenaRun {
   provider?: string
   model?: string
   failureReason?: string
+  payload?: LibraryCandidateProducerMetadata & Record<string, unknown>
   createdAt: string
   updatedAt: string
   completedAt?: string
@@ -1260,7 +1272,7 @@ export interface RelationshipRevision {
 
 export type RelationshipSynthesisRunStatus = 'applied' | 'skipped' | 'failed'
 
-export interface RelationshipSynthesisRun {
+export interface RelationshipSynthesisRun extends LibraryCandidateProducerMetadata {
   id: string
   pairId: string
   agentId1: string
@@ -1423,6 +1435,7 @@ export type CreativePipelineStage =
   | 'revision_generated'
   | 'ready'
   | 'published'
+  | 'library_candidates'
   | 'failed'
 
 export type CreativeContextSourceType =
@@ -1540,7 +1553,7 @@ export interface CreativePipelineEvent {
   createdAt: string
 }
 
-export interface CreativeSession {
+export interface CreativeSession extends LibraryCandidateProducerMetadata {
   id: string
   agentId: string
   status: CreativeSessionStatus
@@ -1883,6 +1896,7 @@ export type JournalPipelineStage =
   | 'repair_entry'
   | 'ready'
   | 'saved'
+  | 'library_candidates'
   | 'failed'
 
 export type JournalContextSourceType =
@@ -1971,7 +1985,7 @@ export interface JournalComposeInput {
   focus?: JournalFocus[]
 }
 
-export interface JournalSession {
+export interface JournalSession extends LibraryCandidateProducerMetadata {
   id: string
   agentId: string
   status: JournalSessionStatus
@@ -2137,6 +2151,7 @@ export type ProfileAnalysisStage =
   | 'synthesis'
   | 'evaluation'
   | 'repair'
+  | 'library_candidates'
   | 'completed'
 
 export type ProfileAnalysisRunStatus =
@@ -2252,7 +2267,7 @@ export interface ProfilePipelineEvent {
   id: string
   runId: string
   stage: ProfileAnalysisStage
-  status: 'completed' | 'failed' | 'skipped'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
   summary: string
   payload: Record<string, unknown>
   createdAt: string
@@ -2332,6 +2347,7 @@ export interface ProfileAnalysisRun {
   evidenceCoverage?: ProfileEvidenceCoverageSummary
   latestProfile?: PsychologicalProfile
   latestEvaluation?: ProfileQualityEvaluation
+  payload?: LibraryCandidateProducerMetadata & Record<string, unknown>
   failureReason?: string
   provider?: string
   model?: string
@@ -2418,6 +2434,7 @@ export type ChallengeStage =
   | 'evaluate_outputs'
   | 'synthesize_relationship_evidence'
   | 'report'
+  | 'library_candidates'
   | 'completed'
   | 'failed'
 
@@ -2431,6 +2448,7 @@ export type ChallengeEventKind =
   | 'score_update'
   | 'relationship_evidence_prepared'
   | 'report_published'
+  | 'library_candidate_extraction'
   | 'run_failed'
   | 'run_cancelled'
 
@@ -2571,6 +2589,7 @@ export interface ChallengeRun {
   createdAt: string
   updatedAt: string
   completedAt?: string
+  payload?: LibraryCandidateProducerMetadata & Record<string, unknown>
 }
 
 export interface ChallengeEvent {

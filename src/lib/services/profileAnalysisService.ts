@@ -2,6 +2,7 @@ import { getPersistenceMode, readsFromPostgres, writesToFirestore, writesToPostg
 import { generateId } from '@/lib/db/utils'
 import { getConfiguredLLMProvider, type LLMProviderInfo } from '@/lib/llmConfig'
 import { generateText } from '@/lib/llm/provider'
+import { LibraryCandidateExtractor } from '@/lib/services/libraryCandidateExtractor'
 import { FeatureContentRepository } from '@/lib/repositories/featureContentRepository'
 import { ProfileAnalysisRepository } from '@/lib/repositories/profileAnalysisRepository'
 import {
@@ -755,6 +756,57 @@ function makePipelineEvent(
   }
 }
 
+function updateProfileLibraryCandidateMetadata(
+  run: ProfileAnalysisRun,
+  metadata: NonNullable<ProfileAnalysisRun['payload']>
+): ProfileAnalysisRun {
+  return {
+    ...run,
+    payload: {
+      ...(run.payload || {}),
+      ...metadata,
+    },
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function buildProfileLibraryCandidates(agent: AgentRecord, profile: PsychologicalProfile, run: ProfileAnalysisRun) {
+  const evidenceSummary = `${profile.summary} Profile run ${run.id} passed with score ${run.qualityScore || run.latestEvaluation?.overallScore || 'unknown'}.`
+
+  return [
+    profile.strengths[0] && {
+      title: `${agent.name} profile strength`,
+      claim: `${agent.name} shows a reusable strength: ${profile.strengths[0]}`,
+      body: `Profile analysis run ${run.id} identified this strength for future behavior. ${evidenceSummary}`,
+      category: 'strength',
+      confidence: 0.66,
+      tags: ['profile', 'strength'],
+      evidenceSummary,
+      relatedAgentIds: [profile.agentId],
+    },
+    profile.challenges[0] && {
+      title: `${agent.name} profile growth area`,
+      claim: `${agent.name} has a review-worthy growth area: ${profile.challenges[0]}`,
+      body: `Profile analysis run ${run.id} identified this challenge for future behavior. ${evidenceSummary}`,
+      category: 'weakness',
+      confidence: 0.58,
+      tags: ['profile', 'growth-area'],
+      evidenceSummary,
+      relatedAgentIds: [profile.agentId],
+    },
+    profile.communicationStyle.conflictStyle && {
+      title: `${agent.name} conflict style`,
+      claim: `${agent.name} tends toward a ${profile.communicationStyle.conflictStyle} conflict style in profile analysis.`,
+      body: `Profile analysis run ${run.id} recorded communication and conflict-style evidence. ${evidenceSummary}`,
+      category: 'behavior_pattern',
+      confidence: 0.6,
+      tags: ['profile', 'communication', 'conflict-style'],
+      evidenceSummary,
+      relatedAgentIds: [profile.agentId],
+    },
+  ].filter(Boolean)
+}
+
 function defaultQualityEvaluation(summary = 'Evaluation unavailable; using bounded fallback scores.'): ProfileQualityEvaluation {
   return {
     overallScore: 74,
@@ -1153,6 +1205,15 @@ export class ProfileAnalysisService {
         }
       )))
 
+      const libraryCandidateEvent = await this.createProfileLibraryCandidates({
+        agent,
+        run,
+        profile,
+        gatePassed: gate.pass,
+      })
+      run = libraryCandidateEvent.run
+      pipelineEvents.push(libraryCandidateEvent.event)
+
       if (!gate.pass) {
         await LearningService.recordQualityObservation({
           agentId,
@@ -1200,6 +1261,98 @@ export class ProfileAnalysisService {
   private async getRun(agentId: string, runId: string): Promise<ProfileAnalysisRun | null> {
     const detail = await this.getRunDetail(agentId, runId)
     return detail.run
+  }
+
+  private async createProfileLibraryCandidates(params: {
+    agent: AgentRecord
+    run: ProfileAnalysisRun
+    profile: PsychologicalProfile
+    gatePassed: boolean
+  }): Promise<{ run: ProfileAnalysisRun; event: ProfilePipelineEvent }> {
+    let run = params.run
+
+    if (!params.gatePassed || run.status !== 'ready' || run.qualityStatus !== 'passed') {
+      run = await this.saveRun(updateProfileLibraryCandidateMetadata(run, {
+        libraryCandidateStatus: 'skipped',
+        libraryCandidateIds: [],
+        libraryCandidateError: 'Skipped because the profile run did not pass the quality gate.',
+        libraryCandidateExtractor: 'deterministic',
+      }))
+      return {
+        run,
+        event: await this.savePipelineEvent(params.agent.id, makePipelineEvent(
+          run.id,
+          'library_candidates',
+          'skipped',
+          'Library candidate extraction skipped because this profile run was not eligible for review candidates.',
+          run.payload || {}
+        )),
+      }
+    }
+
+    run = await this.saveRun(updateProfileLibraryCandidateMetadata(run, {
+      libraryCandidateStatus: 'running',
+      libraryCandidateIds: [],
+      libraryCandidateExtractor: 'deterministic',
+    }))
+
+    await this.savePipelineEvent(params.agent.id, makePipelineEvent(
+      run.id,
+      'library_candidates',
+      'running',
+      'Extracting source-backed Library review candidates from the completed profile run.',
+      run.payload || {}
+    ))
+
+    const sourceSummary = `${params.profile.summary} Profile run ${run.id} passed with score ${run.qualityScore || params.profile.confidence || 'unknown'}.`
+    const extraction = await LibraryCandidateExtractor.extractAndSaveCandidates({
+      agentId: params.agent.id,
+      agentName: params.agent.name,
+      sourceType: 'profile',
+      sourceId: run.id,
+      sourceTitle: `${params.agent.name} profile analysis`,
+      sourceSummary,
+      sourceTimestamp: run.completedAt || params.profile.updatedAt,
+      featurePayload: {
+        libraryCandidates: buildProfileLibraryCandidates(params.agent, params.profile, run),
+        profile: params.profile,
+        evidenceCoverage: run.evidenceCoverage,
+        evaluation: run.latestEvaluation,
+      },
+      mode: 'deterministic',
+      maxCandidates: 3,
+    })
+    const created = extraction.metadata.createdCandidateIds
+
+    run = await this.saveRun(updateProfileLibraryCandidateMetadata(run, {
+      libraryCandidateStatus: extraction.status === 'created' ? 'created' : extraction.status,
+      libraryCandidateIds: created,
+      libraryCandidateCreatedAt: created.length > 0 ? new Date().toISOString() : undefined,
+      libraryCandidateError: extraction.metadata.failedExtractionReason || extraction.metadata.skippedReason,
+      libraryCandidateExtractor: extraction.metadata.extractorMode === 'llm' ? 'llm' : 'deterministic',
+    }))
+
+    return {
+      run,
+      event: await this.savePipelineEvent(params.agent.id, makePipelineEvent(
+        run.id,
+        'library_candidates',
+        created.length > 0
+          ? 'completed'
+          : extraction.status === 'failed'
+            ? 'failed'
+            : 'skipped',
+        created.length > 0
+          ? `${created.length} source-backed Library review candidate${created.length === 1 ? '' : 's'} created.`
+          : extraction.status === 'failed'
+            ? 'Profile output remains saved. Library candidate extraction failed and can be retried later.'
+            : `Library candidate extraction skipped: ${extraction.metadata.skippedReason || 'no reusable claim found'}.`,
+        {
+          ...(run.payload || {}),
+          extractionMetadata: extraction.metadata,
+        }
+      )),
+    }
   }
 
   private async saveRun(run: ProfileAnalysisRun): Promise<ProfileAnalysisRun> {
