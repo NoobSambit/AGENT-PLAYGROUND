@@ -230,9 +230,16 @@ export function parseActionBody(value: unknown): LibraryActionInput {
     action !== 'endorse' &&
     action !== 'dispute' &&
     action !== 'resolve' &&
-    action !== 'retire'
+    action !== 'retire' &&
+    action !== 'merge' &&
+    action !== 'supersede'
   ) {
     throw new LibraryServiceError('validation_error', 'action is invalid', 400)
+  }
+
+  const resolution = typeof body.resolution === 'string' ? body.resolution : undefined
+  if (resolution && resolution !== 'validated' && resolution !== 'retired') {
+    throw new LibraryServiceError('validation_error', 'resolution is invalid', 400)
   }
 
   return {
@@ -241,5 +248,7 @@ export function parseActionBody(value: unknown): LibraryActionInput {
     actorName: typeof body.actorName === 'string' ? body.actorName : undefined,
     rationale: typeof body.rationale === 'string' ? body.rationale : undefined,
     editedItem,
+    targetItemId: typeof body.targetItemId === 'string' ? body.targetItemId : undefined,
+    resolution: resolution as LibraryActionInput['resolution'],
   }
 }

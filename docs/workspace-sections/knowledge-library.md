@@ -2,7 +2,7 @@
 
 ## 1. Purpose and user intent
 
-The Knowledge Library tab is the agent-scoped review workspace for reusable knowledge. It lets an operator create review candidates, accept them into prompt-eligible context, reject weak candidates, dispute contested claims, retire outdated items, search/filter the corpus, and inspect source/validation history.
+The Knowledge Library tab is the agent-scoped review workspace for reusable knowledge. It lets an operator create review candidates, accept them into prompt-eligible context, reject weak candidates, dispute contested claims, merge duplicates, supersede or retire outdated items, search/filter the corpus, and inspect source/validation/usage history.
 
 ## 2. UI entry points and key controls
 
@@ -11,9 +11,9 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
 - Key controls:
   - status tabs for `review`, `validated`, `disputed`, and `retired`
   - search, category, source type, scope, and sort filters
-  - detail panel with claim, body, confidence, quality status, prompt eligibility, tags, source trail, validation history, and usage events
+  - detail panel with claim, body, confidence, quality status, prompt eligibility, tags, governance links, source trail, duplicate suggestions, dispute resolution, validation history, and usage events
   - Add Item modal for manual candidates or trusted entries
-  - action controls for accept, edit-and-accept, reject, endorse, dispute, resolve, and retire
+  - action controls for accept, edit-and-accept, reject, endorse, dispute, resolve, retire, merge, and supersede
 
 ## 3. End-to-end user workflow
 
@@ -24,9 +24,10 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
 5. Review candidates can be accepted, edited-and-accepted, rejected, or disputed through `POST /api/agents/[id]/library/items/[itemId]/actions`.
 6. Validated items can be endorsed, disputed, or retired.
 7. Disputed items can be resolved back to validated or retired.
-8. Detail reloads use `GET /api/agents/[id]/library/items/[itemId]`.
-9. Consumer workflows can request prompt-safe validated context through `POST /api/agents/[id]/library/context`.
-10. Consumers that use a context packet can record cheap usage events through `POST /api/agents/[id]/library/usage`.
+8. Duplicate or outdated items can be merged/superseded only through explicit operator action; suggestions are read-only until confirmed.
+9. Detail reloads use `GET /api/agents/[id]/library/items/[itemId]`.
+10. Consumer workflows can request prompt-safe validated context through `POST /api/agents/[id]/library/context`.
+11. Consumers that use a context packet can record cheap usage events through `POST /api/agents/[id]/library/usage`.
 
 ## 4. Backend workflow/pipeline
 
@@ -59,8 +60,10 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
   - returns one `LibraryItemDetailResponse`
   - returns `404` when the item does not exist or is not accessible to the agent
 - `POST /api/agents/[id]/library/items/[itemId]/actions`
-  - actions: `accept`, `reject`, `endorse`, `dispute`, `resolve`, `retire`
-  - `reject`, `dispute`, `resolve`, and `retire` require a rationale
+  - actions: `accept`, `reject`, `endorse`, `dispute`, `resolve`, `retire`, `merge`, `supersede`
+  - `reject`, `dispute`, `resolve`, `retire`, `merge`, and `supersede` require a rationale
+  - `merge` and `supersede` require `targetItemId`
+  - `resolve` accepts optional `resolution='validated'|'retired'`
   - returns `409` for invalid lifecycle transitions
 - Legacy compatibility:
   - `GET|POST /api/knowledge` remains available for `shared_knowledge` callers.
@@ -87,8 +90,10 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
 - `accept` moves `review -> validated`, enables prompt context, and records accepted metadata.
 - `reject` moves `review -> rejected`, sets confidence to `0`, and disables prompt context.
 - `dispute` moves `review|validated -> disputed`, lowers confidence, and disables prompt context.
-- `resolve` moves `disputed -> validated` and re-enables prompt context.
+- `resolve` moves `disputed -> validated` and re-enables prompt context, or `disputed -> retired` when the operator resolves by retiring the claim.
 - `retire` moves `validated|disputed -> retired` and disables prompt context.
+- `merge` moves an active duplicate item to `retired`, sets `mergedIntoItemId`, disables prompt context on the duplicate, copies non-duplicate source refs to the target with governance payload links, and appends merge validation events to both items. Existing usage events stay on the original item for audit.
+- `supersede` moves an outdated `validated|disputed` item to `retired`, sets `supersedesItemId` to the replacement, disables prompt context on the outdated item, links source refs to the replacement, and records the decision in validation/payload metadata.
 - `endorse` keeps `validated` status and raises confidence slightly.
 
 ## 8. Quality gates/validation rules
@@ -100,6 +105,7 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
 - Invalid action names return `400`.
 - Invalid lifecycle transitions return `409`.
 - Rationale-required actions fail before repository mutation when rationale is empty.
+- Duplicate suggestions are computed for inspection only and do not mutate data until the operator submits merge or supersede.
 
 ## 9. Failure modes and how they surface in UI/API
 
@@ -120,10 +126,11 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
 ## 11. Operational checklist
 
 - Verify create review item.
-- Verify accept, reject, dispute, resolve, endorse, and retire actions.
+- Verify accept, reject, dispute, resolve, endorse, retire, merge, and supersede actions.
+- Verify merged/superseded indicators, duplicate suggestions, merge dialog, and dispute resolution panel.
 - Verify search, category, source type, scope, and sort filters.
 - Verify detail reload and retry states.
-- Verify context retrieval returns validated prompt-safe packets and excludes review/disputed/rejected/retired rows.
+- Verify context retrieval returns validated prompt-safe packets and excludes review/disputed/rejected/retired/merged/superseded rows.
 - Verify usage recording appends `library_item_usage_events` and updates aggregate fields.
 - Verify legacy `/api/knowledge` still returns shared knowledge compatibility responses.
 

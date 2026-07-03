@@ -43,8 +43,10 @@ type ScopeFilter = LibraryScope | 'all'
 type CategoryFilter = LibraryCategory | 'all'
 type SourceTypeFilter = LibrarySourceType | 'all'
 type RationaleAction = 'reject' | 'dispute' | 'retire' | 'resolve'
+type GovernanceAction = 'merge' | 'supersede'
+type ResolveOutcome = 'validated' | 'retired'
 type InlineAction = 'accept' | 'endorse'
-type PendingAction = InlineAction | RationaleAction | 'edit-accept' | 'create'
+type PendingAction = InlineAction | RationaleAction | GovernanceAction | 'edit-accept' | 'create'
 
 interface KnowledgeLibraryWorkspaceProps {
   agentId: string
@@ -253,6 +255,10 @@ function summarizeDetail(item: LibraryItemDetailResponse): LibraryItemSummary {
     relatedAgentIds: item.item.relatedAgentIds,
     usageCount: item.item.usageCount,
     lastUsedAt: item.item.lastUsedAt,
+    retiredAt: item.item.retiredAt,
+    retiredBy: item.item.retiredBy,
+    supersedesItemId: item.item.supersedesItemId,
+    mergedIntoItemId: item.item.mergedIntoItemId,
     updatedAt: item.item.updatedAt,
     createdAt: item.item.createdAt,
   }
@@ -326,7 +332,13 @@ export function KnowledgeLibraryWorkspace({ agentId, agentName = 'Operator' }: K
 
   const [rationaleAction, setRationaleAction] = useState<RationaleAction | null>(null)
   const [rationaleText, setRationaleText] = useState('')
+  const [resolveOutcome, setResolveOutcome] = useState<ResolveOutcome>('validated')
   const [rationaleError, setRationaleError] = useState<string | null>(null)
+
+  const [governanceAction, setGovernanceAction] = useState<GovernanceAction | null>(null)
+  const [governanceTargetId, setGovernanceTargetId] = useState('')
+  const [governanceRationale, setGovernanceRationale] = useState('')
+  const [governanceError, setGovernanceError] = useState<string | null>(null)
 
   const [editOpen, setEditOpen] = useState(false)
   const [editForm, setEditForm] = useState<EditAcceptFormState | null>(null)
@@ -590,6 +602,13 @@ export function KnowledgeLibraryWorkspace({ agentId, agentName = 'Operator' }: K
     setEditOpen(true)
   }
 
+  const openGovernanceDialog = (action: GovernanceAction, targetItemId = '') => {
+    setGovernanceAction(action)
+    setGovernanceTargetId(targetItemId)
+    setGovernanceRationale('')
+    setGovernanceError(null)
+  }
+
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setCreateError(null)
@@ -659,21 +678,61 @@ export function KnowledgeLibraryWorkspace({ agentId, agentName = 'Operator' }: K
 
     const success = await runAction(
       rationaleAction,
-      { rationale: rationaleText.trim() },
+      {
+        rationale: rationaleText.trim(),
+        ...(rationaleAction === 'resolve' ? { resolution: resolveOutcome } : {}),
+      },
       rationaleAction === 'reject'
         ? 'Candidate rejected.'
         : rationaleAction === 'dispute'
           ? 'Item marked as disputed.'
           : rationaleAction === 'retire'
             ? 'Item retired.'
-            : 'Dispute resolved.'
+            : resolveOutcome === 'retired'
+              ? 'Dispute resolved and item retired.'
+              : 'Dispute resolved.'
     )
 
     if (success) {
       setRationaleAction(null)
       setRationaleText('')
+      setResolveOutcome('validated')
     } else {
       setRationaleError('The action failed. Review the message in the workspace and try again.')
+    }
+  }
+
+  const handleGovernanceSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!governanceAction) return
+
+    setGovernanceError(null)
+    if (!governanceTargetId.trim()) {
+      setGovernanceError('Choose a target item before continuing.')
+      return
+    }
+    if (!governanceRationale.trim()) {
+      setGovernanceError('A rationale is required for governance actions.')
+      return
+    }
+
+    const success = await runAction(
+      governanceAction,
+      {
+        targetItemId: governanceTargetId.trim(),
+        rationale: governanceRationale.trim(),
+      },
+      governanceAction === 'merge'
+        ? 'Duplicate item merged and retired for audit.'
+        : 'Outdated item superseded and retired for audit.'
+    )
+
+    if (success) {
+      setGovernanceAction(null)
+      setGovernanceTargetId('')
+      setGovernanceRationale('')
+    } else {
+      setGovernanceError('The governance action failed. Review the message in the workspace and try again.')
     }
   }
 
@@ -811,11 +870,25 @@ export function KnowledgeLibraryWorkspace({ agentId, agentName = 'Operator' }: K
             onOpenRationale={(action) => {
               setRationaleAction(action)
               setRationaleText('')
+              setResolveOutcome('validated')
               setRationaleError(null)
             }}
+            onOpenGovernance={openGovernanceDialog}
           />
 
-          <LibraryEvidencePanel detail={selectedDetail} loading={detailLoading} />
+          <LibraryEvidencePanel
+            detail={selectedDetail}
+            loading={detailLoading}
+            busy={selectedItemBusy}
+            pendingActionKey={pendingActionKey}
+            onOpenRationale={(action, outcome) => {
+              setRationaleAction(action)
+              setRationaleText('')
+              setResolveOutcome(outcome || 'validated')
+              setRationaleError(null)
+            }}
+            onOpenGovernance={openGovernanceDialog}
+          />
         </div>
       )}
 
@@ -836,11 +909,28 @@ export function KnowledgeLibraryWorkspace({ agentId, agentName = 'Operator' }: K
         value={rationaleText}
         error={rationaleError}
         pending={Boolean(rationaleAction && pendingActionKey?.endsWith(`:${rationaleAction}`))}
+        resolveOutcome={resolveOutcome}
         onClose={() => {
           if (!pendingActionKey) setRationaleAction(null)
         }}
         onChange={setRationaleText}
+        onResolveOutcomeChange={setResolveOutcome}
         onSubmit={handleRationaleSubmit}
+      />
+
+      <GovernanceModal
+        action={governanceAction}
+        detail={selectedDetail}
+        targetItemId={governanceTargetId}
+        rationale={governanceRationale}
+        error={governanceError}
+        pending={Boolean(governanceAction && pendingActionKey?.endsWith(`:${governanceAction}`))}
+        onClose={() => {
+          if (!pendingActionKey) setGovernanceAction(null)
+        }}
+        onTargetChange={setGovernanceTargetId}
+        onRationaleChange={setGovernanceRationale}
+        onSubmit={handleGovernanceSubmit}
       />
 
       <EditAcceptModal
@@ -1116,6 +1206,8 @@ function LibraryItemList({
                   <span>{item.usageCount} uses</span>
                   <span>Updated {formatDate(item.updatedAt)}</span>
                   {item.status === 'disputed' && <span className="font-medium text-rose-600 dark:text-rose-300">Disputed</span>}
+                  {item.mergedIntoItemId && <span className="font-medium text-[var(--color-pastel-blue)]">Merged</span>}
+                  {item.supersedesItemId && <span className="font-medium text-slate-600 dark:text-slate-300">Superseded</span>}
                 </div>
               </button>
             )
@@ -1137,6 +1229,7 @@ function LibraryItemDetailPanel({
   onEditAccept,
   onEndorse,
   onOpenRationale,
+  onOpenGovernance,
 }: {
   detail: LibraryItemDetailResponse | null
   loading: boolean
@@ -1148,6 +1241,7 @@ function LibraryItemDetailPanel({
   onEditAccept: () => void
   onEndorse: () => void
   onOpenRationale: (action: RationaleAction) => void
+  onOpenGovernance: (action: GovernanceAction, targetItemId?: string) => void
 }) {
   if (loading) {
     return <DetailSkeleton />
@@ -1223,6 +1317,8 @@ function LibraryItemDetailPanel({
         </div>
       </section>
 
+      <GovernanceIndicators detail={detail} />
+
       {item.tags.length > 0 && (
         <section className="mt-6 border-t border-border/60 pt-5">
           <h4 className="text-sm font-semibold text-foreground">Tags</h4>
@@ -1243,6 +1339,7 @@ function LibraryItemDetailPanel({
         onEditAccept={onEditAccept}
         onEndorse={onEndorse}
         onOpenRationale={onOpenRationale}
+        onOpenGovernance={onOpenGovernance}
       />
     </article>
   )
@@ -1257,6 +1354,7 @@ function LibraryActions({
   onEditAccept,
   onEndorse,
   onOpenRationale,
+  onOpenGovernance,
 }: {
   status: LibraryItemStatus
   busy: boolean
@@ -1266,6 +1364,7 @@ function LibraryActions({
   onEditAccept: () => void
   onEndorse: () => void
   onOpenRationale: (action: RationaleAction) => void
+  onOpenGovernance: (action: GovernanceAction, targetItemId?: string) => void
 }) {
   const isPending = (action: PendingAction) => pendingActionKey === `${itemId}:${action}`
   const disabledReason = busy ? 'Another action is already updating this item.' : undefined
@@ -1292,6 +1391,10 @@ function LibraryActions({
               <AlertCircle className="h-4 w-4" aria-hidden="true" />
               {isPending('dispute') ? 'Disputing...' : 'Dispute'}
             </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => onOpenGovernance('merge')} disabled={busy} title={disabledReason} className="gap-2">
+              <Link2 className="h-4 w-4" aria-hidden="true" />
+              {isPending('merge') ? 'Merging...' : 'Merge'}
+            </Button>
           </>
         )}
 
@@ -1309,6 +1412,14 @@ function LibraryActions({
               <Archive className="h-4 w-4" aria-hidden="true" />
               {isPending('retire') ? 'Retiring...' : 'Retire'}
             </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => onOpenGovernance('merge')} disabled={busy} title={disabledReason} className="gap-2">
+              <Link2 className="h-4 w-4" aria-hidden="true" />
+              {isPending('merge') ? 'Merging...' : 'Merge'}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => onOpenGovernance('supersede')} disabled={busy} title={disabledReason} className="gap-2">
+              <Archive className="h-4 w-4" aria-hidden="true" />
+              {isPending('supersede') ? 'Superseding...' : 'Supersede'}
+            </Button>
           </>
         )}
 
@@ -1321,6 +1432,14 @@ function LibraryActions({
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenRationale('retire')} disabled={busy} title={disabledReason} className="gap-2">
               <Archive className="h-4 w-4" aria-hidden="true" />
               {isPending('retire') ? 'Retiring...' : 'Retire'}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => onOpenGovernance('merge')} disabled={busy} title={disabledReason} className="gap-2">
+              <Link2 className="h-4 w-4" aria-hidden="true" />
+              {isPending('merge') ? 'Merging...' : 'Merge'}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => onOpenGovernance('supersede')} disabled={busy} title={disabledReason} className="gap-2">
+              <Archive className="h-4 w-4" aria-hidden="true" />
+              {isPending('supersede') ? 'Superseding...' : 'Supersede'}
             </Button>
           </>
         )}
@@ -1336,7 +1455,21 @@ function LibraryActions({
   )
 }
 
-function LibraryEvidencePanel({ detail, loading }: { detail: LibraryItemDetailResponse | null; loading: boolean }) {
+function LibraryEvidencePanel({
+  detail,
+  loading,
+  busy,
+  pendingActionKey,
+  onOpenRationale,
+  onOpenGovernance,
+}: {
+  detail: LibraryItemDetailResponse | null
+  loading: boolean
+  busy: boolean
+  pendingActionKey: string | null
+  onOpenRationale: (action: RationaleAction, outcome?: ResolveOutcome) => void
+  onOpenGovernance: (action: GovernanceAction, targetItemId?: string) => void
+}) {
   if (loading) {
     return (
       <div className={cn(panelClass, 'space-y-4 p-4')} aria-hidden="true">
@@ -1351,6 +1484,8 @@ function LibraryEvidencePanel({ detail, loading }: { detail: LibraryItemDetailRe
   return (
     <aside className={cn(panelClass, 'space-y-6 p-4')}>
       <SourceTrail detail={detail} />
+      <DuplicateSuggestions detail={detail} busy={busy} pendingActionKey={pendingActionKey} onOpenGovernance={onOpenGovernance} />
+      <DisputeResolutionPanel detail={detail} busy={busy} pendingActionKey={pendingActionKey} onOpenRationale={onOpenRationale} />
       <ValidationHistory detail={detail} />
       <UsageTrail detail={detail} />
       <RelatedAgents detail={detail} />
@@ -1385,6 +1520,143 @@ function SourceTrail({ detail }: { detail: LibraryItemDetailResponse | null }) {
               {source.sourceTimestamp && <div className="mt-2 text-xs text-muted-foreground">{formatDateTime(source.sourceTimestamp)}</div>}
             </div>
           ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function DuplicateSuggestions({
+  detail,
+  busy,
+  pendingActionKey,
+  onOpenGovernance,
+}: {
+  detail: LibraryItemDetailResponse | null
+  busy: boolean
+  pendingActionKey: string | null
+  onOpenGovernance: (action: GovernanceAction, targetItemId?: string) => void
+}) {
+  const item = detail?.item
+  const suggestions = (detail?.relatedItems || []).filter((related) => (
+    item &&
+    related.id !== item.id &&
+    related.status !== 'retired' &&
+    related.status !== 'rejected' &&
+    !related.mergedIntoItemId
+  )).slice(0, 5)
+  const itemBusy = item ? pendingActionKey?.startsWith(`${item.id}:`) ?? false : false
+
+  return (
+    <section className="border-t border-border/60 pt-5">
+      <div className="flex items-center gap-2">
+        <Link2 className="h-4 w-4 text-primary" aria-hidden="true" />
+        <h3 className="font-semibold text-foreground">Duplicate Suggestions</h3>
+      </div>
+      {!item || suggestions.length === 0 ? (
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">No likely duplicate items are visible for this claim.</p>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {suggestions.map((suggestion) => (
+            <div key={suggestion.id} className="rounded-sm border border-border/60 bg-background/25 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="break-words text-sm font-semibold text-foreground">{suggestion.title}</div>
+                  <p className="mt-1 line-clamp-2 break-words text-sm leading-5 text-muted-foreground">{suggestion.claim}</p>
+                </div>
+                <StatusBadge status={suggestion.status} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onOpenGovernance('merge', suggestion.id)}
+                  disabled={busy || itemBusy}
+                  className="gap-2"
+                >
+                  <Link2 className="h-4 w-4" aria-hidden="true" />
+                  Merge into
+                </Button>
+                {(item.status === 'validated' || item.status === 'disputed') && suggestion.status === 'validated' && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onOpenGovernance('supersede', suggestion.id)}
+                    disabled={busy || itemBusy}
+                    className="gap-2"
+                  >
+                    <Archive className="h-4 w-4" aria-hidden="true" />
+                    Supersede with
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function DisputeResolutionPanel({
+  detail,
+  busy,
+  pendingActionKey,
+  onOpenRationale,
+}: {
+  detail: LibraryItemDetailResponse | null
+  busy: boolean
+  pendingActionKey: string | null
+  onOpenRationale: (action: RationaleAction, outcome?: ResolveOutcome) => void
+}) {
+  const disputes = (detail?.validations || []).filter((validation) => validation.verdict === 'dispute')
+  const item = detail?.item
+  const resolving = item ? pendingActionKey === `${item.id}:resolve` : false
+
+  return (
+    <section className="border-t border-border/60 pt-5">
+      <div className="flex items-center gap-2">
+        <AlertCircle className="h-4 w-4 text-primary" aria-hidden="true" />
+        <h3 className="font-semibold text-foreground">Dispute Resolution</h3>
+      </div>
+      {!item || item.status !== 'disputed' ? (
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">No active dispute is waiting for resolution.</p>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {disputes.slice(0, 3).map((dispute) => (
+            <div key={dispute.id} className="rounded-sm border border-amber-500/25 bg-amber-500/5 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">{dispute.actorName || dispute.actorType}</span>
+                <span className="text-xs text-muted-foreground">{formatDateTime(dispute.createdAt)}</span>
+              </div>
+              <p className="mt-1 break-words text-sm leading-6 text-muted-foreground">{dispute.rationale}</p>
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => onOpenRationale('resolve', 'validated')}
+              disabled={busy || resolving}
+              className="gap-2"
+            >
+              <Check className="h-4 w-4" aria-hidden="true" />
+              Validate
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onOpenRationale('resolve', 'retired')}
+              disabled={busy || resolving}
+              className="gap-2"
+            >
+              <Archive className="h-4 w-4" aria-hidden="true" />
+              Retire
+            </Button>
+          </div>
         </div>
       )}
     </section>
@@ -1480,6 +1752,44 @@ function DetailMetric({ label, value }: { label: string; value: string }) {
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 break-words text-sm font-semibold text-foreground">{value}</div>
     </div>
+  )
+}
+
+function GovernanceIndicators({ detail }: { detail: LibraryItemDetailResponse }) {
+  const item = detail.item
+  const mergedFrom = detail.relatedItems.filter((related) => related.mergedIntoItemId === item.id)
+  const supersedes = detail.relatedItems.filter((related) => related.supersedesItemId === item.id)
+
+  if (!item.mergedIntoItemId && !item.supersedesItemId && mergedFrom.length === 0 && supersedes.length === 0) {
+    return null
+  }
+
+  return (
+    <section className="mt-6 border-t border-border/60 pt-5">
+      <h4 className="text-sm font-semibold text-foreground">Governance Links</h4>
+      <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+        {item.mergedIntoItemId && (
+          <div className="rounded-sm border border-[var(--color-pastel-blue)]/30 bg-background/25 p-3">
+            Merged into <span className="font-mono text-xs text-foreground">{item.mergedIntoItemId}</span>
+          </div>
+        )}
+        {item.supersedesItemId && (
+          <div className="rounded-sm border border-slate-500/30 bg-background/25 p-3">
+            Superseded by <span className="font-mono text-xs text-foreground">{item.supersedesItemId}</span>
+          </div>
+        )}
+        {mergedFrom.map((related) => (
+          <div key={related.id} className="rounded-sm border border-border/60 bg-background/25 p-3">
+            Merged from <span className="font-medium text-foreground">{related.title}</span>
+          </div>
+        ))}
+        {supersedes.map((related) => (
+          <div key={related.id} className="rounded-sm border border-border/60 bg-background/25 p-3">
+            Supersedes <span className="font-medium text-foreground">{related.title}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -1639,16 +1949,20 @@ function RationaleModal({
   value,
   error,
   pending,
+  resolveOutcome,
   onClose,
   onChange,
+  onResolveOutcomeChange,
   onSubmit,
 }: {
   action: RationaleAction | null
   value: string
   error: string | null
   pending: boolean
+  resolveOutcome: ResolveOutcome
   onClose: () => void
   onChange: (value: string) => void
+  onResolveOutcomeChange: (value: ResolveOutcome) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
   const config = action ? RATIONALE_LABELS[action] : null
@@ -1663,6 +1977,19 @@ function RationaleModal({
       {config && (
         <form onSubmit={onSubmit} className="space-y-4">
           {error && <ActionNotice message={error} />}
+          {action === 'resolve' && (
+            <FormField label="Resolution outcome">
+              <select
+                value={resolveOutcome}
+                onChange={(event) => onResolveOutcomeChange(event.target.value as ResolveOutcome)}
+                className={cn(fieldClass, 'w-full')}
+                disabled={pending}
+              >
+                <option value="validated">Return to validated knowledge</option>
+                <option value="retired">Retire after resolving</option>
+              </select>
+            </FormField>
+          )}
           <FormField label={config.field} required>
             <Textarea
               value={value}
@@ -1743,6 +2070,118 @@ function EditAcceptModal({
             <Button type="submit" disabled={pending} className="gap-2">
               <Edit3 className="h-4 w-4" aria-hidden="true" />
               {pending ? 'Saving...' : 'Save and accept'}
+            </Button>
+          </div>
+        </form>
+      )}
+    </AccessibleModal>
+  )
+}
+
+function GovernanceModal({
+  action,
+  detail,
+  targetItemId,
+  rationale,
+  error,
+  pending,
+  onClose,
+  onTargetChange,
+  onRationaleChange,
+  onSubmit,
+}: {
+  action: GovernanceAction | null
+  detail: LibraryItemDetailResponse | null
+  targetItemId: string
+  rationale: string
+  error: string | null
+  pending: boolean
+  onClose: () => void
+  onTargetChange: (value: string) => void
+  onRationaleChange: (value: string) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  const title = action === 'merge' ? 'Merge duplicate item' : 'Supersede outdated item'
+  const description = action === 'merge'
+    ? 'Merge keeps this item as retired audit history and copies source references onto the target.'
+    : 'Supersede retires this outdated item and links it to a validated replacement.'
+  const suggestions = (detail?.relatedItems || []).filter((item) => (
+    item.status !== 'retired' &&
+    item.status !== 'rejected' &&
+    !item.mergedIntoItemId &&
+    (action !== 'supersede' || item.status === 'validated')
+  )).slice(0, 8)
+
+  return (
+    <AccessibleModal
+      open={Boolean(action && detail)}
+      title={title}
+      description={description}
+      onClose={onClose}
+      closeDisabled={pending}
+    >
+      {action && detail && (
+        <form onSubmit={onSubmit} className="space-y-4">
+          {error && <ActionNotice message={error} />}
+          <div className="rounded-sm border border-border/60 bg-background/25 p-3">
+            <div className="text-xs text-muted-foreground">Current item</div>
+            <div className="mt-1 break-words text-sm font-semibold text-foreground">{detail.item.title}</div>
+            <p className="mt-1 break-words text-sm leading-6 text-muted-foreground">{detail.item.claim}</p>
+          </div>
+
+          {suggestions.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-foreground">Suggested targets</div>
+              <div className="space-y-2">
+                {suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.id}
+                    type="button"
+                    onClick={() => onTargetChange(suggestion.id)}
+                    disabled={pending}
+                    className={cn(
+                      'w-full rounded-sm border p-3 text-left transition',
+                      focusClass,
+                      targetItemId === suggestion.id
+                        ? 'border-primary/45 bg-primary/10'
+                        : 'border-border/60 bg-background/25 hover:border-primary/30'
+                    )}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="break-words text-sm font-semibold text-foreground">{suggestion.title}</div>
+                        <p className="mt-1 line-clamp-2 break-words text-sm leading-5 text-muted-foreground">{suggestion.claim}</p>
+                      </div>
+                      <StatusBadge status={suggestion.status} />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <FormField label="Target item ID" required>
+            <Input
+              value={targetItemId}
+              onChange={(event) => onTargetChange(event.target.value)}
+              placeholder="library_item_..."
+              disabled={pending}
+            />
+          </FormField>
+          <FormField label="Governance rationale" required>
+            <Textarea
+              value={rationale}
+              onChange={(event) => onRationaleChange(event.target.value)}
+              className="min-h-[120px]"
+              disabled={pending}
+              placeholder="Record why this merge or supersede decision is correct."
+            />
+          </FormField>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={onClose} disabled={pending}>Cancel</Button>
+            <Button type="submit" disabled={pending} className="gap-2">
+              {action === 'merge' ? <Link2 className="h-4 w-4" aria-hidden="true" /> : <Archive className="h-4 w-4" aria-hidden="true" />}
+              {pending ? (action === 'merge' ? 'Merging...' : 'Superseding...') : (action === 'merge' ? 'Merge item' : 'Supersede item')}
             </Button>
           </div>
         </form>

@@ -174,6 +174,10 @@ function toSummary(item: LibraryItem): LibraryItemSummary {
     relatedAgentIds: item.relatedAgentIds,
     usageCount: item.usageCount,
     lastUsedAt: item.lastUsedAt,
+    retiredAt: item.retiredAt,
+    retiredBy: item.retiredBy,
+    supersedesItemId: item.supersedesItemId,
+    mergedIntoItemId: item.mergedIntoItemId,
     updatedAt: item.updatedAt,
     createdAt: item.createdAt,
   }
@@ -518,6 +522,51 @@ export class LibraryRepository {
       .returning()
 
     return row ? mapItemRow(row) : null
+  }
+
+  static async applyGovernanceLink(params: {
+    sourceItemId: string
+    targetItemId: string
+    sourceUpdates: LibraryItemLifecycleUpdate
+    targetUpdates: LibraryItemLifecycleUpdate
+    sourceValidation: LibraryValidation
+    targetValidation?: LibraryValidation
+    copiedSources: LibraryItemSource[]
+  }): Promise<{ sourceItem: LibraryItem | null; targetItem: LibraryItem | null; copiedSources: LibraryItemSource[] }> {
+    return getDb().transaction(async (tx) => {
+      await tx
+        .insert(libraryItemValidations)
+        .values([
+          toValidationRow(params.sourceValidation),
+          ...(params.targetValidation ? [toValidationRow(params.targetValidation)] : []),
+        ])
+        .returning()
+
+      const copiedSourceRows = params.copiedSources.length > 0
+        ? await tx
+            .insert(libraryItemSources)
+            .values(params.copiedSources.map(toSourceRow))
+            .returning()
+        : []
+
+      const [sourceRow] = await tx
+        .update(libraryItems)
+        .set(toLifecycleSet(params.sourceUpdates))
+        .where(eq(libraryItems.id, params.sourceItemId))
+        .returning()
+
+      const [targetRow] = await tx
+        .update(libraryItems)
+        .set(toLifecycleSet(params.targetUpdates))
+        .where(eq(libraryItems.id, params.targetItemId))
+        .returning()
+
+      return {
+        sourceItem: sourceRow ? mapItemRow(sourceRow) : null,
+        targetItem: targetRow ? mapItemRow(targetRow) : null,
+        copiedSources: copiedSourceRows.map(mapSourceRow),
+      }
+    })
   }
 
   static async addUsageEvent(record: LibraryUsageEvent): Promise<LibraryUsageEvent> {

@@ -17,6 +17,8 @@ import type {
   LibraryItemDetail,
   LibraryItemDetailResponse,
   LibraryItemPayload,
+  LibraryItemSource,
+  LibraryItemSummary,
   LibraryItemStatus,
   LibraryMutationResponse,
   LibraryScope,
@@ -76,8 +78,10 @@ const MAX_CONTEXT_LIMIT = 10
 const MAX_CONTEXT_CHARS = 4000
 const MAX_CONTEXT_QUERY_CHARS = 500
 const MAX_USAGE_ITEMS = 20
+const MAX_DUPLICATE_SUGGESTIONS = 5
 
-type LibraryAction = 'accept' | 'reject' | 'endorse' | 'dispute' | 'resolve' | 'retire'
+type LibraryAction = 'accept' | 'reject' | 'endorse' | 'dispute' | 'resolve' | 'retire' | 'merge' | 'supersede'
+type DisputeResolutionOutcome = 'validated' | 'retired'
 
 export interface LibraryItemEditableFields {
   title: string
@@ -118,6 +122,8 @@ export interface LibraryActionInput {
   actorName?: string
   rationale?: string
   editedItem?: Partial<LibraryItemEditableFields>
+  targetItemId?: string
+  resolution?: DisputeResolutionOutcome
 }
 
 export interface LibraryContextRequestInput {
@@ -158,6 +164,10 @@ function normalizeText(value: string): string {
 
 function uniqueStrings(values: string[] | undefined): string[] {
   return [...new Set((values || []).map((value) => value.trim()).filter(Boolean))]
+}
+
+function mergeUniqueStrings(...values: Array<string[] | undefined>): string[] {
+  return uniqueStrings(values.flatMap((entry) => entry || []))
 }
 
 function clampConfidence(value: number): number {
@@ -217,6 +227,23 @@ function lexicalOverlap(query: string | undefined, text: string): number {
   }
 
   return matches / queryTokens.size
+}
+
+function lexicalSimilarity(left: string, right: string): number {
+  const leftTokens = tokenSet(left)
+  const rightTokens = tokenSet(right)
+  if (leftTokens.size === 0 || rightTokens.size === 0) {
+    return 0
+  }
+
+  let shared = 0
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) {
+      shared += 1
+    }
+  }
+
+  return shared / Math.max(leftTokens.size, rightTokens.size)
 }
 
 function isValidCategory(value: unknown): value is LibraryCategory {
@@ -453,6 +480,7 @@ function makeValidation(params: {
   actorName?: string
   rationale: string
   confidenceDelta?: number
+  payload?: Record<string, unknown>
 }): LibraryValidation {
   return {
     id: generateId('library_validation'),
@@ -464,7 +492,7 @@ function makeValidation(params: {
     rationale: params.rationale,
     confidenceDelta: params.confidenceDelta ?? 0,
     createdAt: new Date().toISOString(),
-    payload: {},
+    payload: params.payload || {},
   }
 }
 
@@ -482,6 +510,26 @@ function requireRationale(action: LibraryAction, rationale: string | undefined):
   }
 
   return normalizeText(rationale)
+}
+
+function requireTargetItemId(action: LibraryAction, targetItemId: string | undefined): string {
+  if (!isNonEmptyString(targetItemId)) {
+    throw new LibraryServiceError(
+      'validation_error',
+      `${action} requires a target item id`,
+      400
+    )
+  }
+
+  return normalizeText(targetItemId)
+}
+
+function sourceKey(source: Pick<LibraryItemSource, 'sourceType' | 'sourceId' | 'evidenceSummary'>): string {
+  return [
+    source.sourceType,
+    source.sourceId,
+    source.evidenceSummary.replace(/\s+/g, ' ').trim().toLowerCase(),
+  ].join(':')
 }
 
 function validateManualInput(input: CreateManualLibraryItemInput): void {
@@ -663,7 +711,7 @@ export class LibraryService {
 
     return {
       success: true,
-      item: this.toDetailResponse(detail),
+      item: await this.toDetailResponse(agentId, detail),
       stats: await this.calculateStats(agentId),
     }
   }
@@ -676,7 +724,7 @@ export class LibraryService {
       return null
     }
 
-    return this.toDetailResponse(detail)
+    return this.toDetailResponse(agentId, detail)
   }
 
   static async getContextPacket(
@@ -979,6 +1027,12 @@ export class LibraryService {
     const detail = await this.requireAccessibleDetail(agentId, itemId)
     assertTransition(detail.item.status === 'disputed', 'Only disputed items can be resolved.')
     const rationale = requireRationale('resolve', input.rationale)
+    const resolution = input.resolution || 'validated'
+    if (resolution !== 'validated' && resolution !== 'retired') {
+      throw new LibraryServiceError('validation_error', 'resolution must be validated or retired', 400)
+    }
+    const editedItem = normalizeEditedItem(input.editedItem)
+    const now = new Date().toISOString()
 
     await LibraryRepository.addValidationEvent(makeValidation({
       itemId,
@@ -986,20 +1040,32 @@ export class LibraryService {
       agentId: input.actorAgentId || agentId,
       actorName: input.actorName,
       rationale,
-      confidenceDelta: 0.05,
+      confidenceDelta: resolution === 'validated' ? 0.05 : 0,
+      payload: {
+        resolution,
+      },
     }))
 
     await LibraryRepository.updateItemLifecycle(itemId, {
-      status: 'validated',
-      confidence: applyConfidenceDelta(detail.item, 0.05),
-      acceptedAt: new Date().toISOString(),
-      acceptedBy: input.actorName || input.actorAgentId || agentId,
-      updatedAt: new Date().toISOString(),
+      ...editedItem,
+      status: resolution,
+      confidence: resolution === 'validated' ? applyConfidenceDelta(detail.item, 0.05) : detail.item.confidence,
+      acceptedAt: resolution === 'validated' ? now : detail.item.acceptedAt,
+      acceptedBy: resolution === 'validated' ? input.actorName || input.actorAgentId || agentId : detail.item.acceptedBy,
+      retiredAt: resolution === 'retired' ? now : detail.item.retiredAt,
+      retiredBy: resolution === 'retired' ? input.actorName || input.actorAgentId || agentId : detail.item.retiredBy,
+      updatedAt: now,
       payload: {
         ...detail.item.payload,
+        governance: {
+          ...detail.item.payload.governance,
+          lastGovernanceActionAt: now,
+          lastGovernanceActionBy: input.actorName || input.actorAgentId || agentId,
+          lastGovernanceRationale: rationale,
+        },
         contextPolicy: {
           ...detail.item.payload.contextPolicy,
-          allowPromptUse: true,
+          allowPromptUse: resolution === 'validated',
         },
       },
     })
@@ -1042,6 +1108,223 @@ export class LibraryService {
     return this.mutationResponse(agentId, itemId)
   }
 
+  static async mergeDuplicateItem(agentId: string, itemId: string, input: LibraryActionInput): Promise<LibraryMutationResponse> {
+    const sourceDetail = await this.requireAccessibleDetail(agentId, itemId)
+    const targetItemId = requireTargetItemId('merge', input.targetItemId)
+    assertTransition(itemId !== targetItemId, 'An item cannot be merged into itself.')
+    assertTransition(
+      sourceDetail.item.status !== 'retired' && sourceDetail.item.status !== 'rejected' && !sourceDetail.item.mergedIntoItemId,
+      'Only active review, validated, or disputed items can be merged.'
+    )
+
+    const targetDetail = await this.requireAccessibleDetail(agentId, targetItemId)
+    assertTransition(
+      targetDetail.item.status !== 'retired' && targetDetail.item.status !== 'rejected' && !targetDetail.item.mergedIntoItemId,
+      'Merge target must be an active Library item.'
+    )
+
+    const rationale = requireRationale('merge', input.rationale)
+    const now = new Date().toISOString()
+    const actor = input.actorName || input.actorAgentId || agentId
+    const existingTargetSources = new Set(targetDetail.sources.map(sourceKey))
+    const copiedSources = sourceDetail.sources
+      .filter((source) => !existingTargetSources.has(sourceKey(source)))
+      .map((source) => ({
+        ...source,
+        id: generateId('library_source'),
+        itemId: targetDetail.item.id,
+        createdAt: now,
+        payload: {
+          ...source.payload,
+          governance: {
+            copiedFromItemId: sourceDetail.item.id,
+            copiedFromSourceId: source.id,
+            copiedDuring: 'merge',
+            copiedAt: now,
+            copiedBy: actor,
+          },
+        },
+      }))
+
+    await LibraryRepository.applyGovernanceLink({
+      sourceItemId: sourceDetail.item.id,
+      targetItemId: targetDetail.item.id,
+      copiedSources,
+      sourceValidation: makeValidation({
+        itemId: sourceDetail.item.id,
+        verdict: 'merge',
+        agentId: input.actorAgentId || agentId,
+        actorName: input.actorName,
+        rationale: `Merged into ${targetDetail.item.title}. ${rationale}`,
+        payload: {
+          targetItemId: targetDetail.item.id,
+          copiedSourceCount: copiedSources.length,
+        },
+      }),
+      targetValidation: makeValidation({
+        itemId: targetDetail.item.id,
+        verdict: 'merge',
+        agentId: input.actorAgentId || agentId,
+        actorName: input.actorName,
+        rationale: `Merged duplicate ${sourceDetail.item.title}. ${rationale}`,
+        payload: {
+          sourceItemId: sourceDetail.item.id,
+          copiedSourceCount: copiedSources.length,
+        },
+      }),
+      sourceUpdates: {
+        status: 'retired',
+        retiredAt: now,
+        retiredBy: actor,
+        mergedIntoItemId: targetDetail.item.id,
+        updatedAt: now,
+        payload: {
+          ...sourceDetail.item.payload,
+          governance: {
+            ...sourceDetail.item.payload.governance,
+            mergedIntoItemId: targetDetail.item.id,
+            lastGovernanceActionAt: now,
+            lastGovernanceActionBy: actor,
+            lastGovernanceRationale: rationale,
+          },
+          contextPolicy: {
+            ...sourceDetail.item.payload.contextPolicy,
+            allowPromptUse: false,
+          },
+        },
+      },
+      targetUpdates: {
+        tags: mergeUniqueStrings(targetDetail.item.tags, sourceDetail.item.tags),
+        relatedAgentIds: mergeUniqueStrings(targetDetail.item.relatedAgentIds, sourceDetail.item.relatedAgentIds),
+        confidence: Math.max(targetDetail.item.confidence, sourceDetail.item.confidence),
+        updatedAt: now,
+        payload: {
+          ...targetDetail.item.payload,
+          governance: {
+            ...targetDetail.item.payload.governance,
+            mergedFromItemIds: mergeUniqueStrings(
+              targetDetail.item.payload.governance?.mergedFromItemIds,
+              [sourceDetail.item.id]
+            ),
+            lastGovernanceActionAt: now,
+            lastGovernanceActionBy: actor,
+            lastGovernanceRationale: rationale,
+          },
+        },
+      },
+    })
+
+    return this.mutationResponse(agentId, sourceDetail.item.id)
+  }
+
+  static async supersedeItem(agentId: string, itemId: string, input: LibraryActionInput): Promise<LibraryMutationResponse> {
+    const sourceDetail = await this.requireAccessibleDetail(agentId, itemId)
+    const targetItemId = requireTargetItemId('supersede', input.targetItemId)
+    assertTransition(itemId !== targetItemId, 'An item cannot supersede itself.')
+    assertTransition(
+      sourceDetail.item.status === 'validated' || sourceDetail.item.status === 'disputed',
+      'Only validated or disputed items can be superseded.'
+    )
+
+    const targetDetail = await this.requireAccessibleDetail(agentId, targetItemId)
+    assertTransition(
+      targetDetail.item.status === 'validated' && targetDetail.item.payload.contextPolicy?.allowPromptUse !== false,
+      'Supersede target must be validated prompt-eligible knowledge.'
+    )
+
+    const rationale = requireRationale('supersede', input.rationale)
+    const now = new Date().toISOString()
+    const actor = input.actorName || input.actorAgentId || agentId
+    const existingTargetSources = new Set(targetDetail.sources.map(sourceKey))
+    const copiedSources = sourceDetail.sources
+      .filter((source) => !existingTargetSources.has(sourceKey(source)))
+      .map((source) => ({
+        ...source,
+        id: generateId('library_source'),
+        itemId: targetDetail.item.id,
+        createdAt: now,
+        payload: {
+          ...source.payload,
+          governance: {
+            copiedFromItemId: sourceDetail.item.id,
+            copiedFromSourceId: source.id,
+            copiedDuring: 'supersede',
+            copiedAt: now,
+            copiedBy: actor,
+          },
+        },
+      }))
+
+    await LibraryRepository.applyGovernanceLink({
+      sourceItemId: sourceDetail.item.id,
+      targetItemId: targetDetail.item.id,
+      copiedSources,
+      sourceValidation: makeValidation({
+        itemId: sourceDetail.item.id,
+        verdict: 'retire',
+        agentId: input.actorAgentId || agentId,
+        actorName: input.actorName,
+        rationale: `Superseded by ${targetDetail.item.title}. ${rationale}`,
+        payload: {
+          supersededByItemId: targetDetail.item.id,
+          copiedSourceCount: copiedSources.length,
+        },
+      }),
+      targetValidation: makeValidation({
+        itemId: targetDetail.item.id,
+        verdict: 'endorse',
+        agentId: input.actorAgentId || agentId,
+        actorName: input.actorName,
+        rationale: `Supersedes retired item ${sourceDetail.item.title}. ${rationale}`,
+        payload: {
+          supersedesItemId: sourceDetail.item.id,
+          copiedSourceCount: copiedSources.length,
+        },
+      }),
+      sourceUpdates: {
+        status: 'retired',
+        retiredAt: now,
+        retiredBy: actor,
+        supersedesItemId: targetDetail.item.id,
+        updatedAt: now,
+        payload: {
+          ...sourceDetail.item.payload,
+          governance: {
+            ...sourceDetail.item.payload.governance,
+            supersededByItemId: targetDetail.item.id,
+            lastGovernanceActionAt: now,
+            lastGovernanceActionBy: actor,
+            lastGovernanceRationale: rationale,
+          },
+          contextPolicy: {
+            ...sourceDetail.item.payload.contextPolicy,
+            allowPromptUse: false,
+          },
+        },
+      },
+      targetUpdates: {
+        tags: mergeUniqueStrings(targetDetail.item.tags, sourceDetail.item.tags),
+        relatedAgentIds: mergeUniqueStrings(targetDetail.item.relatedAgentIds, sourceDetail.item.relatedAgentIds),
+        updatedAt: now,
+        payload: {
+          ...targetDetail.item.payload,
+          governance: {
+            ...targetDetail.item.payload.governance,
+            supersedesItemIds: mergeUniqueStrings(
+              targetDetail.item.payload.governance?.supersedesItemIds,
+              [sourceDetail.item.id]
+            ),
+            lastGovernanceActionAt: now,
+            lastGovernanceActionBy: actor,
+            lastGovernanceRationale: rationale,
+          },
+        },
+      },
+    })
+
+    return this.mutationResponse(agentId, sourceDetail.item.id)
+  }
+
   static async runAction(agentId: string, itemId: string, input: LibraryActionInput): Promise<LibraryMutationResponse> {
     if (input.action === 'accept') return this.acceptReviewItem(agentId, itemId, input)
     if (input.action === 'reject') return this.rejectReviewItem(agentId, itemId, input)
@@ -1049,6 +1332,8 @@ export class LibraryService {
     if (input.action === 'dispute') return this.disputeItem(agentId, itemId, input)
     if (input.action === 'resolve') return this.resolveDispute(agentId, itemId, input)
     if (input.action === 'retire') return this.retireItem(agentId, itemId, input)
+    if (input.action === 'merge') return this.mergeDuplicateItem(agentId, itemId, input)
+    if (input.action === 'supersede') return this.supersedeItem(agentId, itemId, input)
 
     throw new LibraryServiceError('validation_error', 'Invalid action', 400)
   }
@@ -1139,13 +1424,13 @@ export class LibraryService {
     return detail
   }
 
-  private static toDetailResponse(detail: LibraryItemDetail): LibraryItemDetailResponse {
+  private static async toDetailResponse(agentId: string, detail: LibraryItemDetail): Promise<LibraryItemDetailResponse> {
     return {
       item: detail.item,
       sources: detail.sources,
       validations: detail.validations,
       usageEvents: detail.usageEvents,
-      relatedItems: [],
+      relatedItems: await this.findRelatedItems(agentId, detail),
     }
   }
 
@@ -1160,5 +1445,70 @@ export class LibraryService {
       item: detail,
       stats: await this.calculateStats(agentId),
     }
+  }
+
+  private static async findRelatedItems(agentId: string, detail: LibraryItemDetail): Promise<LibraryItemSummary[]> {
+    const candidates = await LibraryRepository.listItems({
+      agentId,
+      includeNetwork: true,
+      status: 'all',
+      scope: 'all',
+      limit: 500,
+    })
+    const current = detail.item
+    const currentText = [current.title, current.claim, current.body, current.tags.join(' ')].join(' ')
+    const directIds = new Set([
+      current.mergedIntoItemId,
+      current.supersedesItemId,
+      ...(current.payload.governance?.possibleDuplicateIds || []),
+      ...(current.payload.governance?.mergedFromItemIds || []),
+      ...(current.payload.governance?.supersedesItemIds || []),
+      current.payload.governance?.mergedIntoItemId,
+      current.payload.governance?.supersededByItemId,
+    ].filter((value): value is string => Boolean(value)))
+
+    const direct = candidates.filter((candidate) => (
+      candidate.id !== current.id &&
+      (
+        directIds.has(candidate.id) ||
+        candidate.mergedIntoItemId === current.id ||
+        candidate.supersedesItemId === current.id
+      )
+    ))
+
+    const suggestions = candidates
+      .filter((candidate) => (
+        candidate.id !== current.id &&
+        !direct.some((directItem) => directItem.id === candidate.id) &&
+        candidate.status !== 'retired' &&
+        candidate.status !== 'rejected' &&
+        !candidate.mergedIntoItemId
+      ))
+      .map((candidate) => {
+        const candidateText = [candidate.title, candidate.claim, candidate.tags.join(' ')].join(' ')
+        const textScore = lexicalSimilarity(currentText, candidateText)
+        const categoryBoost = candidate.category === current.category ? 0.14 : 0
+        const tagScore = candidate.tags.length > 0
+          ? lexicalSimilarity(current.tags.join(' '), candidate.tags.join(' ')) * 0.18
+          : 0
+        return {
+          candidate,
+          score: textScore + categoryBoost + tagScore,
+        }
+      })
+      .filter(({ score }) => score >= 0.28)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, MAX_DUPLICATE_SUGGESTIONS)
+      .map(({ candidate }) => candidate)
+
+    const related = [...direct, ...suggestions]
+    const seen = new Set<string>()
+    return related.filter((item) => {
+      if (seen.has(item.id)) {
+        return false
+      }
+      seen.add(item.id)
+      return true
+    }).slice(0, 10)
   }
 }

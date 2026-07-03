@@ -2870,6 +2870,16 @@ export interface LibraryItemPayload {
     allowPromptUse: boolean
     maxPromptChars: number
   }
+  governance?: {
+    possibleDuplicateIds?: string[]
+    mergedFromItemIds?: string[]
+    mergedIntoItemId?: string
+    supersedesItemIds?: string[]
+    supersededByItemId?: string
+    lastGovernanceActionAt?: string
+    lastGovernanceActionBy?: string
+    lastGovernanceRationale?: string
+  }
   sourceSpecific?: Record<string, unknown>
 }
 
@@ -3034,6 +3044,10 @@ export interface LibraryItemSummary {
   relatedAgentIds: string[]
   usageCount: number
   lastUsedAt?: string
+  retiredAt?: string
+  retiredBy?: string
+  supersedesItemId?: string
+  mergedIntoItemId?: string
   updatedAt: string
   createdAt: string
 }
