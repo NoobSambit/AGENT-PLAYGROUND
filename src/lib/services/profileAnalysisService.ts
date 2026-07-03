@@ -41,6 +41,11 @@ import { MemoryService } from './memoryService'
 import { MessageService } from './messageService'
 import { PersonalityEventService } from './personalityEventService'
 import { psychologicalProfileService } from './psychologicalProfileService'
+import {
+  libraryContextMetadata,
+  recordLibraryConsumerUsage,
+  requestLibraryConsumerContext,
+} from './libraryConsumerContext'
 
 const PROFILE_PROMPT_VERSION = 'phase3-profile-evidence-led-v1'
 const PROFILE_VALIDATOR_VERSION = 'phase3-profile-validator-v1'
@@ -1038,7 +1043,33 @@ export class ProfileAnalysisService {
         updatedAt: new Date().toISOString(),
       })
 
-      const synthesisResult = await this.synthesizeProfile(agent, evidenceSignals, stageFindings, interviewTurns, resolvedProvider)
+      let libraryContext = await requestLibraryConsumerContext({
+        agentId,
+        consumerFeature: 'profile',
+        query: [
+          agent.persona,
+          agent.goals.slice(0, 4).join(' '),
+          stageFindings.map((finding) => finding.summary).join(' '),
+          evidenceSignals.slice(0, 8).map((signal) => signal.snippet).join(' '),
+        ].filter(Boolean).join('\n'),
+        limit: 3,
+        maxChars: 900,
+        minConfidence: 0.6,
+      })
+
+      const synthesisResult = await this.synthesizeProfile(
+        agent,
+        evidenceSignals,
+        stageFindings,
+        interviewTurns,
+        resolvedProvider,
+        libraryContext.promptBlock
+      )
+      libraryContext = await recordLibraryConsumerUsage({
+        agentId,
+        context: libraryContext,
+        consumerSourceId: run.id,
+      })
       let profile = synthesisResult.profile
       let validation = this.validateProfileRun({
         profile,
@@ -1059,6 +1090,10 @@ export class ProfileAnalysisService {
         qualityStatus: validation.pass ? 'pending' : 'failed',
         latestProfile: profile,
         latestEvaluation: evaluation,
+        payload: {
+          ...(run.payload || {}),
+          ...libraryContextMetadata(libraryContext),
+        },
         updatedAt: new Date().toISOString(),
       })
       pipelineEvents.push(await this.savePipelineEvent(agentId, makePipelineEvent(
@@ -1071,6 +1106,7 @@ export class ProfileAnalysisService {
         {
           validation,
           evidenceCoverage,
+          ...libraryContextMetadata(libraryContext),
         }
       )))
       pipelineEvents.push(await this.savePipelineEvent(agentId, makePipelineEvent(
@@ -1704,7 +1740,8 @@ export class ProfileAnalysisService {
     evidenceSignals: ProfileEvidenceSignal[],
     stageFindings: ProfileStageFinding[],
     interviewTurns: ProfileInterviewTurn[],
-    providerInfo: LLMProviderInfo
+    providerInfo: LLMProviderInfo,
+    libraryPromptBlock?: string
   ): Promise<{
     profile: PsychologicalProfile
     rawModelOutput: OutputQualityRawModelOutput
@@ -1724,6 +1761,9 @@ export class ProfileAnalysisService {
       cognitiveStyle: scaffold.cognitiveStyle,
       motivationalProfile: scaffold.motivationalProfile,
     }, null, 2)}\n\nStage findings:\n${compactStageFindings}\n\nRecent interview transcript:\n${compactInterviewTurns}\n\nEvidence sample:\n${compactEvidenceBlock}\n\nReturn JSON with keys:\n- bigFive\n- mbti\n- enneagram\n- communicationStyle\n- attachmentStyle\n- cognitiveStyle\n- emotionalIntelligence\n- motivationalProfile\n- summary\n- strengths\n- challenges\n- triggers\n- growthEdges\n- confidence\n- rationales\n- claimEvidence\n\nclaimEvidence must contain:\n- summary: evidence ids\n- communicationStyle: evidence ids\n- motivationalProfile: evidence ids\n- bigFive: object of trait -> evidence ids\n- mbti: evidence ids\n- enneagram: evidence ids\n- strengths: array of { claim, evidenceRefs }\n- challenges: array of { claim, evidenceRefs }\n- triggers: array of { claim, evidenceRefs }\n- growthEdges: array of { claim, evidenceRefs }\n\nRules:\n- Every top-level claim group must cite evidence ids that exist in the evidence sample or stage findings.\n- Keep the language evidence-led and specific. Avoid generic descriptor stacks.\n- strengths, challenges, triggers, and growthEdges must each have 2-4 items.\n- strengths, challenges, triggers, and growthEdges must be short third-person claim summaries, not copied first-person interview answers.\n- rationales must include bigFive, mbti, enneagram, communicationStyle, stressPattern, motivationAndGrowth.\n- Confidence must be 0-1.\n- IMPORTANT: If evidence density is low or thin, do NOT make strong typology claims. Use tentative language like "leans toward" or "provisional" for MBTI and Enneagram. Only present them as firm when evidence coverage is strong.\n- Do NOT assert a specific MBTI type or Enneagram type with high confidence unless 3+ distinct evidence signals support it.\n- Summaries should describe observable patterns, not typology category membership.`
+    const promptWithLibraryContext = libraryPromptBlock
+      ? `${prompt}\n\n${libraryPromptBlock}`
+      : prompt
 
     const result = await generateText({
       providerInfo,
@@ -1732,7 +1772,7 @@ export class ProfileAnalysisService {
       timeoutMs: isLocalBaselineProvider(providerInfo) ? 45000 : 35000,
       messages: [
         { role: 'system', content: 'You create inspectable structured profiles. Return valid JSON only.' },
-        { role: 'user', content: prompt },
+        { role: 'user', content: promptWithLibraryContext },
       ],
     })
 

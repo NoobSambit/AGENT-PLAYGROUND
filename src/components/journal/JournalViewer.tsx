@@ -10,6 +10,7 @@ import {
   Save,
 } from 'lucide-react'
 import { ChatMessageContent } from '@/components/chat/ChatMessageContent'
+import { LibraryInfluenceTrace } from '@/components/library/LibraryInfluenceTrace'
 import { Button } from '@/components/ui/button'
 import { buildLLMPreferenceHeaders } from '@/lib/llm/clientPreference'
 import { useLLMPreferenceStore } from '@/stores/llmPreferenceStore'
@@ -880,6 +881,7 @@ export function JournalViewer({ agentId, agentName }: JournalViewerProps) {
             </div>
             
             <div className="flex-1 overflow-y-auto scrollbar-thin p-5 space-y-6">
+              <LibraryInfluenceTrace metadata={detail?.session} compact />
               {mode === 'compose' ? (
                 <>
                   <div>

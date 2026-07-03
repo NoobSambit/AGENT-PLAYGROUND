@@ -66,6 +66,11 @@ import { emotionalService } from './emotionalService'
 import { LearningService } from './learningService'
 import { MemoryService } from './memoryService'
 import { MessageService } from './messageService'
+import {
+  libraryContextMetadata,
+  recordLibraryConsumerUsage,
+  requestLibraryConsumerContext,
+} from './libraryConsumerContext'
 
 const DAILY_LIMIT = 12
 const RATE_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -498,6 +503,20 @@ class JournalService {
       dominantEmotion: emotionalService.getDominantEmotion(agent.emotionalState, agent.emotionalProfile),
       summary: `${contextSignals.length} signals selected for ${TYPE_LABELS[existing.type].toLowerCase()}.`,
     }
+    let libraryContext = await requestLibraryConsumerContext({
+      agentId,
+      consumerFeature: 'journal',
+      query: [
+        TYPE_LABELS[existing.type],
+        existing.normalizedInput.userNote,
+        existing.normalizedInput.focus?.join(' '),
+        contextSignals.slice(0, 4).map((signal) => signal.snippet).join(' '),
+      ].filter(Boolean).join('\n'),
+      limit: 2,
+      maxChars: 700,
+      minConfidence: 0.6,
+      category: 'lesson',
+    })
 
     let session: JournalSession = {
       ...existing,
@@ -518,6 +537,7 @@ class JournalService {
       }))),
       qualityStatus: 'pending',
       promptVersion: JOURNAL_PROMPT_VERSION,
+      ...libraryContextMetadata(libraryContext),
       updatedAt: new Date().toISOString(),
     }
     await this.saveSession(session)
@@ -529,6 +549,7 @@ class JournalService {
       summary: 'Conditioning journal voice from persona, emotion, profile, and recent language evidence.',
       payload: {
         signalCount: contextSignals.length,
+        ...libraryContextMetadata(libraryContext),
       },
       createdAt: new Date().toISOString(),
     })
@@ -560,9 +581,20 @@ class JournalService {
       maxTokens: isLocalBaselineProvider(providerInfo) ? 1500 : 2200,
       messages: [
         { role: 'system', content: this.buildGeneratorSystemPrompt(agent, session, voicePacket) },
-        { role: 'user', content: this.buildDraftPrompt(session, contextPacket, voicePacket) },
+        { role: 'user', content: this.buildDraftPrompt(session, contextPacket, voicePacket, libraryContext.promptBlock) },
       ],
     })
+    libraryContext = await recordLibraryConsumerUsage({
+      agentId,
+      context: libraryContext,
+      consumerSourceId: sessionId,
+    })
+    session = {
+      ...session,
+      ...libraryContextMetadata(libraryContext),
+      updatedAt: new Date().toISOString(),
+    }
+    await this.saveSession(session)
 
     const draftResult = this.buildValidatedEntry({
       agent,
@@ -627,7 +659,7 @@ class JournalService {
         maxTokens: isLocalBaselineProvider(providerInfo) ? 1500 : 2200,
         messages: [
           { role: 'system', content: this.buildGeneratorSystemPrompt(agent, session, voicePacket) },
-          { role: 'user', content: this.buildRepairPrompt(session, voicePacket, finalEntry, evaluation) },
+          { role: 'user', content: this.buildRepairPrompt(session, voicePacket, finalEntry, evaluation, libraryContext.promptBlock) },
         ],
       })
 
@@ -702,6 +734,7 @@ class JournalService {
       repairCount: selectedEntry.version > 1 ? 1 : 0,
       promptVersion: JOURNAL_PROMPT_VERSION,
       failureReason: gate.pass ? undefined : [selectedEvaluation.evaluatorSummary, ...gate.blockerReasons].filter(Boolean).join(' | '),
+      ...libraryContextMetadata(libraryContext),
       updatedAt: new Date().toISOString(),
     }
     await this.saveSession(session)
@@ -719,6 +752,7 @@ class JournalService {
         validation: selectedEntry.validation,
         normalization: selectedEntry.normalization,
         gate,
+        ...libraryContextMetadata(libraryContext),
       },
       createdAt: new Date().toISOString(),
     })
@@ -1374,7 +1408,7 @@ class JournalService {
     ].join('\n')
   }
 
-  private buildDraftPrompt(session: JournalSession, contextPacket: NonNullable<JournalSession['contextPacket']>, voicePacket: JournalVoicePacket) {
+  private buildDraftPrompt(session: JournalSession, contextPacket: NonNullable<JournalSession['contextPacket']>, voicePacket: JournalVoicePacket, libraryPromptBlock?: string) {
     const signals = contextPacket.selectedSignals
       .map((signal, index) => `${index + 1}. ${signal.label}: ${signal.snippet} (${signal.reason})`)
       .join('\n')
@@ -1387,6 +1421,7 @@ class JournalService {
       session.normalizedInput.userNote ? `Optional user note: ${session.normalizedInput.userNote}` : 'No explicit user note was provided.',
       session.normalizedInput.focus?.length ? `Focus chips: ${session.normalizedInput.focus.join(', ')}` : 'No focus chips selected.',
       `Selected context signals:\n${signals}`,
+      libraryPromptBlock,
       priorityEvidence ? `Priority evidence lines:\n${priorityEvidence}` : 'No priority evidence lines available.',
       `Voice conditioning fallback: ${voicePacket.fallbackUsed}`,
       'Grounded entry rule: if the selected context signals do not name a concrete external event, do not invent one.',
@@ -1408,7 +1443,8 @@ class JournalService {
     session: JournalSession,
     voicePacket: JournalVoicePacket,
     entry: JournalEntry,
-    evaluation: JournalQualityEvaluation
+    evaluation: JournalQualityEvaluation,
+    libraryPromptBlock?: string
   ) {
     const hardFlags = entry.validation?.hardFailureFlags || []
     const hasGroundingFailure = hardFlags.some((flag) =>
@@ -1469,6 +1505,7 @@ class JournalService {
         ? `Recent communication fingerprint: ${voicePacket.communicationFingerprintSummary}`
         : 'Recent communication fingerprint is thin. Stay aligned to persona and linguistic baseline.',
       `Allowed evidence signals:\n${signalBlock}`,
+      libraryPromptBlock,
       priorityEvidence ? `Priority evidence lines:\n${priorityEvidence}` : 'No priority evidence lines available.',
       `Draft content:\n${entry.content}`,
       hardFlags.length

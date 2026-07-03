@@ -25,6 +25,13 @@ import { agentProgressService } from '@/lib/services/agentProgressService'
 import { MemoryService } from '@/lib/services/memoryService'
 import { LibraryCandidateExtractor } from '@/lib/services/libraryCandidateExtractor'
 import { relationshipOrchestrator } from '@/lib/services/relationshipOrchestrator'
+import {
+  buildCombinedLibraryPromptBlock,
+  mergeLibraryContextMetadata,
+  recordLibraryConsumerUsage,
+  requestLibraryConsumerContext,
+  type LibraryConsumerContext,
+} from '@/lib/services/libraryConsumerContext'
 import { generateText } from '@/lib/llm/provider'
 import { resolveProviderInfoModel } from '@/lib/llm/ollama'
 import type { LLMProviderInfo } from '@/lib/llmConfig'
@@ -1080,6 +1087,42 @@ export class ChallengeLabService {
     try {
       if (!await startStage('prepare_context', 'Collecting persona, goals, memory, relationship, and source context.')) return { run, events, participantResults: [] }
       run.contextSummary = await buildContext(run)
+      let libraryContexts: LibraryConsumerContext[] = await Promise.all(run.participants.map((participant) => requestLibraryConsumerContext({
+        agentId: participant.id,
+        consumerFeature: 'challenge',
+        query: [
+          run.templateId,
+          run.scenario,
+          run.contextSummary,
+          participant.name,
+        ].filter(Boolean).join('\n'),
+        limit: 1,
+        maxChars: 450,
+        minConfidence: 0.6,
+      })))
+      const libraryContextBlock = buildCombinedLibraryPromptBlock(
+        libraryContexts.map((context) => ({
+          label: run.participants.find((participant) => participant.id === context.packet?.agentId)?.name || 'Participant',
+          context,
+        })),
+        1200
+      )
+      if (libraryContextBlock) {
+        run.contextSummary = [
+          run.contextSummary,
+          libraryContextBlock,
+        ].filter(Boolean).join('\n\n')
+        libraryContexts = await Promise.all(libraryContexts.map((context) => recordLibraryConsumerUsage({
+          agentId: context.packet?.agentId || run.primaryAgentId,
+          context,
+          consumerSourceId: run.id,
+        })))
+      }
+      run.payload = {
+        ...(run.payload || {}),
+        ...mergeLibraryContextMetadata(libraryContexts),
+      }
+      await persistRun(run)
       await completeStage('prepare_context', 'Context packet prepared.')
 
       if (!await startStage('assign_roles', 'Assigning deterministic role packets.')) return { run, events, participantResults: [] }

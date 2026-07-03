@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { LibraryInfluenceTrace } from '@/components/library/LibraryInfluenceTrace'
 import { Textarea } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { buildLLMPreferenceHeaders, getClientModelForProvider, LLM_PROVIDER_LABELS } from '@/lib/llm/clientPreference'
@@ -782,6 +783,7 @@ function ChallengeReportDetails({ run, results, roomy = false, onOpenLibraryRevi
         </div>
       )}
       <LibraryCandidateStatusBlock metadata={run.payload} onOpenLibraryReview={onOpenLibraryReview} />
+      <LibraryInfluenceTrace metadata={run.payload} compact />
       <p className={cn(
         'leading-relaxed text-foreground/85',
         roomy ? 'text-[16px]' : 'text-sm'

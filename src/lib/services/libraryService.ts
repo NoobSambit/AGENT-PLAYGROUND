@@ -717,7 +717,6 @@ export class LibraryService {
         status: 'validated',
         category: input.category,
         sourceType: input.sourceType,
-        search: query,
         sort: 'confidence',
         scope: input.scope || 'all',
         minConfidence,

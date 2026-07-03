@@ -9,6 +9,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { ChatMessageContent } from '@/components/chat/ChatMessageContent'
+import { LibraryInfluenceTrace } from '@/components/library/LibraryInfluenceTrace'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { buildLLMPreferenceHeaders, getClientModelForProvider, LLM_PROVIDER_LABELS } from '@/lib/llm/clientPreference'
@@ -947,6 +948,7 @@ export function CreativeStudio({ agentId, agentName }: CreativeStudioProps) {
                       </div>
                     ))
                   )}
+                  <LibraryInfluenceTrace metadata={detail?.session} compact />
                 </div>
               </div>
             </div>

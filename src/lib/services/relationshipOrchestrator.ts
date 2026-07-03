@@ -13,6 +13,12 @@ import { RelationshipSynthesisRunRepository } from '@/lib/repositories/relations
 import { agentProgressService } from '@/lib/services/agentProgressService'
 import { AgentService } from '@/lib/services/agentService'
 import { LibraryCandidateExtractor } from '@/lib/services/libraryCandidateExtractor'
+import {
+  mergeLibraryContextMetadata,
+  recordLibraryConsumerUsage,
+  requestLibraryConsumerContext,
+  type LibraryConsumerContext,
+} from '@/lib/services/libraryConsumerContext'
 import type {
   AgentRecord,
   AgentRelationship,
@@ -991,13 +997,36 @@ export class RelationshipOrchestrator {
     model?: string
   }) {
     const current = normalizeRelationship(params.pair)
+    const synthesisRunId = generateId('relationship_synthesis')
+    let libraryContexts: LibraryConsumerContext[] = await Promise.all([
+      current.agentId1,
+      current.agentId2,
+    ].map((agentId) => requestLibraryConsumerContext({
+      agentId,
+      consumerFeature: 'relationship',
+      query: [
+        params.sourceKind,
+        params.evidence.map((entry) => entry.summary).join(' '),
+        current.latestRevisionSummary,
+        current.relationshipTypes.join(' '),
+      ].filter(Boolean).join('\n'),
+      limit: 1,
+      maxChars: 450,
+      minConfidence: 0.6,
+      category: 'relationship',
+    })))
     const outcome = synthesizeRelationship({
       relationship: current,
       evidence: params.evidence.sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()),
       sourceKind: params.sourceKind,
     })
+    libraryContexts = await Promise.all(libraryContexts.map((context) => recordLibraryConsumerUsage({
+      agentId: context.packet?.agentId || current.agentId1,
+      context,
+      consumerSourceId: synthesisRunId,
+    })))
+    const libraryMetadata = mergeLibraryContextMetadata(libraryContexts)
 
-    const synthesisRunId = generateId('relationship_synthesis')
     let revisionId: string | undefined
     let savedRevision: RelationshipRevision | undefined
 
@@ -1047,7 +1076,11 @@ export class RelationshipOrchestrator {
       promptVersion: RELATIONSHIP_PROMPT_VERSION,
       provider: params.provider,
       model: params.model,
-      rawOutput: outcome.rawOutput,
+      rawOutput: {
+        ...outcome.rawOutput,
+        libraryContextNote: 'Relationship metrics are deterministic from direct evidence; Library context is recorded for inspectable provenance only.',
+      },
+      ...libraryMetadata,
       validatorResult: {
         passed: outcome.applied,
         reasons: outcome.reasons,

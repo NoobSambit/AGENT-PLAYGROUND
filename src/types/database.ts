@@ -493,6 +493,11 @@ export interface MessageMetadata {
     behaviorTilt: DreamBehaviorTilt
     expiresAt: string
   }
+  libraryContextStatus?: LibraryContextStatus
+  libraryContextItemIds?: string[]
+  libraryContextError?: string
+  libraryUsageRecordedAt?: string
+  libraryContextItems?: LibraryInfluenceTraceItem[]
   [key: string]: unknown
 }
 
@@ -728,7 +733,7 @@ export interface ArenaRun {
   provider?: string
   model?: string
   failureReason?: string
-  payload?: LibraryCandidateProducerMetadata & Record<string, unknown>
+  payload?: LibraryCandidateProducerMetadata & LibraryConsumerMetadata & Record<string, unknown>
   createdAt: string
   updatedAt: string
   completedAt?: string
@@ -1272,7 +1277,7 @@ export interface RelationshipRevision {
 
 export type RelationshipSynthesisRunStatus = 'applied' | 'skipped' | 'failed'
 
-export interface RelationshipSynthesisRun extends LibraryCandidateProducerMetadata {
+export interface RelationshipSynthesisRun extends LibraryCandidateProducerMetadata, LibraryConsumerMetadata {
   id: string
   pairId: string
   agentId1: string
@@ -1553,7 +1558,7 @@ export interface CreativePipelineEvent {
   createdAt: string
 }
 
-export interface CreativeSession extends LibraryCandidateProducerMetadata {
+export interface CreativeSession extends LibraryCandidateProducerMetadata, LibraryConsumerMetadata {
   id: string
   agentId: string
   status: CreativeSessionStatus
@@ -1985,7 +1990,7 @@ export interface JournalComposeInput {
   focus?: JournalFocus[]
 }
 
-export interface JournalSession extends LibraryCandidateProducerMetadata {
+export interface JournalSession extends LibraryCandidateProducerMetadata, LibraryConsumerMetadata {
   id: string
   agentId: string
   status: JournalSessionStatus
@@ -2347,7 +2352,7 @@ export interface ProfileAnalysisRun {
   evidenceCoverage?: ProfileEvidenceCoverageSummary
   latestProfile?: PsychologicalProfile
   latestEvaluation?: ProfileQualityEvaluation
-  payload?: LibraryCandidateProducerMetadata & Record<string, unknown>
+  payload?: LibraryCandidateProducerMetadata & LibraryConsumerMetadata & Record<string, unknown>
   failureReason?: string
   provider?: string
   model?: string
@@ -2589,7 +2594,7 @@ export interface ChallengeRun {
   createdAt: string
   updatedAt: string
   completedAt?: string
-  payload?: LibraryCandidateProducerMetadata & Record<string, unknown>
+  payload?: LibraryCandidateProducerMetadata & LibraryConsumerMetadata & Record<string, unknown>
 }
 
 export interface ChallengeEvent {
@@ -2983,6 +2988,24 @@ export interface LibraryContextPacket {
   }
   skippedReason?: string
   error?: string
+}
+
+export interface LibraryInfluenceTraceItem {
+  id: string
+  title: string
+  claim: string
+  category: LibraryCategory
+  confidence: number
+  relevanceScore: number
+  source: LibraryContextSourceSummary
+}
+
+export interface LibraryConsumerMetadata {
+  libraryContextStatus?: LibraryContextStatus
+  libraryContextItemIds?: string[]
+  libraryContextError?: string
+  libraryUsageRecordedAt?: string
+  libraryContextItems?: LibraryInfluenceTraceItem[]
 }
 
 export interface LibraryUsageRecordResult {

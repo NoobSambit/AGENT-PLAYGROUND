@@ -133,6 +133,7 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
 - Keep SQL and transaction boundaries in `LibraryRepository`.
 - Add new source producers by writing Library items/sources directly instead of routing through `/api/knowledge`.
 - Phase 2 producers write review-only candidates from high-signal completed outputs. Current producers include Challenge, Arena, Profile, Relationships, Creative publish, and Journal save. Creative drafts, ordinary journal thoughts, ordinary chat turns, every dream, and every memory row are intentionally not automatic producers.
+- Phase 3B/3C consumers can request small validated context packets before useful model calls. Current consumers are Chat, Creative Studio, Journal, Profile, Challenge Lab, Arena, and relationship synthesis provenance. They keep Library context lower priority than direct run evidence, continue when retrieval fails or returns no context, record usage only after the prompt block is used, and surface `libraryContextStatus`, `libraryContextItemIds`, `libraryContextError`, `libraryUsageRecordedAt`, and compact source-backed influence traces in existing inspector panels. Local-model prompt budgets stay intentionally small: single-agent consumers use short per-packet character caps, while Challenge Lab and Arena combine participant Library blocks under one bounded prompt addition.
 - Preserve `legacy_unvalidated` for backfilled records until Phase 2 revalidation or source-specific promotion work exists.
 
 ## 13. Code references

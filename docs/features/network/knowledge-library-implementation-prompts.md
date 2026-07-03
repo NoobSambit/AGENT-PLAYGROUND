@@ -691,4 +691,3 @@ Use this only if the coding agent has a large context window and strong repo awa
 10. Phase 4 governance, Collective, Timeline, docs, final verification.
 
 The 14-prompt version is safer for this repo.
-

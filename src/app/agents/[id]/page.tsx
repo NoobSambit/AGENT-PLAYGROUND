@@ -37,6 +37,7 @@ import { ChatMessageContent } from '@/components/chat/ChatMessageContent'
 // Phase 3 Components
 import { KnowledgeGraph } from '@/components/knowledge/KnowledgeGraph'
 import { KnowledgeLibraryWorkspace } from '@/components/library/KnowledgeLibraryWorkspace'
+import { LibraryInfluenceTrace } from '@/components/library/LibraryInfluenceTrace'
 import { MentorshipHub } from '@/components/mentorship/MentorshipHub'
 import { CollectiveIntelligencePanel } from '@/components/collective/CollectiveIntelligencePanel'
 import { NeuralActivityView } from '@/components/neural/NeuralActivityView'
@@ -805,6 +806,16 @@ export default function AgentDetail() {
                                   </div>
                                 )}
                               </div>
+                              {message.type === 'agent' && message.metadata?.libraryContextStatus && (
+                                <details className="mt-3 rounded-sm border border-border/30 bg-background/20 p-2">
+                                  <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                                    Inspect metadata
+                                  </summary>
+                                  <div className="mt-2">
+                                    <LibraryInfluenceTrace metadata={message.metadata} compact />
+                                  </div>
+                                </details>
+                              )}
                             </div>
 
                             {message.type === 'user' && (

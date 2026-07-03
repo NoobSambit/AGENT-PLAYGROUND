@@ -24,6 +24,7 @@ import {
 import { GradientOrb } from '@/components/ui/animated-background'
 import { Input, Textarea } from '@/components/ui/input'
 import { LLMProviderToggle } from '@/components/llm/LLMProviderToggle'
+import { LibraryInfluenceTrace } from '@/components/library/LibraryInfluenceTrace'
 import {
   buildLLMPreferenceHeaders,
   getClientModelForProvider,
@@ -859,6 +860,7 @@ export default function SimulationPage() {
                     </div>
 
                     <ArenaLibraryCandidateStatus run={selectedRun} />
+                    <LibraryInfluenceTrace metadata={selectedRun.payload} compact />
 
                     {selectedRun.finalReport.decisiveMoments.length > 0 && (
                       <div>

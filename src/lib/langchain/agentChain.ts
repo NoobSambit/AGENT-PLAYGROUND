@@ -32,6 +32,7 @@ export interface AgentResponse {
 interface AgentRuntimeOverrides {
   emotionalProfile?: EmotionalProfile
   emotionalState?: EmotionalState
+  libraryContext?: string
 }
 
 function deriveTurnStyleDirectives(userInput?: string): string[] {
@@ -291,6 +292,7 @@ export class AgentChain {
       knowledgeContext: enhancementContext.knowledgeContext,
       learningContext: [
         enhancementContext.learningContext,
+        runtimeOverrides?.libraryContext,
         styleDirectives.length > 0
           ? `Explicit user style directives for this turn:\n${styleDirectives.map((directive, index) => `${index + 1}. ${directive}`).join('\n')}`
           : undefined,

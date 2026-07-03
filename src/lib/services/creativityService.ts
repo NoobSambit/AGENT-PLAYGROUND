@@ -57,6 +57,11 @@ import { AgentService } from './agentService'
 import { agentStatsService } from './agentStatsService'
 import { emotionalService } from './emotionalService'
 import { LearningService } from './learningService'
+import {
+  libraryContextMetadata,
+  recordLibraryConsumerUsage,
+  requestLibraryConsumerContext,
+} from './libraryConsumerContext'
 
 const DAILY_LIMIT = 20
 const RATE_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -503,6 +508,22 @@ class CreativityService {
     }
 
     const contextPacket = await this.buildContextPacket(agent, existing.normalizedBrief)
+    let libraryContext = await requestLibraryConsumerContext({
+      agentId,
+      consumerFeature: 'creative',
+      query: [
+        existing.normalizedBrief.intent,
+        existing.normalizedBrief.referenceNotes,
+        existing.normalizedBrief.mustInclude.join(' '),
+        existing.normalizedBrief.avoid.join(' '),
+        existing.normalizedBrief.format,
+        existing.normalizedBrief.tone,
+      ].filter(Boolean).join('\n'),
+      limit: 2,
+      maxChars: 700,
+      minConfidence: 0.6,
+      category: 'creative_style',
+    })
     const sourceRefs = normalizeSourceRefs(contextPacket.selectedSignals.map((signal) => ({
       id: signal.id,
       sourceType: signal.sourceType,
@@ -523,6 +544,7 @@ class CreativityService {
       failureReason: undefined,
       rawModelOutput: undefined,
       validation: undefined,
+      ...libraryContextMetadata(libraryContext),
       updatedAt: new Date().toISOString(),
     }
     await CreativeStudioRepository.updateSession(sessionId, generatingSession)
@@ -534,6 +556,7 @@ class CreativityService {
       summary: `Selected ${contextPacket.selectedSignals.length} context signals for the session.`,
       payload: {
         contextPacket,
+        ...libraryContextMetadata(libraryContext),
       },
       createdAt: new Date().toISOString(),
     })
@@ -544,8 +567,18 @@ class CreativityService {
       maxTokens: 2200,
       messages: [
         { role: 'system', content: this.buildGeneratorSystemPrompt(agent, existing.normalizedBrief, contextPacket) },
-        { role: 'user', content: this.buildDraftPrompt(existing.normalizedBrief, contextPacket) },
+        { role: 'user', content: this.buildDraftPrompt(existing.normalizedBrief, contextPacket, libraryContext.promptBlock) },
       ],
+    })
+    libraryContext = await recordLibraryConsumerUsage({
+      agentId,
+      context: libraryContext,
+      consumerSourceId: sessionId,
+    })
+    await CreativeStudioRepository.updateSession(sessionId, {
+      ...generatingSession,
+      ...libraryContextMetadata(libraryContext),
+      updatedAt: new Date().toISOString(),
     })
 
     const draftResult = this.buildValidatedArtifact({
@@ -617,7 +650,7 @@ class CreativityService {
           { role: 'system', content: this.buildGeneratorSystemPrompt(agent, existing.normalizedBrief, contextPacket) },
           {
             role: 'user',
-            content: this.buildRevisionPrompt(existing.normalizedBrief, contextPacket, finalArtifact, evaluation),
+            content: this.buildRevisionPrompt(existing.normalizedBrief, contextPacket, finalArtifact, evaluation, libraryContext.promptBlock),
           },
         ],
       })
@@ -717,6 +750,7 @@ class CreativityService {
       failureReason: gate.pass ? undefined : [evaluation.evaluatorSummary, ...gate.blockerReasons].filter(Boolean).join(' | '),
       draftArtifactId: draftResult.artifact.id,
       finalArtifactId: finalArtifact.id,
+      ...libraryContextMetadata(libraryContext),
       updatedAt: new Date().toISOString(),
     }
     const updatedSession = await CreativeStudioRepository.updateSession(sessionId, readySession)
@@ -734,6 +768,7 @@ class CreativityService {
         validation: finalArtifact.validation,
         normalization: finalArtifact.normalization,
         gate,
+        ...libraryContextMetadata(libraryContext),
       },
       createdAt: new Date().toISOString(),
     })
@@ -1223,7 +1258,7 @@ class CreativityService {
     ].join('\n')
   }
 
-  private buildDraftPrompt(brief: CreativeBrief, contextPacket: CreativeContextPacket): string {
+  private buildDraftPrompt(brief: CreativeBrief, contextPacket: CreativeContextPacket, libraryPromptBlock?: string): string {
     const wordRange = LENGTH_WORD_RANGE[brief.length]
 
     return [
@@ -1236,6 +1271,7 @@ class CreativityService {
       brief.avoid.length > 0 ? `Avoid: ${brief.avoid.join(', ')}` : 'Avoid: generic filler and vague abstractions.',
       brief.referenceNotes ? `Reference notes: ${brief.referenceNotes}` : 'Reference notes: none.',
       `Selected context signals:\n${contextPacket.selectedSignals.map((signal) => `- ${signal.label}: ${signal.snippet} (${signal.reason})`).join('\n')}`,
+      libraryPromptBlock,
     ].join('\n\n')
   }
 
@@ -1243,7 +1279,8 @@ class CreativityService {
     brief: CreativeBrief,
     contextPacket: CreativeContextPacket,
     artifact: CreativeArtifact,
-    evaluation: CreativeRubricEvaluation
+    evaluation: CreativeRubricEvaluation,
+    libraryPromptBlock?: string
   ): string {
     return [
       'Revise the draft using the evaluator feedback. Keep the strongest ideas, but repair weak areas.',
@@ -1251,6 +1288,7 @@ class CreativityService {
       `Repair instructions: ${evaluation.repairInstructions.join(' | ')}`,
       `Weaknesses: ${evaluation.weaknesses.join(' | ')}`,
       `Context signals to preserve:\n${contextPacket.selectedSignals.slice(0, 6).map((signal) => `- ${signal.label}: ${signal.snippet}`).join('\n')}`,
+      libraryPromptBlock,
       `Current draft title: ${artifact.title}`,
       `Current draft content:\n${artifact.content}`,
       artifact.validation?.hardFailureFlags?.length

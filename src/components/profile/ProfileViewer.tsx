@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
+import { LibraryInfluenceTrace } from '@/components/library/LibraryInfluenceTrace'
 import { buildLLMPreferenceHeaders, getClientModelForProvider, LLM_PROVIDER_LABELS } from '@/lib/llm/clientPreference'
 import { useLLMPreferenceStore } from '@/stores/llmPreferenceStore'
 import type {
@@ -813,6 +814,7 @@ export function ProfileViewer({ agent, refreshToken = 0, preferredModel, onOpenL
                       </div>
                     ))
                   )}
+                  <LibraryInfluenceTrace metadata={detail?.run?.payload} compact />
                 </div>
               </section>
             </>

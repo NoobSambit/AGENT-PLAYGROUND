@@ -20,6 +20,13 @@ import { dreamService } from './dreamService'
 import { MemoryGraphService } from './memoryGraphService'
 import { applyChatTurnQualityGate } from './outputQuality/chatTurnQuality'
 import type { MemoryRecord } from '@/types/database'
+import {
+  libraryContextMetadata,
+  recordLibraryConsumerUsage,
+  requestLibraryConsumerContext,
+  shouldRequestLibraryContextForChat,
+  type LibraryConsumerContext,
+} from './libraryConsumerContext'
 
 const STOP_WORDS = new Set([
   'the', 'and', 'for', 'are', 'but', 'not', 'you', 'that', 'with', 'this', 'from',
@@ -116,6 +123,21 @@ export class ChatTurnService {
 
     let response: AgentResponse
     const activeDreamImpression = dreamService.getActiveImpression(agent)
+    let libraryContext: LibraryConsumerContext | undefined
+
+    if (shouldRequestLibraryContextForChat(prompt)) {
+      libraryContext = await requestLibraryConsumerContext({
+        agentId,
+        consumerFeature: 'chat',
+        query: [
+          prompt,
+          conversationHistory.slice(-3).map((entry) => entry.content).join(' '),
+        ].filter(Boolean).join('\n'),
+        limit: 2,
+        maxChars: 700,
+        minConfidence: 0.6,
+      })
+    }
 
     try {
       response = await AgentChain.getInstance(agentId).generateResponse(
@@ -125,6 +147,7 @@ export class ChatTurnService {
         {
           emotionalProfile: agent.emotionalProfile,
           emotionalState: appraisal.emotionalState,
+          libraryContext: libraryContext?.promptBlock,
         }
       )
     } catch (error) {
@@ -164,7 +187,7 @@ export class ChatTurnService {
       shouldReflect: appraisal.shouldReflect,
     })
 
-    const agentMessage = await this.createMessage({
+    let agentMessage = await this.createMessage({
       agentId,
       content: response.response,
       type: 'agent',
@@ -175,6 +198,7 @@ export class ChatTurnService {
         memoryUsed: response.memoryUsed,
         model: llmConfig?.model || providerInfo?.model,
         provider: llmConfig?.provider || providerInfo?.provider,
+        ...libraryContextMetadata(libraryContext),
         responseQuality: response.qualityGate ? {
           promptVersion: response.qualityGate.promptVersion,
           repaired: response.qualityGate.repaired,
@@ -204,6 +228,22 @@ export class ChatTurnService {
         } : {}),
       },
     })
+
+    if (libraryContext?.promptBlock) {
+      libraryContext = await recordLibraryConsumerUsage({
+        agentId,
+        context: libraryContext,
+        consumerSourceId: agentMessage.id,
+      })
+      agentMessage = {
+        ...agentMessage,
+        metadata: {
+          ...(agentMessage.metadata || {}),
+          ...libraryContextMetadata(libraryContext),
+        },
+      }
+      await MessageService.updateMessage(agentMessage.id, { metadata: agentMessage.metadata })
+    }
 
     const createdMemory = await MemoryService.createMemory({
       agentId,

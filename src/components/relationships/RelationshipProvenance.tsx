@@ -1,6 +1,7 @@
 'use client'
 
 import { AlertTriangle, CheckCircle2, GitBranch, Sparkles, Users } from 'lucide-react'
+import { LibraryInfluenceTrace } from '@/components/library/LibraryInfluenceTrace'
 import type {
   RelationshipAlertFlag,
   RelationshipRevision,
@@ -91,6 +92,9 @@ function SynthesisRunCard({ run, agentId }: { run: RelationshipSynthesisRun; age
       </div>
       <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         {formatDateTime(run.createdAt)}
+      </div>
+      <div className="mt-3">
+        <LibraryInfluenceTrace metadata={run} compact />
       </div>
       {candidateCopy && run.libraryCandidateStatus ? (
         <div className={`mt-3 rounded-sm border px-2.5 py-2 ${libraryCandidateClass(run.libraryCandidateStatus)}`}>

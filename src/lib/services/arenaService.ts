@@ -18,6 +18,13 @@ import { resolveProviderInfoModel } from '@/lib/llm/ollama'
 import { AgentService } from '@/lib/services/agentService'
 import { LibraryCandidateExtractor } from '@/lib/services/libraryCandidateExtractor'
 import { relationshipOrchestrator } from '@/lib/services/relationshipOrchestrator'
+import {
+  buildCombinedLibraryPromptBlock,
+  mergeLibraryContextMetadata,
+  recordLibraryConsumerUsage,
+  requestLibraryConsumerContext,
+  type LibraryConsumerContext,
+} from '@/lib/services/libraryConsumerContext'
 import { generateText } from '@/lib/llm/provider'
 import type { LLMProviderInfo } from '@/lib/llmConfig'
 import { detectTextLeakage } from '@/lib/services/outputQuality/flags'
@@ -2206,6 +2213,7 @@ function buildDebaterPrompt(params: {
     user: [
       `Topic: ${params.run.config.topic}`,
       `Objective: ${params.run.config.objective}`,
+      params.run.config.referenceBrief ? `Reference brief: ${params.run.config.referenceBrief}` : undefined,
       `Round: ${params.round}/${params.run.config.roundCount}`,
       `Phase: ${stageLabel(params.stage)}`,
       `Head directive: ${params.directive.directive}`,
@@ -2239,6 +2247,7 @@ function buildReportPrompt(run: ArenaRun, events: ArenaEvent[]): { system: strin
     user: [
       `Topic: ${run.config.topic}`,
       `Objective: ${run.config.objective}`,
+      run.config.referenceBrief ? `Reference brief: ${run.config.referenceBrief}` : undefined,
       `Rounds completed: ${run.currentRound}/${run.config.roundCount}`,
       `Standings:\n${run.scorecardSnapshot.map((scorecard) => `- ${scorecard.agentName}: ${scorecard.total} total, summary: ${scorecard.summary}`).join('\n')}`,
       `Ledger:\n${summarizeLedger(run.ledger.rounds)}`,
@@ -2493,6 +2502,43 @@ export class ArenaService {
     run.provider = resolvedProviderInfo?.provider || run.provider
     run.model = resolvedProviderInfo?.model || run.model
     run.updatedAt = new Date().toISOString()
+
+    let libraryContexts: LibraryConsumerContext[] = await Promise.all(run.participants.map((participant) => requestLibraryConsumerContext({
+      agentId: participant.id,
+      consumerFeature: 'arena',
+      query: [
+        run.config.topic,
+        run.config.objective,
+        run.config.referenceBrief,
+        run.seats.find((seat) => seat.agentId === participant.id)?.stanceBrief,
+        run.seats.find((seat) => seat.agentId === participant.id)?.winCondition,
+      ].filter(Boolean).join('\n'),
+      limit: 1,
+      maxChars: 450,
+      minConfidence: 0.6,
+    })))
+    const libraryContextBlock = buildCombinedLibraryPromptBlock(
+      libraryContexts.map((context) => ({
+        label: run.participants.find((participant) => participant.id === context.packet?.agentId)?.name || 'Participant',
+        context,
+      })),
+      1400
+    )
+    if (libraryContextBlock) {
+      run.config.referenceBrief = [
+        run.config.referenceBrief,
+        libraryContextBlock,
+      ].filter(Boolean).join('\n\n')
+      libraryContexts = await Promise.all(libraryContexts.map((context) => recordLibraryConsumerUsage({
+        agentId: context.packet?.agentId || run.participantIds[0],
+        context,
+        consumerSourceId: run.id,
+      })))
+    }
+    run.payload = {
+      ...(run.payload || {}),
+      ...mergeLibraryContextMetadata(libraryContexts),
+    }
     await saveRun(run)
 
     let activeStage: ArenaStage | null = null
