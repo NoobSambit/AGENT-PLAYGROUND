@@ -1,1384 +1,1884 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
+import { useTheme } from 'next-themes'
 import { motion } from 'framer-motion'
 import {
   ArrowRight,
+  BarChart3,
+  BookOpen,
   Bot,
   Brain,
-  Heart,
-  Library,
-  Network,
-  Search,
-  Sparkles,
-  Star,
-  Users,
-  Workflow,
-  BookOpen,
+  CheckCircle2,
+  ChevronRight,
+  CircleHelp,
+  Clock3,
+  Cloud,
+  Code2,
   Database,
-  MessageSquare,
-  Activity,
+  FileCheck2,
+  FileText,
+  FlaskConical,
+  GitBranch,
   Github,
-  Quote,
+  Heart,
+  Hexagon,
+  History,
+  Layers,
+  LockKeyhole,
+  MessageSquare,
+  Moon,
+  Network,
+  Play,
+  Route,
+  Search,
+  Server,
+  Settings,
+  ShieldCheck,
+  Sparkles,
+  SquareTerminal,
+  Sun,
+  Table2,
+  Trophy,
+  UserRound,
+  Users,
+  Zap,
   type LucideIcon,
 } from 'lucide-react'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { cn } from '@/lib/utils'
 import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 
-const railTabs = [
-  'Hero Story',
-  'Agent Memory',
-  'Emotion Engine',
-  'Relationship Atlas',
-  'Arena Workspace',
-  'Planning Loop',
-  'Knowledge Layer',
-]
+type Tone = 'violet' | 'cyan' | 'emerald' | 'amber' | 'rose' | 'blue' | 'slate'
 
-const showcaseNavLinks = ['Identity', 'Memory', 'Emotion', 'Relationships', 'Planning', 'Arena']
+const toneClass: Record<
+  Tone,
+  {
+    text: string
+    border: string
+    bg: string
+    soft: string
+    ring: string
+  }
+> = {
+  violet: {
+    text: 'text-[#b8a1ff]',
+    border: 'border-[#9b7cf6]/35',
+    bg: 'bg-[#9b7cf6]/12',
+    soft: 'bg-[#9b7cf6]/6',
+    ring: 'ring-[#9b7cf6]/25',
+  },
+  cyan: {
+    text: 'text-[#69e4f2]',
+    border: 'border-[#39d7e6]/35',
+    bg: 'bg-[#39d7e6]/12',
+    soft: 'bg-[#39d7e6]/6',
+    ring: 'ring-[#39d7e6]/25',
+  },
+  emerald: {
+    text: 'text-[#73e8a5]',
+    border: 'border-[#49d581]/35',
+    bg: 'bg-[#49d581]/12',
+    soft: 'bg-[#49d581]/6',
+    ring: 'ring-[#49d581]/25',
+  },
+  amber: {
+    text: 'text-[#ffc05f]',
+    border: 'border-[#f6a72a]/35',
+    bg: 'bg-[#f6a72a]/12',
+    soft: 'bg-[#f6a72a]/6',
+    ring: 'ring-[#f6a72a]/25',
+  },
+  rose: {
+    text: 'text-[#ff8fa6]',
+    border: 'border-[#f66f91]/35',
+    bg: 'bg-[#f66f91]/12',
+    soft: 'bg-[#f66f91]/6',
+    ring: 'ring-[#f66f91]/25',
+  },
+  blue: {
+    text: 'text-[#8db7ff]',
+    border: 'border-[#6aa0ff]/35',
+    bg: 'bg-[#6aa0ff]/12',
+    soft: 'bg-[#6aa0ff]/6',
+    ring: 'ring-[#6aa0ff]/25',
+  },
+  slate: {
+    text: 'text-slate-300',
+    border: 'border-white/12',
+    bg: 'bg-white/[0.045]',
+    soft: 'bg-white/[0.025]',
+    ring: 'ring-white/10',
+  },
+}
 
-const showcaseSignals = [
-  {
-    label: 'Memory graph',
-    detail: '42 retained decisions',
-  },
-  {
-    label: 'Emotion trace',
-    detail: 'Confidence rising',
-  },
-  {
-    label: 'Shared knowledge',
-    detail: '7 promoted insights',
-  },
-]
+const cockpitTabs = [
+  'Agent Core',
+  'Execution Labs',
+  'Knowledge Plane',
+  'Network Intelligence',
+  'Runtime',
+] as const
 
-const heroCards: Array<{
+type CockpitTab = (typeof cockpitTabs)[number]
+
+const heroBadges = [
+  { label: 'PostgreSQL Canonical', icon: Database, tone: 'blue' },
+  { label: 'Drizzle ORM', icon: Zap, tone: 'emerald' },
+  { label: 'Ollama / Gemini / Groq', icon: Hexagon, tone: 'violet' },
+  { label: 'Quality Gates', icon: ShieldCheck, tone: 'amber' },
+  { label: 'Library Governance', icon: BookOpen, tone: 'rose' },
+  { label: 'Timeline Audit', icon: Clock3, tone: 'cyan' },
+] satisfies Array<{ label: string; icon: LucideIcon; tone: Tone }>
+
+const corePipeline = [
+  { title: 'User message stored', id: 'EVT-98121', latency: '38 ms', score: '1.00', icon: MessageSquare, tone: 'violet' },
+  { title: 'Emotion appraisal', id: 'EMO-55321', latency: '72 ms', score: '0.92', icon: Heart, tone: 'rose' },
+  { title: 'Model response', id: 'MOD-77211', latency: '1.28 s', score: '0.95', icon: Brain, tone: 'blue' },
+  { title: 'Output quality gate', id: 'QLT-33109', latency: '106 ms', score: '0.97', icon: ShieldCheck, tone: 'amber' },
+  { title: 'Assistant message stored', id: 'EVT-98122', latency: '41 ms', score: '1.00', icon: MessageSquare, tone: 'cyan' },
+  { title: 'Semantic memory extracted', id: 'MEM-442', latency: '142 ms', score: '0.94', icon: GitBranch, tone: 'emerald' },
+  { title: 'Learning observation', id: 'LRN-221', latency: '89 ms', score: '0.93', icon: BarChart3, tone: 'emerald' },
+  { title: 'Personality/profile evidence', id: 'PRF-119', latency: '77 ms', score: '0.91', icon: UserRound, tone: 'rose' },
+] satisfies Array<{
   title: string
-  description: string
+  id: string
+  latency: string
+  score: string
   icon: LucideIcon
-  span?: string
-}> = [
-    {
-      title: 'Identity + memory',
-      description: 'Build a believable agent and persist what matters across sessions.',
-      icon: Brain,
-      span: 'lg:col-span-5 lg:row-span-2',
-    },
-    {
-      title: 'Emotion engine',
-      description: 'Track emotional drift so tone changes are visible, not accidental.',
-      icon: Heart,
-      span: 'lg:col-span-3',
-    },
-    {
-      title: 'Arena workspace',
-      description: 'Run multi-agent debates, planning sessions, and collaboration loops.',
-      icon: Users,
-      span: 'lg:col-span-4',
-    },
-    {
-      title: 'Relationship atlas',
-      description: 'Inspect trust, friction, and evolving social state between agents.',
-      icon: Network,
-      span: 'lg:col-span-3',
-    },
-    {
-      title: 'Knowledge layer',
-      description: 'Promote conclusions into reusable shared knowledge instead of losing them in chat.',
-      icon: Library,
-      span: 'lg:col-span-4',
-    },
-  ]
+  tone: Tone
+}>
 
-const audience = [
-  'Founders',
-  'AI product teams',
-  'Design engineers',
-  'Research workflows',
-  'Developer tooling',
-  'Experimental teams',
+const provenance = [
+  ['Persona guardrail matched', 'GRD-771', 'Safe & Accurate', '0.98', '12 ms', 'SRC-21', Brain, 'violet'],
+  ['Goal priority applied', 'GOAL-3', 'Synthesize', '0.96', '8 ms', 'SRC-33', Heart, 'rose'],
+  ['Memory MEM-442 used', 'FACT', 'Topical Relevance', '0.94', '28 ms', 'SRC-812', Database, 'amber'],
+  ['Emotion state checked', 'EMO-55321', 'Calm-Positive', '0.92', '6 ms', 'SRC-91', Heart, 'rose'],
+  ['Profile cue applied', 'PRF-119', 'Prefers Structure', '0.93', '11 ms', 'SRC-66', UserRound, 'violet'],
+  ['Quality rule passed', 'QLT-33109', 'Factual & Safe', '0.97', '19 ms', 'SRC-105', ShieldCheck, 'emerald'],
+  ['Final response selected', 'MOD-77211', 'gpt-4.1-turbo', '0.95', '23 ms', 'SRC-000', Brain, 'blue'],
+] satisfies Array<[string, string, string, string, string, string, LucideIcon, Tone]>
+
+const executionLabs = [
+  {
+    title: 'Scenarios',
+    subtitle: 'Branch, intervene, compare outcomes',
+    status: 'Active',
+    tone: 'violet',
+    icon: GitBranch,
+    flow: ['Branch Context', 'Probe Set', 'Baseline State', 'Alternate State', 'Comparison'],
+    rows: [
+      ['Branch Point', 'BP-452: memory_conflict_resolution'],
+      ['Intervention Editor', 'Adjust guardrail strictness'],
+      ['Delta Quality', '+8.7%'],
+      ['Delta Confidence', '+0.12'],
+    ],
+    footer: ['qualityStatus passed', 'sourceRefs 8', 'failureReason none'],
+  },
+  {
+    title: 'Creative Studio',
+    subtitle: 'Create, iterate and publish artifacts',
+    status: 'Generated',
+    tone: 'rose',
+    icon: Sparkles,
+    flow: ['Session State', 'Prompt Brief', 'Generated Artifact', 'Draft Boundary', 'Publish Boundary'],
+    rows: [
+      ['Session State', 'CS-8812 generated'],
+      ['Prompt Brief', 'Sustainable mobility startup'],
+      ['Artifact Excerpt', 'Cleaner streets, connected communities.'],
+      ['Tokens', '812'],
+    ],
+    footer: ['draft', 'generated', 'reviewed', 'published'],
+  },
+  {
+    title: 'Journal',
+    subtitle: 'Reflect, repair and store with integrity',
+    status: 'Saved',
+    tone: 'cyan',
+    icon: BookOpen,
+    flow: ['Grounded Reflection', 'Context Packet', 'Length Repair', 'Save Boundary', 'Quality Flags'],
+    rows: [
+      ['Session Pipeline', 'JRNL-5521 saved'],
+      ['Reflection', 'Recurring memory conflict pattern.'],
+      ['Repair Note', 'journal_content_too_short repaired'],
+      ['Length Final', '180 tokens'],
+    ],
+    footer: ['qualityStatus passed', 'sourceRefs 6', 'saved true'],
+  },
+  {
+    title: 'Dreams',
+    subtitle: 'Explore latent narratives and insights',
+    status: 'Active',
+    tone: 'cyan',
+    icon: Cloud,
+    flow: ['Dream Session', 'Motifs', 'Residue', 'Emotional Context', 'Save Boundary'],
+    rows: [
+      ['Dream Session', 'DRM-2210 active'],
+      ['Motifs', 'Lost library, ocean station, timekeeper'],
+      ['Dominant', 'melancholic 0.64'],
+      ['Impression', 'Reversible books and memory traces.'],
+    ],
+    footer: ['qualityStatus passed', 'sourceRefs 5', 'residueCaptured true'],
+  },
+  {
+    title: 'Challenge Lab',
+    subtitle: 'Run templates. Score. Learn.',
+    status: 'Completed',
+    tone: 'amber',
+    icon: Trophy,
+    flow: ['Template', 'Participants', 'Event Feed', 'Stage Status', 'Scorecards', 'Winner'],
+    rows: [
+      ['Template', 'Memory Precision'],
+      ['Participants', '6 agents'],
+      ['Event Feed', 'EVT-881 claim submitted'],
+      ['Scoreboard', 'AGT-301 92.4'],
+    ],
+    footer: ['sourceRefs 9', 'stage finalized', 'winner AGT-301'],
+  },
+  {
+    title: 'Arena',
+    subtitle: 'Structured debate. Evidence-first.',
+    status: 'Completed',
+    tone: 'blue',
+    icon: Users,
+    flow: ['Draft Run', 'Seats', 'Head Directive', 'Debater Turns', 'Score Updates', 'Final Report'],
+    rows: [
+      ['Draft Run', 'ARNA-7719 completed'],
+      ['Head Directive', 'Should autonomous agents negotiate?'],
+      ['Evidence Required', 'true'],
+      ['Winner', 'AGT-301'],
+    ],
+    footer: ['seats 3/3', 'turns 12', 'scoreMargin 11.2'],
+  },
+] satisfies Array<{
+  title: string
+  subtitle: string
+  status: string
+  tone: Tone
+  icon: LucideIcon
+  flow: string[]
+  rows: string[][]
+  footer: string[]
+}>
+
+const knowledgeItems = [
+  ['LIB-9442', 'Memory decay is non-linear over time', 'Review', '2h ago', 'violet'],
+  ['LIB-9431', 'Emotional valence influences recall precision', 'Validated', '1d ago', 'emerald'],
+  ['LIB-9420', 'Trust grows with consistency and transparency', 'Validated', '2d ago', 'emerald'],
+  ['LIB-9415', 'High conflict reduces collaboration bandwidth', 'Disputed', '3d ago', 'amber'],
+  ['LIB-9401', 'Dream motifs reflect unresolved residue', 'Validated', '4d ago', 'emerald'],
+  ['LIB-9388', 'Creative output improves with constraint framing', 'Retired', '6d ago', 'rose'],
+  ['LIB-9377', 'Mentorship depends on alignment', 'Validated', '7d ago', 'emerald'],
+] satisfies Array<[string, string, string, string, Tone]>
+
+const knowledgePipeline = [
+  ['Feature Output', 'FEAT-3310', 'emitted', '18 ms', 'violet'],
+  ['Review Candidate', 'RC-4412', 'review', '42 ms', 'violet'],
+  ['Source-Backed Validation', 'VAL-2281', 'validating', '86 ms', 'blue'],
+  ['Validated Library Item', 'LIB-9442', 'validated', '23 ms', 'emerald'],
+  ['Bounded Context Retrieval', 'CTX-7711', 'retrieved', '31 ms', 'emerald'],
+  ['Prompt Use', 'PRM-6621', 'in_use', '27 ms', 'amber'],
+  ['Usage Event Recorded', 'USE-5512', 'recorded', '15 ms', 'amber'],
+  ['Timeline Event Emitted', 'TL-8831', 'emitted', '19 ms', 'rose'],
+] satisfies Array<[string, string, string, string, Tone]>
+
+const relationships = [
+  ['Architect', 'Coder', 'Active', '0.82', '0.18', '2m ago', 'Fresh', 'violet', 'blue'],
+  ['Synthesis Agent', 'Reviewer', 'Active', '0.76', '0.21', '5m ago', 'Fresh', 'violet', 'blue'],
+  ['Planner', 'Mentor', 'Active', '0.71', '0.15', '12m ago', 'Fresh', 'blue', 'emerald'],
+  ['Researcher', 'Analyst', 'Active', '0.68', '0.24', '18m ago', 'Stale', 'emerald', 'violet'],
+  ['Coder', 'Tester', 'Active', '0.69', '0.27', '32m ago', 'Stale', 'blue', 'violet'],
+  ['Architect', 'Reviewer', 'Idle', '0.61', '0.22', '1h ago', 'Stale', 'violet', 'blue'],
+  ['Mentor', 'Synthesis Agent', 'Active', '0.79', '0.11', '3m ago', 'Fresh', 'emerald', 'violet'],
+  ['Planner', 'Researcher', 'Idle', '0.55', '0.31', '3h ago', 'Stale', 'blue', 'emerald'],
+] satisfies Array<[string, string, string, string, string, string, string, Tone, Tone]>
+
+const runtimeTrace = [
+  ['01', 'VAL-112', 'Validate request body & schema', '14 ms', 'ok'],
+  ['02', 'AGT-992', 'Load agent identity, traits, state', '21 ms', 'ok'],
+  ['03', 'MEM-LOAD', 'Load relevant memories', '63 ms', 'ok'],
+  ['04', 'CTX-BUILD', 'Build context from profile and knowledge', '42 ms', 'ok'],
+  ['05', 'ROUTE', 'Route to provider policy + health', '18 ms', 'ok'],
+  ['06', 'CALL-LLM', 'Call model stream', '1,124 ms', 'ok'],
+  ['07', 'Q-GATE', 'Apply output quality gate', '96 ms', 'ok'],
+  ['08', 'PERSIST-OUT', 'Persist assistant message', '27 ms', 'ok'],
+  ['09', 'WRITE-MEM', 'Write extracted memories', '38 ms', 'ok'],
+  ['10', 'USAGE', 'Record usage and cost', '16 ms', 'ok'],
+  ['11', 'EMIT-TL', 'Emit timeline event', '21 ms', 'ok'],
 ]
 
-function BentoGridSection() {
+const workflowSteps = [
+  {
+    title: 'Agent Turn',
+    icon: MessageSquare,
+    tone: 'violet',
+    body: 'User message, assistant response, provider/model metadata.',
+    rows: ['MSG-188 stored', 'RSP-188 stored', 'PRV: Ollama ok'],
+    table: 'messages',
+  },
+  {
+    title: 'Runtime State',
+    icon: UserRound,
+    tone: 'blue',
+    body: 'Identity, emotion appraisal, profile cue, learning observation.',
+    rows: ['PRF-771 updated', 'EMO-5321 ok', 'LRN-221 recorded'],
+    table: 'profile_state',
+  },
+  {
+    title: 'Memory Layer',
+    icon: Network,
+    tone: 'cyan',
+    body: 'Conversation episode, semantic fact, graph link, canonical key.',
+    rows: ['MEM-442 stored', 'LNK-1191 linked', 'KEY-9f3a canonical'],
+    table: 'memories',
+  },
+  {
+    title: 'Execution Lab',
+    icon: Layers,
+    tone: 'blue',
+    body: 'Scenario, creative session, journal, dream, challenge, arena run.',
+    rows: ['SCN-3310 done', 'JRNL-553 done', 'AR-119 done'],
+    table: '*_runs / sessions',
+  },
+  {
+    title: 'Knowledge Governance',
+    icon: BookOpen,
+    tone: 'rose',
+    body: 'Candidate extraction, review queue, validated Library item.',
+    rows: ['CAND-671 extracted', 'RQ-218 in review', 'LIB-9442 validated'],
+    table: 'library_items',
+  },
+  {
+    title: 'Audit + Replay',
+    icon: ShieldCheck,
+    tone: 'amber',
+    body: 'Timeline event, provenance trace, usage event, quality report.',
+    rows: ['TL-8831 emitted', 'TRC-819a captured', 'QLT-3312 passed'],
+    table: 'timeline_events',
+  },
+] satisfies Array<{
+  title: string
+  icon: LucideIcon
+  tone: Tone
+  body: string
+  rows: string[]
+  table: string
+}>
+
+const foundation = [
+  ['PostgreSQL Canonical Store', 'Primary system of record for all agent state.', Database, 'Canonical', 'blue'],
+  ['Drizzle ORM', 'Typesafe queries, migrations, and schema enforcement.', Network, 'Active', 'cyan'],
+  ['Server-owned Counters', 'IDs, sequence, and time are server-authoritative.', Settings, 'Authoritative', 'slate'],
+  ['Legacy Firestore Migration Mirror', 'Best-effort mirror for compatibility only.', Database, 'Read-only', 'amber'],
+  ['Provider Fallback', 'Policy-driven routing with resilience.', Route, 'Resilient', 'violet'],
+  ['Output Quality Gates', 'Evaluated, repaired, and quality-verified.', ShieldCheck, 'Enforced', 'emerald'],
+] satisfies Array<[string, string, LucideIcon, string, Tone]>
+
+function cx(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(' ')
+}
+
+function HomeThemeButton() {
+  const { resolvedTheme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => setMounted(true), [])
+
+  const isDark = !mounted || resolvedTheme === 'dark'
+
   return (
-    <div className="mx-auto max-w-[120rem]">
-      <h3 className="mb-8 max-w-sm pl-2 text-[clamp(2rem,3vw,2.4rem)] font-bold leading-[1.05] tracking-tight text-foreground sm:pl-0">
-        Idea to agent <br /> in hours, <span className="text-primary">not days.</span>
-        <p className="mt-5 text-sm font-medium leading-[1.6] text-muted-foreground sm:text-[15px]">
-          As easy as copy-pasting. Build great looking swarms without worrying about infrastructure.
-        </p>
-      </h3>
-
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[20rem_20rem_1fr_1fr]">
-        <div className="flex flex-col gap-5 lg:col-span-1">
-          <div className="relative flex flex-1 flex-col overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm min-h-[36rem]">
-            <div className="mb-8 flex items-center gap-2 text-foreground">
-              <PlaygroundLogo className="h-7 w-7 text-primary" />
-              <span className="font-bold tracking-tight">AgentStudio</span>
-            </div>
-            <h4 className="mb-6 text-[1.4rem] font-bold tracking-tight text-foreground">Sign up for an account</h4>
-
-            <div className="relative z-10 space-y-5">
-              <div>
-                <label className="mb-2 block text-xs font-semibold tracking-wide text-muted-foreground">Full name</label>
-                <div className="flex h-12 w-full items-center rounded-sm border border-border/50 bg-background/50 px-3 text-sm text-muted-foreground shadow-sm">
-                  Manu Arora
-                </div>
-              </div>
-              <div>
-                <label className="mb-2 block text-xs font-semibold tracking-wide text-muted-foreground">Email address</label>
-                <div className="flex h-12 w-full items-center rounded-sm border border-border/50 bg-background/50 px-3 text-sm text-muted-foreground shadow-sm">
-                  hello@johndoe.com
-                </div>
-              </div>
-              <div>
-                <label className="mb-2 block text-xs font-semibold tracking-wide text-muted-foreground">Password</label>
-                <div className="flex w-full items-center rounded-sm border border-border/50 bg-background/50 px-3 py-3 text-sm text-muted-foreground tracking-widest shadow-sm">
-                  ••••••••••••••
-                </div>
-              </div>
-
-              <button className="mt-4 w-full rounded-sm bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-sm shadow-primary/20 transition-transform hover:-translate-y-0.5">
-                Sign Up
-              </button>
-
-              <div className="mt-4 text-center text-[12px] text-muted-foreground">
-                Already have an account? <span className="cursor-pointer font-medium text-foreground hover:underline">Sign in</span>
-              </div>
-
-              <div className="relative my-6 opacity-60">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-border/50" />
-                </div>
-                <div className="relative flex justify-center text-[10px] uppercase tracking-wider">
-                  <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
-                </div>
-              </div>
-
-              <button className="flex w-full items-center justify-center gap-2 rounded-sm bg-foreground py-3.5 text-sm font-bold text-background shadow-sm transition-transform hover:-translate-y-0.5">
-                <Github className="h-4 w-4" /> Github
-              </button>
-
-              <p className="mt-6 px-2 text-center text-[10px] leading-relaxed text-muted-foreground/60">
-                By clicking on sign up, you agree to our Terms of Service and Privacy Policy
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-5 lg:col-span-1">
-          <div className="relative flex min-h-[22rem] flex-col overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm">
-            <h4 className="relative z-10 text-[1.1rem] font-semibold tracking-tight text-foreground">Hosting over the edge</h4>
-            <p className="relative z-10 mt-2 w-[90%] text-[13px] leading-[1.6] text-muted-foreground">
-              With our edge network, we host your swarm by pushing agents to every endpoint natively.
-            </p>
-
-            <div className="absolute -bottom-16 -left-12 flex h-[20rem] w-[140%] flex-col items-center overflow-hidden rounded-sm border border-border/50 bg-[#0A0A0C] pt-6 shadow-2xl">
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Network className="h-28 w-28 text-primary/40 opacity-70" />
-              </div>
-              <div className="absolute top-1/4 h-3 w-3 animate-ping rounded-full bg-primary" />
-              <div className="absolute bottom-1/4 left-1/4 h-2 w-2 animate-ping rounded-full bg-accent delay-300" />
-            </div>
-          </div>
-
-          <div className="flex flex-1 flex-col rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm">
-            <Quote className="mb-4 h-6 w-6 text-muted-foreground/30 fill-current" />
-            <p className="flex-1 pt-1 text-[15px] font-medium leading-relaxed text-foreground">
-              &quot;A robust solution that fits perfectly into our workflow. It has enhanced our team&apos;s capabilities and allowed us to tackle more complex multi-agent projects.&quot;
-            </p>
-            <div className="mt-6 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-muted text-xs font-bold text-muted-foreground">
-                FM
-              </div>
-              <div className="flex flex-col">
-                <span className="mb-0.5 cursor-default text-sm font-semibold leading-none text-foreground">Frank Moore</span>
-                <span className="text-[12px] text-muted-foreground">Project Manager</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="relative flex h-36 flex-col justify-end overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm">
-            <div className="absolute inset-x-0 bottom-0 h-3/4 bg-grid-pattern opacity-40 mix-blend-overlay" />
-            <div className="relative z-10 w-fit -rotate-3 self-center rounded-sm border border-border/50 bg-[#0a0a0c] px-4 py-2 text-center text-sm font-bold text-white shadow-xl dark:bg-zinc-800">
-              Jane Smith
-              <span className="block text-[11px] font-normal text-white/50">Data Scientist</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-5 lg:col-span-2">
-          <div className="group relative flex h-[34rem] flex-col overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-8 shadow-inner sm:p-10 dark:bg-zinc-900/10">
-            <div className="relative z-10 mb-8 flex w-full max-w-3xl items-center justify-between">
-              <span className="flex items-center gap-2 text-sm font-medium text-white/90">
-                <PlaygroundLogo className="h-5 w-5 text-primary" /> Agent Playground
-              </span>
-              <div className="hidden items-center gap-6 text-[13px] text-white/60 sm:flex">
-                <span className="cursor-pointer hover:text-white">Features <span className="text-[9px] opacity-50">▼</span></span>
-                <span className="cursor-pointer hover:text-white">Pricing</span>
-                <span className="cursor-pointer hover:text-white">Blog</span>
-              </div>
-              <div className="flex items-center gap-4 text-[13px]">
-                <span className="hidden cursor-pointer text-white hover:text-white/70 sm:block">Sign in</span>
-                <button className="rounded-sm bg-primary px-4 py-2 font-medium text-primary-foreground shadow-sm transition-transform hover:-translate-y-0.5">
-                  Get started
-                </button>
-              </div>
-            </div>
-
-            <div className="relative z-10 mb-6 flex w-fit cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-white/70 transition-colors hover:bg-white/10">
-              Read our Series A funding round <span className="text-white/40">→</span>
-            </div>
-
-            <div className="relative z-10 grid max-w-[85%] grid-cols-1 gap-8 md:max-w-none md:grid-cols-[1fr_20rem]">
-              <h2 className="text-[2.2rem] font-semibold leading-[1.05] tracking-tight text-[var(--color-pastel-blue)] lg:text-[2.8rem]">
-                Create the best <br /> agent systems today.
-              </h2>
-              <div className="flex flex-col md:text-right">
-                <p className="text-[14px] leading-relaxed text-white/50">
-                  Our platform visualizes trust and memory between agents, so you can build teams that actually work together.
-                </p>
-                <div className="mt-5 flex gap-3 md:justify-end">
-                  <button className="rounded-sm bg-primary px-5 py-2.5 text-[13px] font-semibold text-primary-foreground shadow-sm">
-                    Get started
-                  </button>
-                  <button className="rounded-sm border border-white/10 bg-white/5 px-5 py-2.5 text-[13px] font-semibold text-white transition-colors hover:bg-white/10">
-                    Sign in
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="absolute bottom-[-10%] left-6 right-0 top-[22rem] flex flex-col overflow-hidden rounded-tl-2xl bg-primary/80 p-4 shadow-2xl transition-transform duration-500 group-hover:-translate-y-2 sm:left-10 lg:-right-4 lg:p-6">
-              <div className="flex h-full w-full flex-col overflow-hidden rounded-sm bg-card shadow-xl border border-white/20">
-                <div className="flex h-9 items-center border-b border-border/30 bg-muted/30 px-3 opacity-90">
-                  <div className="flex gap-1.5">
-                    <div className="h-2.5 w-2.5 rounded-full bg-rose-400" />
-                    <div className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-                    <div className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                  </div>
-                  <div className="ml-4 flex items-center gap-1.5 rounded-md border border-border/50 bg-background px-3 py-1 text-[10px] text-muted-foreground shadow-sm">
-                    <span className="opacity-50">🔒</span> playground.dev
-                  </div>
-                </div>
-                <div className="flex flex-1 gap-3 overflow-hidden bg-background p-3 opacity-95">
-                  <div className="hidden w-12 flex-col items-center gap-4 border-r border-border/30 py-2 sm:flex">
-                    <div className="h-6 w-6 rounded-md bg-primary/20" />
-                    <div className="h-4 w-4 rounded bg-muted-foreground/20" />
-                    <div className="h-4 w-4 rounded bg-muted-foreground/20" />
-                  </div>
-                  <div className="flex flex-1 flex-col rounded-sm border border-border/40 bg-card p-2 shadow-sm">
-                    <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Agents <span className="ml-1 rounded bg-muted px-1">4</span></div>
-                    <div className="mb-2 rounded-md border border-border/30 bg-muted/40 p-2">
-                      <div className="mb-2 h-2 w-16 rounded-full bg-primary/60" />
-                      <div className="mb-1 h-2 w-full rounded-full bg-muted-foreground/20" />
-                      <div className="h-2 w-2/3 rounded-full bg-muted-foreground/20" />
-                    </div>
-                    <div className="rounded-md border border-border/30 bg-muted/40 p-2">
-                      <div className="mb-2 h-2 w-10 rounded-full bg-amber-400/60" />
-                      <div className="h-2 w-full rounded-full bg-muted-foreground/20" />
-                    </div>
-                  </div>
-                  <div className="flex flex-1 flex-col rounded-sm border border-border/40 bg-card p-2 shadow-sm">
-                    <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Active <span className="ml-1 rounded bg-muted px-1">1</span></div>
-                    <div className="relative overflow-hidden rounded-md border border-primary/20 bg-primary/5 p-2 mb-2 shadow-sm">
-                      <div className="absolute bottom-0 left-0 top-0 w-0.5 bg-primary" />
-                      <div className="mb-2 h-2 w-12 rounded-full bg-primary" />
-                      <div className="mb-1.5 h-2 w-11/12 rounded-full bg-foreground/30" />
-                      <div className="mb-3 h-2 w-4/5 rounded-full bg-foreground/30" />
-                      <div className="flex items-center justify-between">
-                        <div className="flex -space-x-1">
-                          <div className="h-3 w-3 rounded-full border border-background bg-muted-foreground/40" />
-                          <div className="h-3 w-3 rounded-full border border-background bg-muted-foreground/60" />
-                        </div>
-                        <div className="text-[8px] text-muted-foreground uppercase opacity-80">Synchronized</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-1 grid-cols-1 flex-col gap-5 sm:grid sm:grid-cols-2">
-            <div className="flex flex-col gap-5">
-              <div className="relative flex min-h-[16rem] flex-1 flex-col items-center justify-center overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm dark:bg-zinc-900/10">
-                <div className="relative z-10 mb-8 mt-2 text-center">
-                  <h4 className="mb-1 text-[1.1rem] font-bold tracking-tight text-white">All over the world</h4>
-                  <p className="text-[12px] text-white/50">Meet our distributed agent network.</p>
-                </div>
-
-                <div className="absolute -bottom-8 flex w-full justify-center">
-                  <div className="relative flex h-32 w-64 justify-center bg-primary/10">
-                    <div className="absolute top-4 h-full w-full rounded-sm border-t border-primary/20 opacity-60" />
-                    <div className="absolute top-8 h-full w-[80%] rounded-sm border-t border-primary/20 opacity-40" />
-                    <div className="absolute top-12 h-full w-[60%] rounded-sm border-t border-primary/20 opacity-30" />
-
-                    <div className="absolute left-8 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-primary/20">
-                      <div className="h-1.5 w-1.5 animate-ping rounded-full bg-primary" />
-                    </div>
-                    <div className="absolute left-1/2 top-10 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--gradient-5)]/20">
-                      <div className="h-1.5 w-1.5 animate-ping rounded-full bg-[var(--gradient-5)]" />
-                    </div>
-                    <div className="absolute right-10 top-5 flex h-5 w-5 items-center justify-center rounded-full bg-accent/20">
-                      <div className="h-1.5 w-1.5 animate-ping rounded-full bg-accent" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex-1 rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm">
-                <h4 className="mb-1 text-[1.1rem] font-semibold tracking-tight text-foreground">Schedule seamlessly</h4>
-                <p className="mb-6 w-10/12 text-[13px] leading-relaxed text-muted-foreground">Let orchestrated jobs take over complex workflows.</p>
-
-                <div className="mt-6 flex w-full justify-start px-2 gap-2">
-                  <div className="z-20 -mr-4 h-12 w-12 overflow-hidden rounded-full border-[3px] border-card bg-muted shadow-sm">
-                    <div className="h-full w-full bg-amber-400" />
-                  </div>
-                  <div className="z-10 -mr-4 h-12 w-12 overflow-hidden rounded-full border-[3px] border-card bg-muted shadow-sm">
-                    <div className="h-full w-full bg-purple-400" />
-                  </div>
-                  <div className="z-0 h-12 w-12 overflow-hidden rounded-full border-[3px] border-card bg-muted shadow-sm">
-                    <div className="h-full w-full bg-rose-400" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="relative flex h-full flex-col justify-end overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md p-6 shadow-sm sm:p-8">
-              <div className="absolute inset-0 z-0 bg-background/50">
-                <div className="absolute right-[-20%] top-[-10%] h-[120%] w-[120%] origin-center rotate-12 scale-125 bg-muted/20 opacity-80 mix-blend-multiply blur-3xl dark:mix-blend-screen" />
-              </div>
-
-              <div className="relative z-10 mt-auto">
-                <h4 className="mb-3 max-w-[200px] text-[2rem] font-bold leading-[1.05] tracking-tight text-[var(--color-pastel-green)] sm:text-[2.2rem]">
-                  Inspect state at your fingertips
-                </h4>
-                <p className="max-w-[240px] text-[13px] leading-relaxed text-muted-foreground">
-                  Create breathtaking agent-to-agent traces with analytics that understands your vision. Just define the constraints and let it run.
-                </p>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </div>
-    </div>
+    <button
+      type="button"
+      aria-label="Toggle color theme"
+      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      className="grid h-11 w-11 place-items-center rounded-[8px] border border-white/10 bg-white/[0.035] text-white/82 transition hover:border-[#b8a1ff]/45 hover:bg-white/[0.07]"
+    >
+      {isDark ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+    </button>
   )
 }
 
-const voices = [
-  {
-    name: 'Founding PM',
-    handle: '@agent-launch',
-    quote:
-      'This is the first version of the product where the agent feels like it has a life outside the current prompt.',
-  },
-  {
-    name: 'Design Engineer',
-    handle: '@state-visible',
-    quote:
-      'Memory, emotion, and trust are visible enough here that behavior can be explained instead of hand-waved.',
-  },
-  {
-    name: 'Research Workflow',
-    handle: '@multi-session',
-    quote:
-      'The real value is continuity. We can observe development over time instead of getting one-shot outputs.',
-  },
-  {
-    name: 'AI Product Team',
-    handle: '@agent-stack',
-    quote:
-      'Creation, workspace, simulation, and knowledge finally read as one story rather than disconnected features.',
-  },
-  {
-    name: 'Developer Tooling',
-    handle: '@inspectable-ai',
-    quote:
-      'The moving parts are visible. You can reason about agent behavior without pretending the black box is magic.',
-  },
-  {
-    name: 'Experimental Team',
-    handle: '@future-branches',
-    quote:
-      'Planning and relationship layers make scenario testing feel like a real product capability.',
-  },
-]
-
-function BrowserChrome({ tabs }: { tabs: string[] }) {
+function ToneIcon({
+  icon: Icon,
+  tone = 'violet',
+  size = 'md',
+}: {
+  icon: LucideIcon
+  tone?: Tone
+  size?: 'sm' | 'md' | 'lg'
+}) {
   return (
-    <div className="flex items-center gap-4 border-b border-white/10 px-4 py-3">
-      <div className="flex items-center gap-2">
-        <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
-        <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
-        <span className="h-3 w-3 rounded-full bg-[#28c840]" />
-      </div>
-
-      <div className="relative flex-1 overflow-hidden">
-        <motion.div
-          animate={{ x: ['0%', '-50%'] }}
-          transition={{ duration: 28, repeat: Infinity, ease: 'linear' }}
-          className="flex min-w-max gap-2"
-        >
-          {[...tabs, ...tabs].map((tab, index) => (
-            <span
-              key={`${tab}-${index}`}
-              className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-white/45"
-            >
-              {tab}
-            </span>
-          ))}
-        </motion.div>
-      </div>
-    </div>
+    <span
+      className={cx(
+        'grid shrink-0 place-items-center border',
+        toneClass[tone].border,
+        toneClass[tone].bg,
+        size === 'sm' && 'h-7 w-7 rounded-[6px]',
+        size === 'md' && 'h-9 w-9 rounded-[7px]',
+        size === 'lg' && 'h-12 w-12 rounded-[9px]'
+      )}
+    >
+      <Icon className={cx(toneClass[tone].text, size === 'sm' ? 'h-3.5 w-3.5' : size === 'lg' ? 'h-6 w-6' : 'h-[18px] w-[18px]')} />
+    </span>
   )
 }
 
-function BrowserShell({
-  tabs,
+function StatusPill({ children, tone = 'emerald' }: { children: ReactNode; tone?: Tone }) {
+  return (
+    <span className={cx('inline-flex items-center gap-1 rounded-[5px] border px-2 py-0.5 font-mono text-[11px]', toneClass[tone].border, toneClass[tone].bg, toneClass[tone].text)}>
+      {children}
+    </span>
+  )
+}
+
+function Panel({
+  title,
+  subtitle,
+  right,
   children,
   className,
 }: {
-  tabs: string[]
+  title?: string
+  subtitle?: string
+  right?: ReactNode
   children: ReactNode
   className?: string
 }) {
   return (
-    <div
-      className={cn(
-        'overflow-hidden rounded-sm border border-white/10 bg-[#121118]/95 shadow-[0_40px_120px_-70px_rgba(0,0,0,0.9)]',
-        className
-      )}
-    >
-      <BrowserChrome tabs={tabs} />
-      <div className="p-4 sm:p-5">{children}</div>
-    </div>
-  )
-}
-
-function ShowcaseCard({
-  icon: Icon,
-  title,
-  description,
-  className,
-}: {
-  icon: LucideIcon
-  title: string
-  description: string
-  className?: string
-}) {
-  return (
-    <div
-      className={cn(
-        'rounded-sm border border-white/10 bg-white/5 p-5',
-        className
-      )}
-    >
-      <div className="flex h-11 w-11 items-center justify-center rounded-sm border border-white/10 bg-white/[0.04] text-primary">
-        <Icon className="h-5 w-5" />
-      </div>
-      <h3 className="mt-16 text-2xl font-semibold tracking-tight text-white">{title}</h3>
-      <p className="mt-4 max-w-sm text-sm leading-7 text-white/58">{description}</p>
-    </div>
-  )
-}
-
-
-
-function VoiceCard({
-  name,
-  handle,
-  quote,
-  index,
-}: {
-  name: string
-  handle: string
-  quote: string
-  index: number
-}) {
-  return (
-    <motion.article
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.3 }}
-      transition={{ delay: index * 0.05, duration: 0.45 }}
-      className="break-inside-avoid rounded-sm border border-white/10 bg-[#101014] p-5 shadow-[0_28px_70px_-54px_rgba(0,0,0,0.85)]"
-    >
-      <div className="flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-sm font-semibold text-white/92">
-          {name
-            .split(' ')
-            .map((part) => part[0])
-            .join('')
-            .slice(0, 2)}
-        </div>
-        <div>
-          <div className="text-sm font-semibold text-white/92">{name}</div>
-          <div className="text-xs text-white/50">{handle}</div>
-        </div>
-      </div>
-      <p className="mt-4 text-sm leading-7 text-white/72">{quote}</p>
-    </motion.article>
-  )
-}
-
-// --- VISUAL MOCKUPS (6 MAIN + 6 RAIL) ---
-
-function LivePersonaComposerVisual() {
-  return (
-    <div className="flex flex-col h-full space-y-4">
-      {/* Primary Action */}
-      <div className="flex items-center gap-3 border-b border-border/20 pb-3">
-        <div className="h-10 w-10 rounded-full border border-primary/30 bg-primary/10 flex items-center justify-center">
-          <PlaygroundLogo className="h-5 w-5 text-primary" />
-        </div>
-        <div className="flex-1">
-          <div className="flex items-center justify-between">
-            <div className="text-[16px] font-bold text-foreground">Synthesis Agent</div>
-            <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono text-[13px] px-1.5 py-0.5 rounded border border-emerald-500/20">Deployed</span>
-          </div>
-          <div className="flex gap-2 text-[16px] mt-1 text-muted-foreground font-mono">
-            ID: AGT-992 • UPDATED: 2M AGO
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        {/* Operational Metadata: Persona Spec Slab */}
-        <div className="space-y-2 opacity-85">
-          <div className="flex justify-between items-center text-[16px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
-            <span>Persona.yaml</span>
-            <span className="text-[13px] bg-accent/20 text-accent px-1 rounded">Edited</span>
-          </div>
-          <div className="bg-card/70 dark:bg-[#0d0d12] border border-border/20 p-2 rounded text-[13px] text-muted-foreground font-mono leading-relaxed">
-            <span className="text-rose-500 dark:text-rose-400">archetype:</span> <span className="text-foreground/70">&quot;Architect&quot;</span><br />
-            <span className="text-rose-500 dark:text-rose-400">tone_weights:</span><br />
-            &nbsp;&nbsp;<span className="text-[var(--gradient-5)]/80">assertive:</span> <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-400/10 transition-colors">0.85</span><br />
-            &nbsp;&nbsp;<span className="text-[var(--gradient-5)]/80">warmth:</span> <span className="text-foreground/70">0.20</span><br />
-            <span className="text-rose-500 dark:text-rose-400">max_tokens:</span> <span className="text-foreground/70">4096</span><br />
-            <span className="text-rose-500 dark:text-rose-400">tools:</span> <span className="text-foreground/70">[&quot;fs&quot;, &quot;bash&quot;]</span>
-          </div>
-        </div>
-
-        {/* Trait Topology radar/hex chart & Comparator */}
-        <div className="space-y-3 flex flex-col justify-between">
+    <section className={cx('min-w-0 rounded-[8px] border border-white/10 bg-[#081321]/82 p-3 shadow-[0_18px_70px_-58px_rgba(0,0,0,0.9)]', className)}>
+      {(title || right) && (
+        <div className="mb-2 flex items-start justify-between gap-3">
           <div>
-            <div className="text-[16px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Trait Topology</div>
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center text-[13px]">
-                <span className="text-foreground/80">Assertiveness</span>
-                <span className="text-emerald-600 dark:text-emerald-400 font-mono">+4% <span className="text-muted-foreground">0.85</span></span>
-              </div>
-              <div className="h-1 w-full bg-muted rounded-full overflow-hidden flex"><div className="h-full bg-primary w-[85%]" /></div>
-              <div className="flex justify-between items-center text-[13px] mt-2">
-                <span className="text-foreground/80">Warmth</span>
-                <span className="text-rose-500 dark:text-rose-400 font-mono">-2% <span className="text-muted-foreground">0.20</span></span>
-              </div>
-              <div className="h-1 w-full bg-muted rounded-full overflow-hidden flex"><div className="h-full bg-[var(--gradient-5)] w-[20%]" /></div>
-            </div>
+            {title && <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-white/92">{title}</h3>}
+            {subtitle && <p className="mt-0.5 text-[10px] leading-4 text-slate-400">{subtitle}</p>}
           </div>
-
-          {/* Metric Residue */}
-          <div className="p-1.5 bg-surface border border-border/20 rounded flex justify-between text-[16px] font-mono text-muted-foreground">
-            <span>LATENCY: +12ms</span>
-            <span>TOKENS: ~840/req</span>
-          </div>
+          {right}
         </div>
-      </div>
+      )}
+      {children}
+    </section>
+  )
+}
 
-      {/* Response Comparator */}
-      <div className="mt-auto border-t border-border/20 pt-3 flex flex-col gap-2 opacity-85">
-        <div className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">Baseline vs Current Output</div>
-        <div className="bg-muted/30 border-l-2 border-emerald-500/50 p-2 rounded-r text-[16px] text-foreground/70 leading-relaxed">
-          &quot;We <del className="text-rose-500/70 dark:text-rose-400/70">could</del> <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-400/10">must</span> implement the Redis layer before auth. <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-400/10 px-1">It is the most structurally sound path.</span>&quot;
-        </div>
-      </div>
+function FieldRow({ label, value, tone = 'slate' }: { label: string; value: string; tone?: Tone }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-white/[0.055] py-1.5 last:border-b-0">
+      <span className="text-[11px] text-slate-400">{label}</span>
+      <span className={cx('font-mono text-[11px]', tone === 'slate' ? 'text-slate-200' : toneClass[tone].text)}>{value}</span>
     </div>
   )
 }
 
-function DecisionTraceVisual() {
+function MiniFlow({ steps, tone = 'violet' }: { steps: string[]; tone?: Tone }) {
   return (
-    <div className="flex flex-col h-full space-y-3 relative">
-      <div className="absolute top-0 right-0 text-[16px] font-mono text-muted-foreground bg-surface px-1 py-0.5 rounded border border-border/40">ID: TRC-9021</div>
-      <div className="flex items-center gap-2 border-b border-border/20 pb-2">
-        <Search className="h-3.5 w-3.5 text-accent" />
-        <span className="text-[13px] font-bold text-foreground">Decision Provenance</span>
-      </div>
-      <div className="relative pl-3 border-l hover:border-accent/40 border-border/20 space-y-3 transition-colors">
-        <div className="relative">
-          <div className="absolute -left-[15.5px] top-1.5 h-1.5 w-1.5 rounded-full bg-muted-foreground" />
-          <div className="text-[13px] text-muted-foreground font-mono mb-0.5">MEMORY USED • 12ms</div>
-          <div className="text-[13px] font-medium text-foreground">Matched keyword: &quot;latency&quot;</div>
-          <div className="text-[16px] text-muted-foreground font-mono mt-0.5 border border-border/20 inline-block px-1 rounded">MEM-442 • CONF: 0.94</div>
-        </div>
-        <div className="relative">
-          <div className="absolute -left-[15.5px] top-1.5 h-1.5 w-1.5 rounded-full bg-[var(--gradient-5)]" />
-          <div className="text-[13px] text-muted-foreground font-mono mb-0.5">EMOTION TRIGGER • 4ms</div>
-          <div className="text-[13px] font-medium text-[var(--gradient-5)]">Frustration &gt; 40%</div>
-          <div className="text-[16px] text-muted-foreground font-mono mt-0.5">Bypassed soft-consensus</div>
-        </div>
-        <div className="relative">
-          <div className="absolute -left-[15.5px] top-1.5 h-1.5 w-1.5 rounded-full bg-primary" />
-          <div className="text-[13px] text-primary font-mono font-bold mb-0.5">ACTION TAKEN • 84ms</div>
-          <div className="text-[13px] font-medium text-foreground">Override PR #12 Rules</div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function MemoryRetrievalVisual() {
-  return (
-    <div className="flex flex-col h-full space-y-3">
-      {/* Metadata Header */}
-      <div className="flex items-center justify-between border-b border-border/20 pb-2">
-        <div className="text-[16px] font-mono text-muted-foreground">SCANNING NAMESPACE: <span className="text-primary">PROJECT_X</span></div>
-        <div className="text-[13px] font-mono bg-border/40 px-1 py-0.5 rounded">VDB: ONLINE • 42ms</div>
-      </div>
-
-      <div className="bg-surface border border-border/40 p-2 rounded-sm text-[16px] text-foreground flex items-center gap-2 shadow-sm w-[60%]">
-        <PlaygroundLogo className="h-4 w-4 text-muted-foreground" />
-        &quot;What did we decide about caching?&quot;
-      </div>
-
-      {/* Candidate Table */}
-      <div className="text-[13px] font-mono text-muted-foreground uppercase tracking-widest mt-2">Retrieval Candidates</div>
-      <div className="flex flex-col gap-1">
-        <div className="flex justify-between items-center p-1.5 border border-emerald-500/30 bg-emerald-500/5 rounded">
-          <span className="text-[16px] font-semibold text-emerald-400">MEM-842</span>
-          <span className="text-foreground text-[16px] truncate max-w-[60%]">Redis logic agreed...</span>
-          <span className="text-emerald-500 font-bold text-[13px]">0.92</span>
-        </div>
-        <div className="flex justify-between items-center p-1.5 border border-border/20 bg-muted/20 rounded opacity-60">
-          <span className="text-[16px]">MEM-112</span>
-          <span className="text-[16px] truncate max-w-[60%]">Local storage debate</span>
-          <span className="text-[13px]">0.64</span>
-        </div>
-      </div>
-
-      {/* Quoted Evidence Stack */}
-      <div className="flex-1 flex flex-col justify-end">
-        <div className="bg-muted/40 border-l-2 border-primary p-2 rounded-r-lg text-[16px] text-foreground shadow-sm">
-          <div className="text-[16px] font-mono text-primary mb-1">SOURCE: SESSION #44 • {new Date().toLocaleTimeString()}</div>
-          &quot;We agreed to use <span className="bg-primary/20 text-primary px-0.5">Redis</span> for caching to <span className="bg-primary/20 text-primary px-0.5">minimize latency</span>.&quot;
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function KnowledgePromotionVisual() {
-  return (
-    <div className="flex flex-col h-full space-y-3 relative">
-      <div className="absolute top-0 right-0 text-[16px] font-mono text-muted-foreground">PIPELINE: ACTIVE</div>
-      <div className="flex items-center gap-2 border-b border-border/20 pb-2">
-        <BookOpen className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-        <span className="text-[13px] font-bold text-foreground">Knowledge Promotion</span>
-      </div>
-      <div className="flex flex-col justify-between flex-1">
-        <div className="space-y-1">
-          <div className="text-[13px] font-mono text-muted-foreground">RAW SNIPPET [ID: CHAT-90]</div>
-          <div className="text-[16px] opacity-70 border border-transparent p-1.5 bg-muted/20 rounded">
-            &quot;If we hit limits, let&apos;s backoff 5s.&quot;
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 my-1">
-          <ArrowRight className="h-3 w-3 text-border/60" />
-          <div className="text-[16px] font-mono text-accent bg-accent/10 px-1 rounded border border-accent/20">SEMANTIC COMPRESSION • 142ms</div>
-        </div>
-
-        <div className="text-[13px] font-medium text-foreground bg-card/70 dark:bg-[#0d0d12] border border-emerald-500/20 p-2 rounded">
-          <div className="flex justify-between mb-1">
-            <span className="text-[16px] text-emerald-600 dark:text-emerald-400 font-mono">ENDORSED FACT</span>
-            <span className="text-[16px] text-muted-foreground font-mono">CONTRA SCAN: PASS</span>
-          </div>
-          Global API Rate Limit Strategy: Linear backoff (5s base).
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function EmotionWeatherVisual() {
-  return (
-    <div className="flex flex-col h-full space-y-2 pt-1 opacity-90">
-      <div className="flex justify-between items-end border-b border-border/20 pb-2">
-        <div className="flex items-center gap-2">
-          <div className="text-[16px] font-semibold text-foreground">Multi-Signal Drift</div>
-          <span className="bg-surface border border-border/20 px-1 py-0.5 rounded text-[16px] font-mono text-muted-foreground">T-MINUS 1H</span>
-        </div>
-        <div className="text-[13px] font-mono text-emerald-600 dark:text-emerald-400 flex gap-2">
-          <span className="flex items-center gap-1"><div className="w-2 h-0.5 bg-emerald-500/60 dark:bg-emerald-400" /> Conf</span>
-          <span className="flex items-center gap-1"><div className="w-2 h-0.5 bg-rose-500/60 dark:bg-rose-400" /> Frust</span>
-          <span className="flex items-center gap-1"><div className="w-2 h-0.5 bg-accent/60" /> Emp</span>
-        </div>
-      </div>
-
-      {/* SVG Multi-line Graph */}
-      <div className="relative flex-1 min-h-[90px] w-full flex items-center border-b border-border/10">
-        <div className="absolute inset-0 flex items-center justify-between px-2">
-          <div className="h-full w-px bg-border/20" />
-          <div className="h-full w-px bg-border/20" />
-          <div className="h-full w-px bg-border/20" />
-          <div className="h-full w-px bg-border/20" />
-        </div>
-
-        <svg className="absolute inset-0 h-full w-full pointer-events-none drop-shadow-sm overflow-visible">
-          {/* Confidence Band (Soft background) */}-+
-          <path d="M 0 40 Q 50 20, 100 35 T 200 10 T 300 15 T 400 5" className="fill-emerald-500/5 dark:fill-emerald-400/[0.03]" />
-          <path d="M 0 60 Q 50 80, 100 55 T 200 30 T 300 35 T 400 25" className="fill-emerald-500/5 dark:fill-emerald-400/[0.03]" />
-
-          {/* Lines - drawn once, staying static */}
-          <motion.path
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: 1.5, ease: "easeOut" }}
-            d="M 0 50 Q 50 10, 100 45 T 200 20 T 300 25 T 400 15" className="stroke-emerald-600 dark:stroke-emerald-400 stroke-[1.25px]" fill="none" />
-          <motion.path
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: 1.5, ease: "easeOut" }}
-            d="M 0 80 Q 50 90, 100 70 T 200 85 T 300 60 T 400 75" className="stroke-rose-500/70 dark:stroke-rose-400/80 stroke-[1px] stroke-dasharray-[3_3]" fill="none" />
-          <motion.path
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: 1.5, ease: "easeOut" }}
-            d="M 0 40 Q 50 60, 100 40 T 200 50 T 300 40 T 400 40" className="stroke-accent/60 stroke-[1px]" fill="none" />
-
-          {/* Event Dots - breathing slowly */}
-          <motion.circle animate={{ r: [2.5, 3.5, 2.5], opacity: [0.7, 1, 0.7] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }} cx="100" cy="45" r="3" className="fill-emerald-500 dark:fill-emerald-400" />
-          <motion.circle animate={{ r: [2.5, 3.5, 2.5], opacity: [0.7, 1, 0.7] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", delay: 1 }} cx="200" cy="85" r="3" className="fill-rose-500 dark:fill-rose-400" />
-          <motion.circle animate={{ r: [2.5, 3.5, 2.5], opacity: [0.7, 1, 0.7] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", delay: 2 }} cx="300" cy="25" r="3" className="fill-emerald-500 dark:fill-emerald-400" />
-        </svg>
-      </div>
-
-      {/* Trigger Ribbon Residue */}
-      <div className="flex gap-2 pb-1 opacity-75">
-        <div className="flex-1 bg-surface border border-border/20 rounded p-1.5 flex justify-between items-center">
-          <div className="flex flex-col">
-            <span className="text-[16px] font-mono text-muted-foreground">11:42 • <span className="text-foreground/80">PR-18</span></span>
-            <span className="text-[13px] text-rose-500 dark:text-rose-400">Syntax Error</span>
-          </div>
-          <span className="text-[13px] font-mono text-rose-600 dark:text-rose-400 bg-rose-500/10 dark:bg-rose-400/10 px-1 rounded">-12</span>
-        </div>
-        <div className="flex-1 bg-surface border border-border/20 rounded p-1.5 flex justify-between items-center">
-          <div className="flex flex-col">
-            <span className="text-[16px] font-mono text-muted-foreground">11:46 • <span className="text-foreground/80">TST-02</span></span>
-            <span className="text-[13px] text-emerald-600 dark:text-emerald-400">Tests Pass</span>
-          </div>
-          <span className="text-[13px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 dark:bg-emerald-400/10 px-1 rounded">+24</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function JournalLedgerVisual() {
-  return (
-    <div className="flex flex-col h-full space-y-3 opacity-90">
-      <div className="flex items-center justify-between border-b border-border/20 pb-2">
-        <div className="flex items-center gap-2">
-          <BookOpen className="h-3.5 w-3.5 text-[var(--gradient-5)]" />
-          <span className="text-[13px] font-bold text-foreground">State Snapshot</span>
-        </div>
-        <span className="text-[16px] font-mono text-muted-foreground">SNAP-401A</span>
-      </div>
-
-      {/* State Snapshot Cluster */}
-      <div className="grid grid-cols-2 gap-2 mb-1">
-        <div className="bg-surface border border-border/20 p-1.5 rounded text-[13px]">
-          <div className="text-muted-foreground uppercase tracking-widest text-[13px] mb-0.5">Dominant</div>
-          <div className="text-emerald-600 dark:text-emerald-400 font-bold">Determined (88%)</div>
-        </div>
-        <div className="bg-surface border border-border/20 p-1.5 rounded text-[13px]">
-          <div className="text-muted-foreground uppercase tracking-widest text-[13px] mb-0.5">Volatility</div>
-          <div className="text-foreground/80 font-mono">Low (0.12)</div>
-        </div>
-      </div>
-
-      <div className="space-y-2 flex-1">
-        <div className="text-[13px] text-muted-foreground font-mono flex gap-2">
-          <span>14:02:12</span>
-          <span className="text-primary bg-primary/10 px-1 rounded">SELF_REFLECTION</span>
-        </div>
-        <div className="bg-card/70 dark:bg-[#0d0d12] border border-border/20 p-2.5 rounded text-[16px] text-foreground/80 border-l-2 border-[var(--gradient-5)] leading-relaxed">
-          I initially thought caching was unnecessary, but the Planner&apos;s graph makes sense. I need to trust the external data map more.
-        </div>
-        <div className="flex items-center gap-1 text-[16px] text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-400/10 w-fit px-1.5 py-0.5 rounded border border-emerald-500/10">
-          <ArrowRight className="h-2 w-2" /> BELIEF_SHIFT_LOGGED
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function RelationshipForceGraphVisual() {
-  return (
-    <div className="group relative h-full w-full min-h-[180px] flex items-center justify-center pt-2">
-      {/* Edge Metrics Popover (Analytical data) */}
-      <div className="absolute top-2 left-2 bg-card/90 dark:bg-[#0d0d12] border border-border/20 rounded-sm p-2 text-[13px] shadow-lg z-20 backdrop-blur-md opacity-100 pointer-events-none md:opacity-0 md:group-hover:opacity-100 scale-100 md:scale-95 md:group-hover:scale-100 transition-all duration-300">
-        <div className="font-bold text-foreground mb-1 border-b border-border/20 pb-1">BOND: ARCH ↔ COD</div>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-foreground/75">
-          <span>Trust:</span> <span className="text-emerald-600 dark:text-emerald-400">92</span>
-          <span>Respect:</span> <span className="text-emerald-600 dark:text-emerald-400">81</span>
-          <span>Friction:</span> <span className="text-rose-500 dark:text-rose-400">24</span>
-          <span>Align:</span> <span className="text-foreground">77</span>
-        </div>
-        <div className="mt-1 pt-1 border-t border-border/20 text-muted-foreground text-[16px]">
-          Last conflict: 18m ago • Decay: -1.2/d
-        </div>
-      </div>
-
-      {/* Agents Nodes */}
-      <div className="absolute top-[20%] right-[30%] flex flex-col items-center gap-1 z-10 transition-transform duration-300 md:group-hover:-translate-y-1">
-        <div className="h-10 w-10 rounded-full border border-primary/40 bg-card flex items-center justify-center"><PlaygroundLogo className="h-4 w-4 text-primary" /></div>
-        <span className="text-[13px] font-bold bg-background/50 backdrop-blur px-1 rounded text-foreground/90">Architect</span>
-
-        {/* Interaction Residue */}
-        <div className="absolute -right-16 top-0 bg-primary/10 border border-primary/20 text-primary px-1 py-0.5 rounded text-[13px] whitespace-nowrap hidden sm:block opacity-60">
-          Shared insight
-        </div>
-      </div>
-
-      <div className="absolute bottom-[10%] left-[20%] flex flex-col items-center gap-1 z-10 transition-transform duration-300 md:group-hover:translate-x-1">
-        <div className="h-10 w-10 rounded-full border border-emerald-600/40 dark:border-emerald-400/40 bg-card flex items-center justify-center"><PlaygroundLogo className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /></div>
-        <span className="text-[13px] font-bold bg-background/50 backdrop-blur px-1 rounded text-foreground/90">Coder</span>
-
-        <div className="absolute -left-16 bottom-0 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-1 py-0.5 rounded text-[13px] whitespace-nowrap hidden sm:block opacity-60">
-          Approved patch
-        </div>
-      </div>
-
-      <div className="absolute bottom-[20%] right-[10%] flex flex-col items-center gap-1 z-10">
-        <div className="h-10 w-10 rounded-full border border-border/40 bg-card flex items-center justify-center opacity-60"><PlaygroundLogo className="h-4 w-4 text-rose-500/80 dark:text-rose-400/80" /></div>
-        <span className="text-[13px] font-bold bg-background/50 px-1 rounded opacity-60 text-foreground/75">Reviewer</span>
-      </div>
-
-      <svg className="absolute inset-0 h-full w-full pointer-events-none">
-        <path d="M 70% 25% L 25% 85%" className="stroke-emerald-600/30 dark:stroke-emerald-400/30 stroke-[2px] md:group-hover:stroke-[3px] transition-all duration-300" fill="none" />
-        <path d="M 70% 25% L 85% 75%" className="stroke-rose-500/20 dark:stroke-rose-400/20 stroke-[1.25px] md:group-hover:stroke-[2px] transition-all duration-300" fill="none" />
-      </svg>
-    </div>
-  )
-}
-
-function RelationshipDrawerVisual() {
-  return (
-    <div className="flex flex-col h-full space-y-3 opacity-90">
-      <div className="flex items-center justify-between border-b border-border/20 pb-2">
-        <div className="flex flex-col">
-          <span className="text-[13px] font-bold text-foreground">Reciprocity Matrix</span>
-          <span className="text-[16px] font-mono text-muted-foreground">Global Swarm State</span>
-        </div>
-        <Activity className="h-3.5 w-3.5 text-accent/60" />
-      </div>
-
-      {/* Mini Heatmap Matrix */}
-      <div className="flex-1 bg-surface border border-border/20 rounded-sm p-2">
-        <div className="grid grid-cols-[auto_1fr_1fr_1fr] gap-x-2 gap-y-1.5 text-[16px] font-mono items-center h-full">
-          <div className="text-muted-foreground"></div>
-          <div className="text-center text-muted-foreground">TRST</div>
-          <div className="text-center text-muted-foreground">HLP</div>
-          <div className="text-center text-muted-foreground">CHLG</div>
-
-          <div className="text-foreground/75">ARCH</div>
-          <div className="bg-emerald-600/[0.16] dark:bg-emerald-400/[0.24] h-4 rounded text-center leading-4 text-emerald-700 dark:text-emerald-300">.92</div>
-          <div className="bg-emerald-600/[0.1] dark:bg-emerald-400/[0.15] h-4 rounded text-center leading-4 text-emerald-600 dark:text-emerald-400/80">.74</div>
-          <div className="bg-rose-500/[0.1] dark:bg-rose-400/[0.1] h-4 rounded text-center leading-4 text-rose-600 dark:text-rose-400">.42</div>
-
-          <div className="text-foreground/75">COD</div>
-          <div className="bg-emerald-600/[0.14] dark:bg-emerald-400/[0.2] h-4 rounded text-center leading-4 text-emerald-700 dark:text-emerald-300">.88</div>
-          <div className="bg-emerald-600/[0.2] dark:bg-emerald-400/[0.3] h-4 rounded text-center leading-4 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-500/20">.95</div>
-          <div className="bg-accent/10 h-4 rounded text-center leading-4 text-accent/80">.21</div>
-
-          <div className="text-foreground/75">REV</div>
-          <div className="bg-rose-500/[0.14] dark:bg-rose-400/[0.15] h-4 rounded text-center leading-4 text-rose-600 dark:text-rose-400">.34</div>
-          <div className="bg-border/20 h-4 rounded text-center leading-4 text-muted-foreground">.55</div>
-          <div className="bg-rose-500/[0.2] dark:bg-rose-400/[0.25] h-4 rounded text-center leading-4 text-rose-700 dark:text-rose-300">.89</div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function PlanningDAGVisual() {
-  return (
-    <div className="flex flex-col h-full space-y-3 pt-1">
-      <div className="flex items-center justify-between mb-2 pb-2 border-b border-border/10">
-        <div className="flex items-center gap-2">
-          <div className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center"><Network className="h-3 w-3 text-primary/80" /></div>
-          <span className="text-[16px] font-semibold text-foreground">Task: Build Auth Flow</span>
-        </div>
-        <span className="text-[16px] font-mono bg-muted/20 border border-border/20 text-muted-foreground px-1 py-0.5 rounded">CRITICAL OVERLAY</span>
-      </div>
-
-      <div className="relative pl-6 space-y-3 flex-1 flex flex-col justify-center">
-        <div className="absolute left-3 top-2 bottom-2 w-[2px] bg-border/20" />
-
-        <div className="relative opacity-40">
-          <div className="absolute -left-[25px] top-1.5 h-3 w-3 rounded-full border-[3px] border-background bg-emerald-600/50 dark:bg-emerald-400/50 z-10" />
-          <div className="absolute -left-[14px] top-[11px] w-3 h-[2px] bg-emerald-600/30 dark:bg-emerald-400/30" />
-          <div className="text-[13px] font-semibold text-foreground/80">Schema Design</div>
-          <div className="flex gap-1 mt-0.5 text-[16px] font-mono">
-            <span className="text-muted-foreground bg-muted/50 px-1 rounded">ARCH</span>
-            <span className="text-emerald-600 dark:text-emerald-400">Done (12s)</span>
-          </div>
-        </div>
-
-        <div className="relative border border-primary/20 bg-card/75 dark:bg-[#0d0d12] p-2 rounded-sm opacity-100">
-          <div className="absolute -left-[34px] top-4 -bottom-4 w-[2px] bg-primary/40" />
-          <motion.div animate={{ opacity: [0.3, 0.8, 0.3] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }} className="absolute -left-[34.5px] top-3.5 h-3.5 w-3.5 rounded-full border-[3px] border-background bg-primary z-10" />
-          <div className="absolute -left-[22px] top-[19px] w-5 h-[2px] bg-primary/30" />
-          <div className="text-[13px] font-bold text-primary flex justify-between">
-            Implement OAuth Map
-            <span className="bg-primary/10 text-primary px-1 rounded text-[16px] font-mono border border-primary/20">RUNNING</span>
-          </div>
-
-          {/* Dense Metadata Pills */}
-          <div className="flex flex-wrap gap-1 mt-2">
-            <span className="bg-surface border border-border/20 px-1 rounded text-[16px] text-muted-foreground font-mono">OWNER: COD</span>
-            <span className="bg-surface border border-border/20 px-1 rounded text-[16px] text-muted-foreground font-mono">BUDGET: 4K TKN</span>
-            <span className="bg-surface border border-border/20 px-1 rounded text-[16px] text-muted-foreground font-mono">ETA: 14s</span>
-          </div>
-        </div>
-
-        <div className="relative opacity-35">
-          <div className="absolute -left-[25px] top-1.5 h-3 w-3 rounded-full border-[3px] border-background bg-muted-foreground/60 z-10" />
-          <div className="text-[13px] font-semibold text-foreground/75">Testing & Teardown</div>
-          <div className="flex gap-1 mt-0.5 text-[16px] font-mono">
-            <span className="text-muted-foreground bg-muted/50 px-1 rounded">REV</span>
-            <span className="text-muted-foreground">Blocked</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ExecutionStateVisual() {
-  return (
-    <div className="flex flex-col h-full space-y-2 opacity-90">
-      <div className="flex items-center justify-between border-b border-border/20 pb-2">
-        <div className="flex items-center gap-2">
-          <Workflow className="h-3.5 w-3.5 text-foreground/50" />
-          <span className="text-[13px] font-bold text-foreground">Live Execution Strip</span>
-        </div>
-        <span className="text-[16px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1 rounded">OK</span>
-      </div>
-      <div className="font-mono text-[13px] flex-1 bg-card/75 dark:bg-[#0a0a0c] border border-border/20 rounded-sm p-2 overflow-hidden flex flex-col justify-end space-y-1">
-        <div className="text-muted-foreground opacity-35 flex gap-2"><span className="w-12">14:00:01</span> spawn planner.worker-02</div>
-        <div className="text-emerald-600 dark:text-emerald-400 opacity-60 flex gap-2"><span className="w-12">14:00:02</span> read src/auth.ts <span className="text-muted-foreground ml-auto">18ms</span></div>
-        <div className="text-accent opacity-75 flex gap-2"><span className="w-12">14:00:04</span> spawn COD module</div>
-        <div className="text-muted-foreground opacity-35 flex gap-2"><span className="w-12">14:00:05</span> retry test shard 2...</div>
-        <div className="text-primary mt-1 border-t border-border/20 pt-1 flex gap-2">
-          <span className="w-12">14:00:08</span> write plan.json <motion.span animate={{ opacity: [1, 0, 1] }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>█</motion.span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function MultiLaneArenaVisual() {
-  return (
-    <div className="flex flex-col h-full w-full gap-2">
-      {/* Top Arena Lanes */}
-      <div className="flex gap-2 flex-1 pt-1">
-        {/* User / Driver Lane */}
-        <div className="flex-1 border border-border/20 bg-surface/30 rounded-sm flex flex-col relative overflow-hidden opacity-65">
-          <div className="bg-surface/80 border-b border-border/10 px-2 py-1.5 flex flex-col">
-            <div className="text-[16px] uppercase font-bold text-muted-foreground">Driver</div>
-            <div className="text-[13px] font-mono text-muted-foreground mt-0.5 flex gap-1"><span className="bg-muted/50 px-1 rounded">CTX 12%</span><span className="bg-muted/50 px-1 rounded">IDLE</span></div>
-          </div>
-          <div className="p-2 flex-1 flex flex-col justify-end">
-            <div className="bg-card/50 border border-border/20 p-1.5 rounded text-[13px] text-foreground/80 self-end max-w-[95%]">
-              Add rate limits now.
-            </div>
-            <div className="text-[13px] font-mono text-muted-foreground/60 self-end mt-1">turn #12 • 12ms</div>
-          </div>
-        </div>
-
-        {/* Agent 1 Lane */}
-        <div className="flex-1 border border-primary/20 bg-primary/5 rounded-sm flex flex-col relative overflow-hidden">
-          <motion.div animate={{ opacity: [0.3, 0.8, 0.3] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }} className="absolute top-1.5 right-1.5 h-1.5 w-1.5 bg-primary rounded-full shadow-[0_0_8px_rgba(155,126,235,0.4)]" />
-          <div className="bg-primary/5 border-b border-primary/10 px-2 py-1.5 flex flex-col">
-            <div className="text-[16px] uppercase font-bold text-primary">Architect</div>
-            <div className="text-[13px] font-mono text-muted-foreground mt-0.5 flex gap-1"><span className="bg-background/80 border border-border/20 px-1 rounded text-primary">CTX 48%</span><span className="bg-background/80 border border-border/20 px-1 rounded text-muted-foreground">TOOL: FS</span></div>
-          </div>
-          <div className="p-2 flex-1 flex flex-col mt-4">
-            <motion.div initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.3 }} className="bg-card border-l-[1.5px] border-primary p-1.5 rounded text-[13px] text-foreground self-start max-w-[95%] shadow-sm">
-              I will scaffold the Redis throttle.
-            </motion.div>
-            {/* Inline Telemetry */}
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2, duration: 0.3 }} className="text-[13px] font-mono text-muted-foreground/80 self-start mt-1 flex gap-1 flex-wrap">
-              <span>turn #13</span> <span className="text-emerald-600 dark:text-emerald-400/80">388ms</span> <span className="bg-surface border border-border/20 px-0.5 py-[1px] rounded">used MEM-442</span>
-            </motion.div>
-          </div>
-        </div>
-
-        {/* Agent 2 Lane */}
-        <div className="flex-1 border border-border/20 bg-surface/30 rounded-sm flex flex-col relative overflow-hidden opacity-65">
-          <div className="bg-surface/80 border-b border-border/10 px-2 py-1.5 flex flex-col">
-            <div className="text-[16px] uppercase font-bold text-muted-foreground">Coder</div>
-            <div className="text-[13px] font-mono text-muted-foreground mt-0.5 flex gap-1"><span className="bg-muted/50 px-1 rounded">CTX 04%</span><span className="bg-muted/50 px-1 rounded">WAIT</span></div>
-          </div>
-          <div className="p-2 flex-1 flex flex-col justify-end opacity-50 pb-6">
-            <div className="bg-muted border border-border/20 p-1.5 rounded text-[13px] text-foreground/60 self-start max-w-[95%]">
-              Waiting for scaffold...
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Run Control Bar */}
-      <div className="h-7 bg-card/75 dark:bg-[#0a0a0c] border border-border/20 rounded-md mt-1 flex items-center justify-between px-2 text-[16px] font-mono text-muted-foreground opacity-90">
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-            <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }} className="h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400" /> LIVE_RUN
+    <div className="flex items-center gap-1.5 overflow-hidden">
+      {steps.map((step, index) => (
+        <div key={step} className="flex min-w-0 items-center gap-1.5">
+          <span className={cx('truncate rounded-[5px] border px-2 py-1.5 text-center text-[10px] leading-3', toneClass[tone].border, toneClass[tone].soft, 'text-slate-200')}>
+            {step}
           </span>
-          <span>CLOCK: 00:14:42</span>
+          {index < steps.length - 1 && <ArrowRight className="h-3 w-3 shrink-0 text-slate-500" />}
         </div>
-        <div className="flex items-center gap-3">
-          <span>QUEUE: 2</span>
-          <span>COST: $0.14</span>
-          <span className="border border-border/20 bg-surface/50 px-1.5 py-0.5 rounded text-foreground/80">CONSENSUS: 85%</span>
+      ))}
+    </div>
+  )
+}
+
+function LandingNav() {
+  const nav = [
+    ['Home', '#top'],
+    ['Agents', '/agents'],
+    ['Dashboard', '/dashboard'],
+    ['Arena', '/simulation'],
+    ['Docs', '#workflow'],
+  ]
+
+  return (
+    <header className="relative z-30 flex h-[76px] w-full items-center border-b border-white/10 bg-[#020713]/90 px-5 text-white backdrop-blur-xl sm:px-8 lg:px-12">
+      <div className="flex flex-1 items-center gap-3">
+        <Link href="/" className="flex items-center gap-3">
+          <span className="grid h-11 w-11 place-items-center rounded-[8px] border border-[#b8a1ff]/45 bg-[#9b7cf6]/10 text-[#d8ccff]">
+            <PlaygroundLogo className="h-6 w-6" />
+          </span>
+          <span className="hidden leading-tight sm:block">
+            <span className="block text-[16px] font-semibold tracking-tight">Agent Playground</span>
+            <span className="block text-[12px] text-slate-300">Inspectable Agent OS</span>
+          </span>
+        </Link>
+      </div>
+
+      <nav className="hidden flex-1 justify-center gap-8 lg:flex">
+        {nav.map(([label, href]) => (
+          <Link
+            key={label}
+            href={href}
+            className={cx(
+              'relative flex h-[76px] items-center px-2 text-[15px] text-white/82 transition hover:text-white',
+              label === 'Home' && 'text-white after:absolute after:inset-x-1 after:bottom-0 after:h-px after:bg-[#b8a1ff]'
+            )}
+          >
+            {label}
+          </Link>
+        ))}
+      </nav>
+
+      <div className="flex flex-1 items-center justify-end gap-3">
+        <span className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-[12px] text-white/82 md:inline-flex">
+          <Cloud className="h-3.5 w-3.5 text-[#b8a1ff]" />
+          Local + Cloud Runtime
+          <span className="h-1.5 w-1.5 rounded-full bg-[#49d581]" />
+        </span>
+        <HomeThemeButton />
+        <Link
+          href="https://github.com"
+          aria-label="Open GitHub"
+          className="grid h-11 w-11 place-items-center rounded-[8px] border border-white/10 bg-white/[0.035] text-white/82 transition hover:border-[#b8a1ff]/45 hover:bg-white/[0.07]"
+        >
+          <Github className="h-5 w-5" />
+        </Link>
+      </div>
+    </header>
+  )
+}
+
+function HeroSection() {
+  return (
+    <section id="top" className="relative h-[760px] overflow-hidden bg-[#020713] text-white">
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 opacity-95"
+        style={{
+          backgroundImage: "url('/landing_page_bg.png')",
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: '100% 100%',
+        }}
+      />
+      <div className="absolute inset-0 bg-[#020713]/24" />
+      <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#020713] via-[#020713]/55 to-transparent" />
+      <LandingNav />
+
+      <div className="relative z-10 mx-auto flex max-w-[1520px] flex-col items-center px-5 pt-16 text-center sm:pt-16">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45 }}
+          className="inline-flex max-w-full items-center gap-2 rounded-full border border-[#9b7cf6]/55 bg-[#050b16]/62 px-4 py-2 text-[13px] text-slate-200 backdrop-blur-md"
+        >
+          <Hexagon className="h-4 w-4 text-[#b8a1ff]" />
+          <span className="font-mono uppercase tracking-[0.08em] text-[#d8ccff]">Architecture Cockpit</span>
+          <span className="h-4 w-px bg-white/15" />
+          <span className="hidden text-slate-300 sm:inline">Inspectable agents, governed knowledge, replayable workflows</span>
+        </motion.div>
+
+        <motion.h1
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08, duration: 0.5 }}
+          className="mt-6 max-w-[1050px] text-[clamp(2.55rem,3.35vw,4.05rem)] font-semibold leading-[1.08] tracking-[-0.01em] text-white"
+        >
+          Build and explore agents with{' '}
+          <span className="text-[#9da7ff]">memory</span>, <span className="text-[#c9a5ff]">state</span>, and{' '}
+          <span className="text-[#ff8fa6]">proof</span>.
+        </motion.h1>
+
+        <motion.p
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.16, duration: 0.5 }}
+          className="mt-5 max-w-[880px] text-[16px] leading-7 text-slate-200/86 sm:text-[17px]"
+        >
+          Agent Playground is an inspectable AI agent operating system for persistent identity, semantic memory, emotional state, run-based workspaces, source-backed knowledge, relationship intelligence, and PostgreSQL-first audit trails.
+        </motion.p>
+
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.22, duration: 0.5 }}
+          className="mt-7 flex flex-col gap-4 sm:flex-row"
+        >
+          <Link
+            href="/agents/new"
+            className="inline-flex h-[52px] min-w-64 items-center justify-center gap-4 rounded-[7px] border border-[#b8a1ff]/25 bg-[#a997ff] px-7 text-[15px] font-semibold text-[#050713] transition hover:bg-[#b8a1ff]"
+          >
+            Start Building
+            <ArrowRight className="h-5 w-5" />
+          </Link>
+          <Link
+            href="#architecture"
+            className="inline-flex h-[52px] min-w-64 items-center justify-center gap-4 rounded-[7px] border border-white/14 bg-[#050b16]/55 px-7 text-[15px] font-semibold text-white transition hover:border-[#b8a1ff]/45 hover:bg-white/[0.06]"
+          >
+            Explore Architecture
+            <Table2 className="h-5 w-5" />
+          </Link>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.28, duration: 0.5 }}
+          className="mt-6 flex max-w-[1220px] flex-wrap justify-center gap-3"
+        >
+          {heroBadges.map(({ label, icon: Icon, tone }) => (
+            <span
+              key={label}
+              className="inline-flex items-center gap-2 rounded-[6px] border border-white/12 bg-[#050b16]/64 px-4 py-2.5 text-[13px] font-medium text-white/90 backdrop-blur"
+            >
+              <Icon className={cx('h-4 w-4', toneClass[tone].text)} />
+              {label}
+            </span>
+          ))}
+        </motion.div>
+      </div>
+    </section>
+  )
+}
+
+function CockpitChrome({
+  activeTab,
+  setActiveTab,
+}: {
+  activeTab: CockpitTab
+  setActiveTab: (tab: CockpitTab) => void
+}) {
+  return (
+    <>
+      <div className="flex h-8 items-center justify-between border-b border-white/10 bg-[#020713] px-5">
+        <div className="flex gap-2">
+          <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+          <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
+          <span className="h-3 w-3 rounded-full bg-[#28c840]" />
         </div>
+        <div className="flex gap-4 text-slate-500">
+          <span>-</span>
+          <span>[]</span>
+          <span>x</span>
+        </div>
+      </div>
+      <div className="grid h-[58px] grid-cols-[300px_1fr_330px] border-b border-white/10 bg-[#050d18]">
+        <div className="flex items-center gap-3 border-r border-white/8 px-5">
+          <PlaygroundLogo className="h-7 w-7 text-white" />
+          <span className="text-[14px] font-semibold text-white">Agent Playground</span>
+          <StatusPill tone="blue">Product Tour</StatusPill>
+        </div>
+        <div className="flex items-stretch justify-center">
+          {cockpitTabs.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={cx(
+                'min-w-[164px] border-x border-transparent px-4 text-[13px] text-slate-300 transition hover:bg-white/[0.035] hover:text-white',
+                activeTab === tab && 'border-white/8 bg-[#101b34] text-[#b8a1ff] shadow-[inset_0_-2px_0_#9b7cf6]'
+              )}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center justify-end gap-3 px-5">
+          <CircleHelp className="h-4 w-4 text-slate-300" />
+          <Settings className="h-4 w-4 text-slate-300" />
+          <div className="h-8 w-px bg-white/10" />
+          <div className="text-right">
+            <div className="text-[12px] font-semibold text-white">Platform Operator</div>
+            <div className="text-[10px] text-slate-500">Admin</div>
+          </div>
+          <div className="relative grid h-10 w-10 place-items-center rounded-full bg-white/[0.06] text-[12px] text-white">
+            OP
+            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border border-[#050d18] bg-[#49d581]" />
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function PipelineCard({ step, index }: { step: (typeof corePipeline)[number]; index: number }) {
+  const Icon = step.icon
+  return (
+    <div className="relative min-h-[156px] rounded-[7px] border border-white/[0.075] bg-white/[0.035] p-2">
+      {index < corePipeline.length - 1 && <ArrowRight className="absolute -right-3 top-[62px] z-10 h-4 w-4 text-slate-400" />}
+      <div className="mb-2 flex items-center gap-2">
+        <span className={cx('font-mono text-[12px]', toneClass[step.tone].text)}>{String(index + 1).padStart(2, '0')}</span>
+        <ToneIcon icon={Icon} tone={step.tone} size="sm" />
+      </div>
+      <h4 className="min-h-[36px] text-center text-[11px] font-semibold leading-[1.35] text-white">{step.title}</h4>
+      <div className="mt-3 space-y-1 border-t border-white/[0.055] pt-2 font-mono text-[9px] text-slate-400">
+        <div className="flex justify-between"><span>ID</span><span className="text-slate-300">{step.id}</span></div>
+        <div className="flex justify-between"><span>Latency</span><span className="text-slate-300">{step.latency}</span></div>
+        <div className="flex justify-between"><span>Status</span><CheckCircle2 className="h-3.5 w-3.5 text-[#49d581]" /></div>
+        <div className="flex justify-between"><span>Confidence</span><span className="text-slate-300">{step.score}</span></div>
       </div>
     </div>
   )
 }
 
-function CreativeDialsVisual() {
-  return (
-    <div className="flex flex-col h-full space-y-4 opacity-90">
-      <div className="flex items-center justify-between border-b border-border/20 pb-2">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-3.5 w-3.5 text-amber-500/80" />
-          <span className="text-[13px] font-bold text-foreground">Global Swarm Tuning</span>
-        </div>
-        <span className="text-[16px] font-mono text-muted-foreground bg-surface px-1 py-0.5 rounded border border-border/10">LIVE SYNC</span>
-      </div>
-      <div className="space-y-4 flex-1">
-        <div>
-          <div className="flex justify-between text-[16px] mb-1.5 font-semibold text-foreground/80">
-            <span>Imagination</span>
-            <span className="text-accent/90 font-mono">0.85</span>
-          </div>
-          <div className="relative h-1 bg-muted/60 rounded-full overflow-hidden">
-            <div className="absolute top-0 left-0 h-full w-[85%] bg-accent opacity-80" />
-          </div>
-        </div>
-        <div>
-          <div className="flex justify-between text-[16px] mb-1.5 font-semibold text-foreground/80">
-            <span>Strictness</span>
-            <span className="text-rose-500 dark:text-rose-400 font-mono">0.12</span>
-          </div>
-          <div className="relative h-1 bg-muted/60 rounded-full overflow-hidden">
-            <div className="absolute top-0 left-0 h-full w-[12%] bg-rose-500/80 dark:bg-rose-400/80" />
-          </div>
-        </div>
-
-        <div className="mt-2 text-[13px] text-muted-foreground leading-tight p-2 bg-card/75 dark:bg-[#0a0a0c] border border-border/20 rounded flex flex-col gap-1.5">
-          <div className="text-[16px] font-mono text-primary/80">SYSTEM EVENT</div>
-          <span className="opacity-70">Orchestrator adjusted parameters mid-run. Dials propagate to active worker contexts without restart.</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function NavIcon({ type, active }: { type: string, active: boolean }) {
-  const o1 = active ? "opacity-100" : "opacity-60"
-  const o2 = active ? "opacity-100" : "opacity-40"
-  switch (type) {
-    case 'Identity': return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="shrink-0">
-        <rect x="3" y="4" width="18" height="16" rx="3" className={`stroke-current ${o1} transition-opacity`} strokeWidth="1.5" />
-        <circle cx="12" cy="11" r="3" className={`fill-current ${o2} transition-opacity`} />
-        <path d="M7 17v-1.5a3.5 3.5 0 0 1 7 0V17" className={`stroke-current ${o1} transition-opacity`} strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
-    )
-    case 'Memory': return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="shrink-0">
-        <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6z" className={`stroke-current ${o1} transition-opacity`} strokeWidth="1.5" />
-        <path d="M8 4v16" className={`stroke-current ${o2} transition-opacity`} strokeWidth="1.5" />
-        <circle cx="14" cy="10" r="2" className={`fill-current ${o1} transition-opacity`} />
-        <circle cx="14" cy="16" r="1.5" className={`fill-current ${o2} transition-opacity`} />
-      </svg>
-    )
-    case 'Emotion': return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="shrink-0">
-        <rect x="3" y="4" width="18" height="16" rx="3" className={`stroke-current ${o2} transition-opacity`} strokeWidth="1.5" />
-        <path d="M7 12h3l2-4 2 8 2-4h3" className={`stroke-current ${o1} transition-opacity`} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    )
-    case 'Relationships': return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="shrink-0">
-        <circle cx="7" cy="12" r="3" className={`stroke-current ${o1} transition-opacity`} strokeWidth="1.5" />
-        <circle cx="17" cy="12" r="3" className={`stroke-current ${o1} transition-opacity`} strokeWidth="1.5" />
-        <path d="M10 12h4" className={`stroke-current ${o2} transition-opacity`} strokeWidth="1.5" />
-        <circle cx="12" cy="12" r="1.5" className={`fill-current ${o1} transition-opacity`} />
-      </svg>
-    )
-    case 'Planning': return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="shrink-0">
-        <path d="M4 6h10M4 12h16M4 18h7" className={`stroke-current ${o1} transition-opacity`} strokeWidth="1.5" strokeLinecap="round" />
-        <rect x="16" y="4" width="4" height="4" rx="1" className={`fill-current ${o2} transition-opacity`} />
-        <rect x="13" y="16" width="4" height="4" rx="1" className={`fill-current ${o2} transition-opacity`} />
-      </svg>
-    )
-    case 'Arena': return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="shrink-0">
-        <rect x="3" y="4" width="18" height="16" rx="3" className={`stroke-current ${o1} transition-opacity`} strokeWidth="1.5" />
-        <path d="M10 9l5 3-5 3v-6z" className={`fill-current ${o2} transition-opacity`} />
-      </svg>
-    )
-    default: return null
-  }
-}
-
-function InteractiveShowcase() {
-  const [activeTab, setActiveTab] = useState('Identity')
-
-  // 1. Reduced to 6 cleaner narrative tabs
-  const featureTabs = ['Identity', 'Memory', 'Emotion', 'Relationships', 'Planning', 'Arena']
-
-  const getTabContent = () => {
-    switch (activeTab) {
-      case 'Identity': return {
-        pill: "Core Persona Composer",
-        title: "Design an agent with a point of view",
-        subtitle: "Define voice, goals, and guardrails, then let every later behavior trace back to that identity",
-        mainVisual: <LivePersonaComposerVisual />,
-        railVisual: <DecisionTraceVisual />
-      }
-      case 'Memory': return {
-        pill: "Retentive Architecture",
-        title: "Memory that compounds over time",
-        subtitle: "Agents recall decisions, preferences, and debates instead of starting cold every session",
-        mainVisual: <MemoryRetrievalVisual />,
-        railVisual: <KnowledgePromotionVisual />
-      }
-      case 'Emotion': return {
-        pill: "Internal State Monitor",
-        title: "Make emotional state visible",
-        subtitle: "Track confidence, frustration, and empathy as live signals that shape behavior",
-        mainVisual: <EmotionWeatherVisual />,
-        railVisual: <JournalLedgerVisual />
-      }
-      case 'Relationships': return {
-        pill: "Agent-to-Agent Social Layers",
-        title: "Watch trust form between agents",
-        subtitle: "See alliances, friction, and influence shift as agents work together",
-        mainVisual: <RelationshipForceGraphVisual />,
-        railVisual: <RelationshipDrawerVisual />
-      }
-      case 'Planning': return {
-        pill: "Heuristic Task Graphs",
-        title: "Turn intent into executable plans",
-        subtitle: "Agents break goals into steps, spawn work, and report progress in real time",
-        mainVisual: <PlanningDAGVisual />,
-        railVisual: <ExecutionStateVisual />
-      }
-      case 'Arena': return {
-        pill: "Interactive Sandboxes",
-        title: "Run whole teams inside one arena",
-        subtitle: "Stage debates, workflows, and what-if scenarios with every state exposed",
-        mainVisual: <MultiLaneArenaVisual />,
-        railVisual: <CreativeDialsVisual />
-      }
-      default: return {
-        pill: "Features",
-        title: "Advanced Capabilities",
-        subtitle: "Dive into the domain configurations.",
-        mainVisual: <div />,
-        railVisual: <div />
-      }
-    }
-  }
-
-  const content = getTabContent()
+function AgentCoreTab() {
+  const domainCards = [
+    {
+      title: 'Memory',
+      subtitle: '442 Semantic Facts',
+      icon: Database,
+      tone: 'cyan' as Tone,
+      rows: [
+        ['Top Fact', 'Prefers structured, source-backed explanations with step-by-step reasoning.'],
+        ['canonicalKey', 'mem://agent/AGT-992/fact/442'],
+        ['evidenceRefs', '[SRC-812, SRC-991, SRC-1021]'],
+      ],
+    },
+    {
+      title: 'Emotion',
+      subtitle: 'Live State',
+      icon: Heart,
+      tone: 'rose' as Tone,
+      rows: [
+        ['dominantEmotion', 'Calm-Positive'],
+        ['intensity', '0.38'],
+        ['historyEvent', 'User expressed appreciation.'],
+      ],
+    },
+    {
+      title: 'Profile',
+      subtitle: 'Run-Based Analysis',
+      icon: UserRound,
+      tone: 'violet' as Tone,
+      rows: [
+        ['psychologicalProfile', 'Analytical - Reliable - Empathic'],
+        ['communicationFingerprint', 'Prefers clarity, structure, citations, and actionable next steps.'],
+      ],
+    },
+    {
+      title: 'Learning',
+      subtitle: 'Active',
+      icon: BookOpen,
+      tone: 'emerald' as Tone,
+      rows: [
+        ['latestObservation', 'User values concise, source-backed answers with visual structures.'],
+        ['confirmedPattern', 'Prefers tables, diagrams, bullet lists.'],
+        ['activeAdaptation', 'Adjusting response formatting priority.'],
+      ],
+    },
+  ]
 
   return (
-    <div className="overflow-hidden rounded-sm border border-white/10 bg-black/20 backdrop-blur-md shadow-lg transition-all dark:shadow-[0_40px_120px_-70px_rgba(0,0,0,0.9)]">
-      {/* Sleek Fake Browser Toolbar */}
-      <div className="flex items-center gap-4 border-b border-white/[0.05] dark:border-white/[0.05] border-black/5 px-4 py-2.5 bg-muted/10 shadow-sm relative z-10">
-        <div className="flex items-center gap-2 pr-3">
-          <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57] border border-black/10 shadow-inner" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e] border border-black/10 shadow-inner" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#28c840] border border-black/10 shadow-inner" />
+    <div className="grid grid-cols-[420px_1fr_286px] gap-2">
+      <Panel className="min-h-[548px]" title="Synthesis Agent">
+        <div className="mb-3 flex items-center gap-3">
+          <ToneIcon icon={Bot} tone="violet" size="lg" />
+          <div>
+            <div className="text-[20px] font-semibold text-white">Synthesis Agent</div>
+            <div className="mt-1 flex items-center gap-2 text-[13px] text-[#73e8a5]">
+              <span className="h-2 w-2 rounded-full bg-[#49d581]" />
+              Deployed
+            </div>
+          </div>
+          <StatusPill tone="violet">AGT-992</StatusPill>
         </div>
-        <div className="relative flex-1 overflow-x-auto hide-scrollbar">
-          <div className="flex min-w-max items-center gap-1.5 px-2">
-            {featureTabs.map((tab, idx) => {
-              const isActive = activeTab === tab;
-              return (
-                <div key={tab} className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => setActiveTab(tab)}
-                    className={`group flex items-center gap-2.5 rounded-md px-3 py-1.5 text-[12.5px] font-semibold tracking-wide transition-all duration-300 ${isActive
-                      ? "bg-foreground/10 text-foreground shadow-sm ring-1 ring-border/20"
-                      : "text-muted-foreground/80 hover:bg-muted/30 hover:text-foreground"
-                      }`}
-                  >
-                    <NavIcon type={tab} active={isActive} />
-                    {tab}
-                  </button>
-                  {idx < featureTabs.length - 1 && (
-                    <div className="h-3 w-px bg-border/40 mx-0.5" />
-                  )}
+        <div className="mb-3 space-y-0.5 border-y border-white/[0.06] py-2">
+          <FieldRow label="Provider Preference" value="OpenAI" />
+          <FieldRow label="Model Runtime" value="gpt-4.1-turbo" />
+          <FieldRow label="Created" value="May 25, 2025 10:42 AM" />
+          <FieldRow label="Persistence" value="PostgreSQL" />
+        </div>
+        <div className="rounded-[7px] border border-white/10 bg-white/[0.03] p-3">
+          <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-white">Identity Specification</div>
+          <div className="space-y-1 font-mono text-[11px] leading-4">
+            {[
+              ['name', '"Synthesis Agent"'],
+              ['persona', '"Insightful", "Precise", "Empathetic"'],
+              ['goals', '["Understand", "Synthesize", "Advise"]'],
+              ['guardrails', '["Safe", "Accurate", "Aligned"]'],
+              ['coreTraits', '["Analytical", "Curious", "Structured"]'],
+              ['dynamicTraits', '["Adaptive", "Context-Aware"]'],
+              ['memoryCount', '442'],
+              ['relationshipCount', '128'],
+              ['profileState', '"Evolving"'],
+              ['learningState', '"Active"'],
+            ].map(([label, value]) => (
+              <div key={label} className="grid grid-cols-[136px_10px_1fr]">
+                <span className="text-[#95e6bd]">{label}</span>
+                <span className="text-slate-500">:</span>
+                <span className="text-[#c7a9ff]">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <p className="mt-3 text-[11px] leading-4 text-slate-400">
+          Agent is a connected runtime object with Identity - State - Memory - Emotion - Profile - Learning - Persistence - Audit.
+        </p>
+      </Panel>
+
+      <div className="grid gap-2">
+        <Panel title="Chat-Turn Lifecycle Pipeline" subtitle="One user message -> full agent cognition cycle">
+          <div className="grid grid-cols-8 gap-2">
+            {corePipeline.map((step, index) => (
+              <PipelineCard key={step.id} step={step} index={index} />
+            ))}
+          </div>
+        </Panel>
+        <div className="grid grid-cols-4 gap-2">
+          {domainCards.map((card) => {
+            const Icon = card.icon
+            return (
+              <Panel key={card.title} className={cx('min-h-[224px]', toneClass[card.tone].soft, toneClass[card.tone].border)}>
+                <div className="mb-2 flex items-center gap-2">
+                  <ToneIcon icon={Icon} tone={card.tone} />
+                  <div>
+                    <h3 className="text-[13px] font-semibold uppercase tracking-[0.08em] text-white">{card.title}</h3>
+                    <p className="text-[11px] text-slate-400">{card.subtitle}</p>
+                  </div>
                 </div>
-              );
-            })}
-          </div>
+                <div className="space-y-2">
+                  {card.rows.map(([label, value]) => (
+                    <div key={label} className="rounded-[6px] border border-white/[0.06] bg-[#050d18]/70 p-2">
+                      <div className={cx('mb-1 font-mono text-[11px]', toneClass[card.tone].text)}>{label}</div>
+                      <div className="text-[11px] leading-4 text-slate-200">{value}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 font-mono text-[10px] text-slate-400">Last Updated | {card.title === 'Memory' ? '2m ago' : card.title === 'Emotion' ? '5s ago' : card.title === 'Profile' ? '1m ago' : '20s ago'}</div>
+              </Panel>
+            )
+          })}
         </div>
       </div>
 
-      {/* Shell Body */}
-      <div className="p-4 sm:p-5">
-        <div className="overflow-hidden rounded-sm border border-white/5 bg-transparent backdrop-blur-sm">
-          {/* Internal Shell Header */}
-          <div className="flex flex-wrap items-center gap-4 border-b border-border/20 px-4 py-4 sm:px-5">
-            <div className="flex items-center gap-4">
-              <PlaygroundLogo className="h-9 w-9 text-primary drop-shadow-[0_0_12px_rgba(203,166,247,0.4)]" />
+      <Panel title="Decision Provenance" subtitle="Why this response was chosen" className="min-h-[548px]">
+        <div className="relative space-y-2 pl-4">
+          <span className="absolute bottom-4 left-2 top-3 w-px bg-[#9b7cf6]/40" />
+          {provenance.map(([title, id, detail, confidence, latency, source, Icon, tone]) => (
+            <div key={title} className="relative rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2">
+              <span className="absolute -left-[15px] top-4 h-2.5 w-2.5 rounded-full border border-[#b8a1ff] bg-[#081321]" />
+              <div className="flex gap-2">
+                <ToneIcon icon={Icon} tone={tone} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[11px] font-semibold text-white">{title}</div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-400">
+                    {id} - {detail}
+                  </div>
+                  <div className="font-mono text-[9px] text-slate-500">
+                    Conf {confidence} - {latency} - [{source}]
+                  </div>
+                </div>
+                <CheckCircle2 className="h-4 w-4 text-[#49d581]" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel title="Event Log" subtitle="Technical" className="col-span-3">
+        <div className="grid grid-cols-[520px_440px_250px_1fr] gap-3">
+          <div className="rounded-[7px] border border-white/10 bg-[#050d18] p-2 font-mono text-[10px] leading-4">
+            {['Pipeline started EVT-98121', 'Emotion appraisal complete EMO-55321', 'Model response received MOD-77211', 'Quality gate passed QLT-33109', 'Memory extracted MEM-442', 'Learning observation recorded LRN-221', 'Profile evidence written PRF-119', 'Pipeline completed EVT-98122'].map((line, index) => (
+              <div key={line} className="grid grid-cols-[94px_1fr_100px] text-slate-400">
+                <span className="text-[#a78bfa]">12:01:{String(15 + index).padStart(2, '0')}.{231 + index}</span>
+                <span>{line.split(' ').slice(0, -1).join(' ')}</span>
+                <span className="text-[#8db7ff]">{line.split(' ').at(-1)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-[7px] border border-white/10 bg-[#050d18] p-2">
+              <div className="mb-2 text-[12px] font-semibold text-white">Changed Domains</div>
+              {['memory MEM-442', 'emotions EMO-55321', 'learning LRN-221', 'profile PRF-119', 'timeline EVT-98122'].map((row) => (
+                <div key={row} className="flex justify-between rounded-[5px] px-2 py-1 font-mono text-[10px] text-slate-300">
+                  <span className="text-[#c7a9ff]">{row.split(' ')[0]}</span>
+                  <span className="text-[#8db7ff]">{row.split(' ')[1]}</span>
+                </div>
+              ))}
+            </div>
+            <div className="rounded-[7px] border border-[#f66f91]/20 bg-[#f66f91]/6 p-2">
+              <div className="mb-2 text-[12px] font-semibold text-white">Stale Domains</div>
+              {['memory MEM-440 (stale)', 'learning LRN-219 (stale)'].map((row) => (
+                <div key={row} className="rounded-[5px] px-2 py-1 font-mono text-[10px] text-[#ff8fa6]">{row}</div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[7px] border border-white/10 bg-[#050d18] p-2">
+            {[
+              ['server-owned counters', 'enabled'],
+              ['qualityStatus', 'passed'],
+              ['sourceRefs', '6'],
+              ['audit', 'preserved'],
+              ['timestamp', 'May 25, 2025 12:01:16 UTC'],
+              ['traceId', 'TRC-8f9a2c11'],
+            ].map(([label, value]) => (
+              <FieldRow key={label} label={label} value={value} tone={value === 'passed' || value === 'preserved' ? 'emerald' : 'slate'} />
+            ))}
+          </div>
+          <div className="rounded-[7px] border border-white/10 bg-[#050d18] p-2">
+            <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-white">Audit Metadata</div>
+            <div className="grid grid-cols-3 gap-2">
+              {['quality gate', 'source trail', 'repair state', 'provider route', 'timeline', 'usage event'].map((item) => (
+                <StatusPill key={item} tone="emerald">{item}</StatusPill>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  )
+}
+
+function ExecutionLabsTab() {
+  return (
+    <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_300px] gap-3">
+      <div className="min-w-0 space-y-3">
+        <Panel title="Run Orchestration">
+          <div className="grid grid-cols-6 gap-3">
+            {[
+              ['Run ID', 'RUN-7F3A-9921', Play],
+              ['Active Model', 'gpt-4.1-turbo', Brain],
+              ['Provider', 'OpenAI', Hexagon],
+              ['Local (Ollama)', 'Available', Bot],
+              ['Run Budget', '1,250 / 2,000 credits', BarChart3],
+              ['Persistence Mode', 'Durable (PostgreSQL)', Database],
+            ].map(([label, value, Icon]) => (
+              <div key={String(label)} className="flex min-w-0 items-center gap-2 border-r border-white/10 last:border-r-0">
+                <ToneIcon icon={Icon as LucideIcon} tone={value === 'Available' ? 'emerald' : 'violet'} size="sm" />
+                <div className="min-w-0">
+                  <div className="text-[10px] text-slate-400">{label}</div>
+                  <div className="mt-1 truncate text-[13px] text-white">{value}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <div className="grid grid-cols-3 gap-3">
+          {executionLabs.map((lab, index) => (
+            <Panel key={lab.title} className={toneClass[lab.tone].border} right={<StatusPill tone={lab.tone}>{lab.status}</StatusPill>}>
+              <div className="mb-2 flex items-center gap-2">
+                <ToneIcon icon={lab.icon} tone={lab.tone} />
+                <div className="min-w-0">
+                  <div className="truncate text-[17px] font-semibold text-white"><span className="mr-2 font-mono text-slate-400">{index + 1}</span>{lab.title}</div>
+                  <div className="truncate text-[11px] text-slate-400">{lab.subtitle}</div>
+                </div>
+              </div>
+              <MiniFlow steps={lab.flow} tone={lab.tone} />
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {lab.rows.slice(0, 3).map(([label, value]) => (
+                  <div key={label} className="min-h-[74px] rounded-[6px] border border-white/[0.07] bg-white/[0.03] p-2.5">
+                    <div className="font-mono text-[10px] text-[#8db7ff]">{label}</div>
+                    <div className="mt-2 line-clamp-2 text-[11px] leading-5 text-slate-200">{value}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 border-t border-white/[0.06] pt-2.5">
+                {lab.footer.map((item) => (
+                  <StatusPill key={item} tone={item.includes('passed') || item.includes('true') || item.includes('finalized') ? 'emerald' : lab.tone}>{item}</StatusPill>
+                ))}
+              </div>
+            </Panel>
+          ))}
+        </div>
+        <Panel title="Unified Run Lifecycle" subtitle="All execution surfaces">
+          <div className="grid grid-cols-8 gap-2.5">
+            {[
+              ['Draft', 'EVT-1001', 'score 0.62', 'violet'],
+              ['Running', 'EVT-1002', 'score 0.78', 'blue'],
+              ['Blocked', 'EVT-1003', 'reason length_violation', 'rose'],
+              ['Repaired', 'EVT-1004', 'repairs 1', 'amber'],
+              ['Saved', 'EVT-1005', 'persisted true', 'emerald'],
+              ['Published', 'EVT-1006', 'visibility internal', 'emerald'],
+              ['Completed', 'EVT-1007', 'status success', 'violet'],
+              ['Archived', 'EVT-1008', 'retention 90d', 'slate'],
+            ].map(([label, id, meta, tone], index) => (
+              <div key={label} className="relative rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2.5">
+                {index < 7 && <ArrowRight className="absolute -right-4 top-9 h-3.5 w-3.5 text-slate-500" />}
+                <ToneIcon icon={CheckCircle2} tone={tone as Tone} size="sm" />
+                <div className="mt-2 text-[12px] font-semibold text-white">{label}</div>
+                <div className="mt-2 font-mono text-[10px] text-slate-400">12:01:{9 + index * 8}</div>
+                <div className="font-mono text-[10px] text-slate-400">{id}</div>
+                <div className="mt-1 truncate font-mono text-[10px] text-slate-500">{meta}</div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+      <div className="min-w-0 space-y-3">
+        <Panel title="Run Control + Quality Gates">
+          <div className="space-y-2">
+            {[
+              ['Leakage Checks', 'no_sensitive_leakage', 'emerald'],
+              ['Source-Ref Validation', 'valid_refs: 8 / 8', 'emerald'],
+              ['Repair Attempt', 'status: success', 'emerald'],
+              ['Provider Fallback', 'used: No', 'emerald'],
+              ['Local Model Hardening', 'policy: strict', 'emerald'],
+              ['Library Extraction', 'status: partial', 'amber'],
+              ['Parent Workflow Completion', 'status: completed', 'emerald'],
+            ].map(([label, detail, tone]) => (
+              <div key={label} className="flex items-center gap-2.5 rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2.5">
+                <ToneIcon icon={tone === 'amber' ? ShieldCheck : CheckCircle2} tone={tone as Tone} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[11px] font-semibold text-white">{label}</div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-400">{detail}</div>
+                </div>
+                {tone === 'amber' ? <span className="font-mono text-[14px] text-[#ffc05f]">!</span> : <CheckCircle2 className="h-4 w-4 text-[#49d581]" />}
+              </div>
+            ))}
+          </div>
+          <button type="button" className="mt-4 flex h-9 w-full items-center justify-center gap-2 rounded-[5px] border border-[#9b7cf6]/40 bg-[#9b7cf6]/8 text-[12px] text-[#d8ccff]">
+            <ChevronRight className="h-4 w-4" />
+            View Full Run Log
+          </button>
+        </Panel>
+        <Panel title="Persisted Tables">
+          <div className="grid grid-cols-2 gap-2">
+            {['scenario_runs', 'dream_sessions', 'creative_sessions', 'challenge_runs', 'journal_sessions', 'arena_runs'].map((table) => (
+              <div key={table} className="flex min-w-0 items-center gap-2 rounded-[5px] border border-white/[0.07] bg-white/[0.03] px-2 py-2 font-mono text-[10px] text-slate-300">
+                <Database className="h-4 w-4 text-slate-400" />
+                <span className="truncate">{table}</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+      <div className="col-span-2 grid grid-cols-8 gap-2 rounded-[8px] border border-white/10 bg-[#081321]/82 p-2.5 font-mono text-[10px] text-slate-400">
+          {['Run ID RUN-7F3A-9921', 'Owner Platform Operator', 'Started May 25, 2025 12:01:09', 'Duration 00:01:19', 'Model gpt-4.1-turbo', 'Provider OpenAI', 'Quality Overall 0.94', 'Audit preserved'].map((item) => (
+            <span key={item} className="truncate border-r border-white/[0.06] px-2 last:border-r-0">{item}</span>
+          ))}
+      </div>
+    </div>
+  )
+}
+
+function KnowledgePlaneTab() {
+  return (
+    <div className="grid w-full min-w-0 grid-cols-[minmax(0,1.55fr)_minmax(360px,1fr)_minmax(280px,0.72fr)_minmax(300px,0.78fr)] gap-3">
+      <Panel title="Knowledge Library">
+        <div className="mb-2 grid grid-cols-4 gap-2">
+          {[
+            ['Review', '18', 'violet'],
+            ['Validated', '642', 'emerald'],
+            ['Disputed', '6', 'amber'],
+            ['Retired', '23', 'rose'],
+          ].map(([label, count, tone]) => (
+            <StatusPill key={label} tone={tone as Tone}>{label} {count}</StatusPill>
+          ))}
+        </div>
+        <div className="grid min-w-0 grid-cols-[minmax(260px,0.95fr)_minmax(0,1fr)] gap-3">
+          <div className="min-w-0">
+            <div className="mb-2 flex gap-2">
+              <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-[5px] border border-white/10 bg-[#050d18] px-3 text-[11px] text-slate-500">
+                <Search className="h-4 w-4" />
+                Search library items...
+              </div>
+              <button type="button" className="h-8 rounded-[5px] border border-white/10 px-3 text-[11px] text-slate-300">Filter</button>
+            </div>
+            <div className="mb-2 font-mono text-[10px] text-slate-500">Sort: updatedAt (desc)</div>
+            <div className="space-y-1.5">
+              {knowledgeItems.map(([id, title, status, age, tone], index) => (
+                <div key={id} className={cx('rounded-[7px] border px-2.5 py-2', index === 0 ? 'border-[#9b7cf6]/70 bg-[#9b7cf6]/10' : 'border-white/[0.07] bg-white/[0.03]')}>
+                  <div className="flex items-center justify-between font-mono text-[10px] text-slate-400">
+                    <span>{id}</span>
+                    <StatusPill tone={tone}>{status}</StatusPill>
+                  </div>
+                  <div className="mt-1.5 truncate text-[11px] leading-4 text-white">{title}</div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-500">Candidate - {age} - v1</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex items-center justify-between font-mono text-[10px] text-slate-400">
+              <span>1-7 of 18</span>
+              <span>1  2  3  ...</span>
+            </div>
+          </div>
+          <div className="min-w-0 rounded-[8px] border border-white/10 bg-[#050d18] p-3">
+            <div className="mb-2 flex items-start justify-between gap-2">
               <div>
-                <div className="text-sm font-semibold text-foreground">Agent Playground</div>
-                <div className="text-[11px] uppercase tracking-[0.24em] text-muted-foreground">Product Tour</div>
+                <div className="font-mono text-[11px] text-[#b8a1ff]">LIB-9442</div>
+                <h3 className="mt-1 text-[15px] font-semibold leading-5 text-white">Memory decay is non-linear over time</h3>
+              </div>
+              <StatusPill tone="violet">Review</StatusPill>
+            </div>
+            <div className="space-y-2 text-[11px] leading-4 text-slate-300">
+              <p><span className="font-semibold text-white">Claim</span><br />Human and agent memory retention decays non-linearly, with steeper initial drop and long-tail stabilization.</p>
+              <p><span className="font-semibold text-white">Body excerpt</span><br />Multiple longitudinal studies show rapid forgetting within first 24 hours followed by a slower asymptotic decay curve... (512 tokens)</p>
+            </div>
+            <div className="mt-3 grid grid-cols-3 overflow-hidden rounded-[6px] border border-white/[0.07] font-mono text-[10px]">
+              {[
+                ['Category', 'Cognitive Science'],
+                ['Scope', 'Agent + Human'],
+                ['Visibility', 'Internal'],
+                ['Confidence', '0.72'],
+                ['Quality', 'pending_review'],
+                ['Prompt', 'unknown'],
+              ].map(([label, value]) => (
+                <div key={label} className="min-w-0 border-r border-t border-white/[0.07] p-2 text-slate-400">
+                  <div>{label}</div>
+                  <div className={cx('mt-1 truncate', value === 'pending_review' ? 'text-[#ffc05f]' : 'text-slate-300')}>{value}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3">
+              <div className="mb-1.5 text-[11px] font-semibold text-white">Tags</div>
+              <div className="flex flex-wrap gap-1.5">
+                {['memory', 'decay', 'retention', 'cognition', 'time-series', '+2'].map((tag) => (
+                  <StatusPill key={tag} tone="slate">{tag}</StatusPill>
+                ))}
               </div>
             </div>
-          </div>
-
-          <div className="grid gap-6 px-4 py-6 sm:px-5 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-border/40 bg-muted/30 px-3 py-1.5 text-xs text-foreground/80">
-                <Sparkles className="h-3.5 w-3.5 text-primary" />
-                {content.pill}
+            <div className="mt-3 rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2.5">
+              <div className="mb-1.5 text-[11px] font-semibold text-white">Source Refs (3)</div>
+              <div className="space-y-1 font-mono text-[9px] leading-4 text-slate-400">
+                <div><span className="text-[#c7a9ff]">SRC-7711</span> Ebbinghaus Forgetting Curve Revisited (2021)</div>
+                <div><span className="text-[#c7a9ff]">SRC-8812</span> Longitudinal Memory Retention Study (2023)</div>
+                <div><span className="text-[#c7a9ff]">SRC-9917</span> Neural Correlates of Memory Decay (2022)</div>
               </div>
-              <h2 className="mt-4 max-w-3xl text-[clamp(1.6rem,2.2vw,2.2rem)] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-pastel-purple)]">
-                {content.title}
-              </h2>
-              <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-                {content.subtitle}
-              </p>
             </div>
-          </div>
-
-          {/* Redesigned 2-pane layout (Dominant Main + Narrow Rail) */}
-          <div className="border-t border-white/10 p-4 sm:p-5 bg-transparent">
-            <div className="flex flex-col lg:flex-row gap-5">
-
-              {/* Main Dominant Scene */}
-              <div className="flex-1 min-h-[220px] rounded-sm border border-white/10 bg-black/30 backdrop-blur-sm p-5 shadow-sm transition-colors hover:border-white/20 group">
-                <div className="h-full w-full opacity-90 transition-opacity group-hover:opacity-100 flex flex-col justify-center">
-                  {content.mainVisual}
-                </div>
-              </div>
-
-              {/* Narrow Evidence Rail */}
-              <div className="w-full lg:w-[320px] min-h-[220px] rounded-sm border border-white/10 bg-black/10 backdrop-blur-sm p-5 shadow-inner flex flex-col justify-center transition-colors hover:bg-black/20 group">
-                <div className="h-full w-full opacity-90 transition-opacity group-hover:opacity-100 flex flex-col justify-center">
-                  {content.railVisual}
-                </div>
-              </div>
-
+            <div className="mt-2 grid grid-cols-2 gap-2 font-mono text-[9px] text-slate-400">
+              <div className="rounded-[6px] border border-white/[0.07] p-2">Lineage<br /><span className="text-slate-300">No superseded lineage</span></div>
+              <div className="rounded-[6px] border border-white/[0.07] p-2">Duplicate Suggestions<br /><span className="text-slate-300">DUP-881 (0.84)</span></div>
             </div>
           </div>
         </div>
+      </Panel>
+
+      <Panel title="Knowledge Lifecycle Pipeline" subtitle="End-to-end flow from feature output to governed usage">
+        <div className="space-y-2">
+          {knowledgePipeline.map(([title, id, status, ms, tone], index) => (
+            <div key={title} className="relative flex items-center gap-2.5 rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2.5">
+              {index < knowledgePipeline.length - 1 && <span className="absolute left-6 top-full h-2 w-px bg-slate-500" />}
+              <ToneIcon icon={index < 2 ? FileText : index < 4 ? ShieldCheck : index < 6 ? Route : History} tone={tone} size="sm" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[11px] font-semibold text-white">{title}</div>
+                <div className="mt-0.5 text-[10px] text-slate-400">{id}</div>
+              </div>
+              <StatusPill tone={tone}>{status}</StatusPill>
+              <span className="w-11 text-right font-mono text-[10px] text-slate-400">{ms}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2 rounded-[7px] border border-white/10 bg-[#050d18] p-2.5 font-mono text-[10px]">
+          <FieldRow label="Pipeline Run" value="PL-2025-05-25-001" />
+          <FieldRow label="Status" value="completed" tone="emerald" />
+          <FieldRow label="Duration" value="261 ms" />
+        </div>
+      </Panel>
+
+      <div className="space-y-3">
+        <Panel title="Knowledge Graph" subtitle="Graph updated 2m ago">
+          <div className="relative mx-auto h-[220px] w-full">
+            <svg className="absolute inset-0 h-full w-full" viewBox="0 0 280 220">
+              <path d="M140 92 L140 35 M140 92 L218 70 M140 92 L235 120 M140 92 L185 172 M140 92 L78 162 M140 92 L45 112 M140 92 L80 55" stroke="rgba(115,232,165,.55)" strokeWidth="1.4" />
+            </svg>
+            <div className="absolute left-1/2 top-[92px] grid h-22 w-22 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-[#9b7cf6]/60 bg-[#9b7cf6]/20 text-center text-[11px] font-semibold text-white">
+              Memory<br />Decay
+            </div>
+            {[
+              ['Emotion', 'left-[48%] top-[4%]'],
+              ['Forgetting Curve', 'right-[2%] top-[25%]'],
+              ['Time Dynamics', 'right-[0%] top-[55%]'],
+              ['Encoding Strength', 'left-[58%] bottom-[7%]'],
+              ['Attention', 'left-[10%] bottom-[18%]'],
+              ['Context', 'left-[0%] top-[45%]'],
+              ['Strength', 'left-[15%] top-[17%]'],
+            ].map(([label, pos]) => (
+              <div key={label} className={cx('absolute rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[10px] leading-3 text-slate-200', pos)}>{label}</div>
+            ))}
+          </div>
+          <div className="grid grid-cols-[1fr_1fr_1fr] gap-1.5 font-mono text-[9px] text-slate-400">
+            <span><b className="text-[#9b7cf6]">●</b> Concept</span>
+            <span><b className="text-[#73e8a5]">●</b> Memory Link</span>
+            <span><b className="text-[#ffc05f]">●</b> Derived</span>
+          </div>
+          <FieldRow label="Importance" value="0.78" tone="violet" />
+        </Panel>
+        <Panel title="Timeline" subtitle="Server-composed">
+          {['Chat event recorded CH-5512', 'Memory updated MEM-442', 'Emotion state updated EMO-5532', 'Library item validated LIB-9442', 'Timeline event emitted TL-8831'].map((item, index) => (
+            <div key={item} className="grid grid-cols-[58px_1fr_60px] rounded-[5px] px-2 py-1.5 font-mono text-[10px] text-slate-400">
+              <span>12:01:{15 + index}</span>
+              <span>{item.split(' ').slice(0, -1).join(' ')}</span>
+              <span className="text-[#8db7ff]">{item.split(' ').at(-1)}</span>
+            </div>
+          ))}
+        </Panel>
+        <Panel title="Output Quality">
+          <FieldRow label="Evaluator Result" value="passed" tone="emerald" />
+          <FieldRow label="Quality Flags" value="source-backed, grounded" />
+          <FieldRow label="Repair Trace" value="No repairs required" tone="emerald" />
+          <FieldRow label="legacy_unvalidated" value="false" />
+        </Panel>
       </div>
+
+      <Panel title="Validated Context Retrieval" subtitle="Strict rules for prompt-safe retrieval">
+        <div className="space-y-2">
+          {[
+            'Review items cannot affect prompts',
+            'Disputed and retired items disabled',
+            'Merged/superseded items set allowPromptUse false',
+            'Only validated prompt-eligible items retrieved',
+            'Max 3 to 5 context items',
+            'UsageCount and lastUsedAt updated',
+          ].map((rule, index) => (
+            <div key={rule} className="flex items-center gap-2.5 rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2.5">
+              <ToneIcon icon={ShieldCheck} tone={index === 2 ? 'amber' : index < 2 ? 'rose' : 'emerald'} size="sm" />
+              <div className="min-w-0 flex-1 text-[11px] leading-4 text-slate-200">{rule}<div className="font-mono text-[10px] text-[#73e8a5]">State: enforced</div></div>
+              <CheckCircle2 className="h-4 w-4 text-[#49d581]" />
+            </div>
+          ))}
+        </div>
+        <div className="mt-3">
+          <div className="mb-2 flex justify-between text-[11px] text-slate-400"><span>Retrieved Items (4/5)</span><span>Total Usage This Run: 12</span></div>
+          {['LIB-9431 Emotional valence...', 'LIB-9420 Trust grows with...', 'LIB-9442 Memory decay is...', 'LIB-9366 Attention modulates...'].map((item) => (
+            <div key={item} className="flex items-center justify-between rounded-[5px] px-2 py-1 font-mono text-[10px] text-slate-300">
+              <span>{item}</span>
+              <CheckCircle2 className="h-3.5 w-3.5 text-[#49d581]" />
+            </div>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel title="Knowledge Data & Audit" className="col-span-3">
+        <div className="grid grid-cols-6 gap-2">
+          {['library_items 1,284 rows', 'library_item_sources 3,842 rows', 'library_item_validations 2,117 rows', 'library_item_usage_events 18,662 rows', 'timeline_events 156,773 rows', 'collective_broadcasts 2,331 rows'].map((item, index) => (
+            <div key={item} className="flex min-w-0 items-center gap-2 rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2.5">
+              <ToneIcon icon={Database} tone={(['cyan', 'blue', 'violet', 'amber', 'cyan', 'violet'] as Tone[])[index]} size="sm" />
+              <div className="min-w-0 truncate font-mono text-[10px] text-slate-300">{item}<div className="mt-1 text-[#73e8a5]">audit preserved</div></div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+      <Panel title="System Guardrails" className="col-span-1">
+        <div className="grid grid-cols-[1fr_86px] gap-3">
+          <div>
+            <FieldRow label="Invalid transition returns 409" value="enforced" tone="emerald" />
+            <FieldRow label="Source trail exists" value="required" tone="emerald" />
+          </div>
+          <div className="grid place-items-center rounded-[7px] border border-[#73e8a5]/20 bg-[#73e8a5]/8 p-2 text-center">
+            <ShieldCheck className="h-7 w-7 text-[#73e8a5]" />
+            <div className="mt-1 font-mono text-[9px] text-slate-400">Governance<br /><span className="text-[#73e8a5]">ENABLED</span></div>
+          </div>
+        </div>
+      </Panel>
     </div>
   )
 }
 
-export default function Home() {
+function NetworkIntelligenceTab() {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#0B0A10] text-foreground transition-colors duration-300">
-      {/* Premium ambient image background */}
-      {/* Premium ambient image background that scrolls with the content */}
-      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-        <div
-          className="absolute inset-x-0 -top-50 h-[4000px] bg-[url('/landing_page_bg.png')] bg-[length:100%_auto] bg-top bg-no-repeat opacity-[0.85] mix-blend-screen dark:mix-blend-lighten"
-        />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0B0A10]/5 via-[#0B0A10]/40 to-[#0B0A10]" />
-        <div className="absolute inset-0 bg-grid-pattern opacity-5 mix-blend-overlay" />
-      </div>
+    <div className="grid w-full min-w-0 grid-cols-[420px_minmax(0,1fr)_330px_280px] gap-3">
+      <Panel title="Relationship Roster" right={<StatusPill tone="blue">Pairs 128</StatusPill>}>
+        <div className="mb-2 flex gap-2">
+          <div className="flex h-8 flex-1 items-center gap-2 rounded-[5px] border border-white/10 bg-[#050d18] px-3 text-[11px] text-slate-500">
+            <Search className="h-4 w-4" />
+            Search pairs or agents...
+          </div>
+          <button type="button" className="h-8 rounded-[5px] border border-white/10 px-3 text-[11px] text-slate-300">Filter</button>
+        </div>
+        <div className="grid grid-cols-[minmax(0,1fr)_48px_42px_48px_54px_48px] gap-1 px-2 pb-2 text-[9px] text-slate-500">
+          <span>Pair</span><span>Status</span><span>Trust</span><span>Tension</span><span>Last</span><span>Freshness</span>
+        </div>
+        <div className="space-y-1.5">
+          {relationships.map(([a, b, status, trust, tension, last, freshness, toneA, toneB]) => (
+            <div key={`${a}-${b}`} className="grid grid-cols-[minmax(0,1fr)_48px_42px_48px_54px_48px] items-center gap-1 rounded-[7px] border border-white/[0.07] bg-white/[0.03] px-2 py-2 text-[10px] text-slate-300">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <ToneIcon icon={UserRound} tone={toneA} size="sm" />
+                <span className="min-w-0 truncate">{a} <span className="text-slate-500">&lt;-&gt;</span> {b}</span>
+                <ToneIcon icon={Code2} tone={toneB} size="sm" />
+              </div>
+              <span className={status === 'Active' ? 'text-[#73e8a5]' : 'text-[#8db7ff]'}>{status}</span>
+              <span className="font-mono">{trust}</span>
+              <span className="font-mono">{tension}</span>
+              <span className="truncate">{last}</span>
+              <StatusPill tone={freshness === 'Fresh' ? 'emerald' : 'amber'}>{freshness}</StatusPill>
+            </div>
+          ))}
+        </div>
+      </Panel>
 
-
-
-      <div className="relative z-10 pt-16">
-        <section className="px-4 pb-12 pt-12 sm:px-10 lg:px-14">
-          <div className="mx-auto max-w-[120rem]">
-            <div className="flex flex-col items-start text-left">
-              <div className="max-w-4xl">
-                <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] font-medium tracking-wide text-primary">
-                  <Sparkles className="h-3 w-3" />
-                  <span className="uppercase text-primary/80">Alpha Release</span>
-                  <span className="h-3 w-[1px] bg-primary/20 mx-1" />
-                  <span className="text-primary/60">Personality & Arena Workspace</span>
+      <div className="space-y-3">
+        <Panel title="Pair Detail" subtitle="Selected Relationship: Architect <-> Coder" right={<StatusPill tone="violet">REL-204</StatusPill>}>
+          <div className="grid grid-cols-[170px_1fr_170px] gap-3">
+            <div className="rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2.5">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-white">Metrics Overview</div>
+              {[
+                ['Trust', '0.82', 'w-[82%]', 'emerald'],
+                ['Respect', '0.86', 'w-[86%]', 'emerald'],
+                ['Affection', '0.64', 'w-[64%]', 'amber'],
+                ['Familiarity', '0.88', 'w-[88%]', 'emerald'],
+                ['Alignment', '0.79', 'w-[79%]', 'emerald'],
+                ['Tension', '0.18', 'w-[18%]', 'rose'],
+              ].map(([label, value, width, tone]) => (
+                <div key={label} className="mb-2">
+                  <div className="mb-1 flex justify-between text-[11px] text-slate-300"><span>{label}</span><span>{value}</span></div>
+                  <div className="h-1.5 rounded-full bg-white/8"><div className={cx('h-full rounded-full', width, tone === 'rose' ? 'bg-[#ff8fa6]' : tone === 'amber' ? 'bg-[#ffc05f]' : 'bg-[#73e8a5]')} /></div>
                 </div>
-
-                <h1 className="mt-8 max-w-4xl text-[clamp(2.5rem,5.5vw,4.2rem)] font-bold leading-[1.05] tracking-[-0.035em] text-foreground">
-                  Build agents that remember, feel, and <span className="text-[var(--color-pastel-pink)]">evolve together.</span>
-                </h1>
-
-                <p className="mt-6 max-w-2xl text-[15px] leading-[1.7] text-muted-foreground">
-                  Create believable AI personalities, give them long-term memory, emotional state,
-                  relationships, journals, plans, and shared knowledge, then run scenarios that actually explain what changed.
-                </p>
-
-                <div className="mt-10 flex flex-wrap gap-4">
-                  <Link
-                    href="/agents/new"
-                    className="inline-flex h-12 items-center justify-center rounded-sm bg-foreground px-8 text-sm font-bold text-background transition-colors hover:bg-foreground/90 shadow-sm"
-                  >
-                    Start Building
-                  </Link>
-                  <Link
-                    href="#workflow"
-                    className="inline-flex h-12 items-center justify-center rounded-sm border border-border/40 bg-transparent px-8 text-sm font-bold text-foreground transition-colors hover:bg-muted/20"
-                  >
-                    See Workflow
-                  </Link>
+              ))}
+            </div>
+            <div className="relative min-h-[222px] overflow-hidden rounded-[7px] border border-white/[0.07] bg-[#050d18] p-3">
+              <svg className="absolute inset-x-8 top-7 h-[126px] w-[calc(100%-64px)]" viewBox="0 0 430 150" preserveAspectRatio="none">
+                <path d="M76 47 L214 101 L354 47" stroke="rgba(115,232,165,.64)" strokeWidth="2.2" fill="none" />
+                <path d="M76 38 L214 92 L354 38" stroke="rgba(184,161,255,.62)" strokeWidth="2.2" fill="none" />
+                <path d="M214 100 L354 56" stroke="rgba(255,192,95,.58)" strokeWidth="1.6" fill="none" />
+              </svg>
+              <div className="absolute left-[12%] top-6 text-center">
+                <div
+                  className="grid h-[72px] w-[76px] place-items-center border border-[#b783ff]/70 bg-[#9b7cf6]/16 shadow-[inset_0_0_18px_rgba(155,124,246,.16)]"
+                  style={{ clipPath: 'polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0 50%)' }}
+                >
+                  <UserRound className="h-8 w-8 text-[#c7a9ff]" />
                 </div>
+                <div className="mt-2 text-[13px] font-semibold text-white">Architect</div>
+              </div>
+              <div className="absolute right-[12%] top-6 text-center">
+                <div
+                  className="grid h-[72px] w-[76px] place-items-center border border-[#6fa8ff]/70 bg-[#2e73c8]/16 shadow-[inset_0_0_18px_rgba(111,168,255,.14)]"
+                  style={{ clipPath: 'polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0 50%)' }}
+                >
+                  <Code2 className="h-8 w-8 text-[#8db7ff]" />
+                </div>
+                <div className="mt-2 text-[13px] font-semibold text-white">Coder</div>
+              </div>
+              <div
+                className="absolute left-1/2 top-[88px] grid h-[84px] w-[98px] -translate-x-1/2 place-items-center border border-[#49d581]/45 bg-[#123d35]/82 text-center text-[12px] font-semibold leading-5 text-white shadow-[inset_0_0_22px_rgba(73,213,129,.12)]"
+                style={{ clipPath: 'polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0 50%)' }}
+              >
+                <span>Relationship<br />REL-204</span>
+              </div>
+              <div className="absolute bottom-4 left-1/2 grid w-[84%] -translate-x-1/2 grid-cols-4 gap-2">
+                {[
+                  ['Strong', 'bg-[#73e8a5]'],
+                  ['Moderate', 'bg-[#ffc05f]'],
+                  ['Weak', 'bg-[#ff6d7c]'],
+                  ['Neutral', 'bg-slate-500'],
+                ].map(([label, dot]) => (
+                  <div key={label} className="flex h-8 items-center justify-center gap-2 rounded-[5px] border border-white/[0.07] bg-white/[0.03] text-[11px] font-semibold text-slate-300">
+                    <span className={cx('h-2 w-2 rounded-full', dot)} />
+                    {label}
+                  </div>
+                ))}
               </div>
             </div>
-
-            <div id="feature-showcase" className="mt-16">
-              <InteractiveShowcase />
+            <div className="rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2.5">
+              <FieldRow label="Interaction Count" value="148" />
+              <FieldRow label="First Meeting" value="May 12, 2025" />
+              <FieldRow label="Last Interaction" value="12:01" />
+              <FieldRow label="Events" value="7" />
+              <StatusPill tone="blue">collaboration</StatusPill>
+              <StatusPill tone="violet">technical</StatusPill>
             </div>
           </div>
-        </section>
+        </Panel>
+        <Panel title="Evidence-Driven Synthesis Pipeline">
+          <MiniFlow steps={['Source Event', 'Relationship Evidence', 'Synthesis Run', 'Revision', 'Pair Projection Updated']} tone="violet" />
+          <div className="mt-3 rounded-[7px] border border-white/[0.07] bg-[#050d18] p-2.5">
+            <div className="grid grid-cols-[90px_86px_86px_72px_72px_72px_1fr_82px] border-b border-white/[0.06] pb-2 font-mono text-[10px] text-slate-500">
+              <span>Event ID</span><span>Actor</span><span>Target</span><span>Valence</span><span>Weight</span><span>Conf</span><span>Source</span><span>Timestamp</span>
+            </div>
+            {[
+              ['EVD-881', 'Architect', 'Coder', 'Positive', '0.42', '0.91', 'arena', 'May 25, 12:00'],
+              ['EVD-865', 'Coder', 'Architect', 'Positive', '0.31', '0.87', 'challenge', 'May 25, 11:45'],
+              ['EVD-842', 'Architect', 'Coder', 'Negative', '0.38', '0.84', 'conflict', 'May 25, 10:22'],
+              ['EVD-828', 'Mentor', 'Coder', 'Positive', '0.22', '0.78', 'mentorship', 'May 25, 09:41'],
+            ].map((row) => (
+              <div key={row[0]} className="grid grid-cols-[90px_86px_86px_72px_72px_72px_1fr_82px] py-1.5 font-mono text-[10px] text-slate-400">
+                {row.map((cell, index) => <span key={`${row[0]}-${cell}`} className={index === 3 ? (cell === 'Negative' ? 'text-[#ff8fa6]' : 'text-[#73e8a5]') : ''}>{cell}</span>)}
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
 
-        <section className="px-4 py-20 sm:px-6 lg:px-8">
-          <div className="mx-auto max-w-6xl text-center">
-            <div className="text-sm font-semibold uppercase tracking-[0.32em] text-primary">Used by teams exploring AI systems</div>
-            <h2 className="mt-5 text-[clamp(2.4rem,5vw,4rem)] font-semibold leading-[0.98] tracking-[-0.05em] text-[var(--color-pastel-yellow)]">
-              One product story from identity to simulation.
-            </h2>
-            <p className="mx-auto mt-5 max-w-3xl text-base leading-8 text-white/56 sm:text-lg">
-              The page now follows the same rhythm as the reference, but maps the story directly to Agent Playground.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-              {audience.map((item) => (
-                <span
-                  key={item}
-                  className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-medium text-white/72"
-                >
-                  {item}
+      <div className="space-y-3">
+        <Panel title="Collective Intelligence">
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              ['Who Knows What', 'Coder: architecture patterns. Architect: system design.', 'cyan'],
+              ['Expert Referrals', 'Coder -> Tester (perf). Architect -> Researcher.', 'amber'],
+              ['Validated Broadcasts', '3 new broadcasts available.', 'emerald'],
+              ['Support / Dispute Decisions', 'Support: 8, Dispute: 1.', 'rose'],
+              ['Network Visibility', 'Visible to 12 agents.', 'emerald'],
+              ['Consensus Signal', '78% agreement on stance.', 'emerald'],
+            ].map(([title, body, tone]) => (
+              <div key={title} className="rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2.5">
+                <ToneIcon icon={Network} tone={tone as Tone} size="sm" />
+                <div className="mt-2 text-[11px] font-semibold text-white">{title}</div>
+                <div className="mt-1.5 text-[10px] leading-4 text-slate-400">{body}</div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="Mentorship">
+          <FieldRow label="Mentor Match" value="Mentor -> Coder" tone="emerald" />
+          <FieldRow label="Focus Areas" value="Code Quality, Design Patterns" />
+          <FieldRow label="Lesson Status" value="8 completed, 2 in progress" />
+          <FieldRow label="Growth Connection" value="+0.18 capability delta" tone="emerald" />
+          <FieldRow label="Side Effect" value="Trust +0.07 Respect +0.05" tone="emerald" />
+        </Panel>
+      </div>
+
+      <Panel title="Social Provenance">
+        <div className="relative space-y-2 pl-5">
+          <span className="absolute bottom-6 left-2 top-6 w-px bg-slate-600" />
+          {[
+            ['Arena event generated social signal', 'EVD-881', 'ARNA-7719 12:00', 'violet'],
+            ['Challenge result added evidence', 'EVD-865', 'CHLG-5521 11:45', 'blue'],
+            ['Conflict resolution adjusted tension', 'EVD-842', 'CNFL-3312 10:22', 'rose'],
+            ['Mentorship completion improved trust', 'EVD-828', 'MENT-2291 09:41', 'emerald'],
+            ['Synthesis run applied revision', 'SYN-119', 'REV-044 12:01', 'violet'],
+            ['Library candidate created', 'LIB-CAND-77', 'LIB-9442 12:02', 'amber'],
+          ].map(([title, id, detail, tone]) => (
+            <div key={title} className="relative rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2.5">
+              <span className="absolute -left-[17px] top-5 h-2.5 w-2.5 rounded-full border border-slate-400 bg-[#081321]" />
+              <div className="flex gap-3">
+                <ToneIcon icon={Network} tone={tone as Tone} />
+                <div>
+                  <div className="text-[11px] font-semibold leading-4 text-white">{title}</div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-400">{id} conf: 0.91</div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-500">{detail}</div>
+                </div>
+                <CheckCircle2 className="ml-auto h-4 w-4 text-[#49d581]" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel className="col-span-2" title="Downstream Effects">
+        <div className="grid grid-cols-6 gap-2">
+          {[
+            ['Timeline Impact', 'Relationship revisions appear in Timeline.', Clock3, 'cyan'],
+            ['Library Impact', 'Material synthesis can create review candidates.', BookOpen, 'amber'],
+            ['Scenario Impact', 'Relationship state influences branching.', Network, 'violet'],
+            ['Journal Impact', 'Affects reflective framing in entries.', FileText, 'rose'],
+            ['Challenge Impact', 'Shapes team selection and scoring.', Trophy, 'amber'],
+            ['Arena Impact', 'Informs seeding, debate bias and follow-up.', ShieldCheck, 'blue'],
+          ].map(([title, body, Icon, tone]) => (
+            <div key={String(title)} className="rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2.5">
+              <ToneIcon icon={Icon as LucideIcon} tone={tone as Tone} />
+              <div className="mt-2 text-[11px] font-semibold text-white">{title}</div>
+              <div className="mt-1.5 text-[10px] leading-4 text-slate-400">{body}</div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+      <Panel title="System State">
+        <FieldRow label="Last Synthesis Run" value="SYN-119 12:01:14" />
+        <FieldRow label="Last Revision" value="REV-044 12:01:18" />
+        <FieldRow label="Network Entities" value="42" />
+        <FieldRow label="Active Relationships" value="128" />
+        <FieldRow label="Evidence Events (24h)" value="1,248" />
+      </Panel>
+      <Panel title="Guardrails">
+        {['No private memory leaked', 'Attribution preserved', 'Bias detection active', 'Explainability enforced', 'Source refs required'].map((item) => (
+          <div key={item} className="flex items-center gap-2 py-1.5 text-[12px] text-slate-300"><CheckCircle2 className="h-4 w-4 text-[#49d581]" />{item}</div>
+        ))}
+      </Panel>
+    </div>
+  )
+}
+
+function RuntimeTab() {
+  const stack = [
+    ['Client Workspace', 'Next.js App Router', Code2, 'blue'],
+    ['Next.js App Router', 'API Route Handlers', Route, 'cyan'],
+    ['Service Layer', 'Business Logic + Orchestration', Hexagon, 'violet'],
+    ['Repository Layer', 'Data Access Abstractions', Database, 'amber'],
+    ['Drizzle ORM', 'Typesafe Queries & Migrations', Zap, 'emerald'],
+    ['PostgreSQL Canonical Store', 'ACID - Consistent - Authoritative', Database, 'violet'],
+  ] satisfies Array<[string, string, LucideIcon, Tone]>
+
+  return (
+    <div className="grid w-full min-w-0 grid-cols-[280px_minmax(0,1.35fr)_minmax(0,1.08fr)_minmax(0,1.08fr)_minmax(340px,1fr)] gap-3">
+      <Panel title="Architecture Stack" subtitle="Request flow from client to canonical store" className="row-span-2">
+        <div className="space-y-1.5">
+          {stack.map(([title, subtitle, Icon, tone], index) => (
+            <div key={title} className="relative flex items-center gap-2 rounded-[7px] border border-white/[0.08] bg-white/[0.035] p-2">
+              {index < stack.length - 1 && <span className="absolute -bottom-3 left-1/2 text-slate-400">v</span>}
+              <ToneIcon icon={Icon} tone={tone} />
+              <div>
+                <div className="text-[12px] font-semibold text-white">{index + 1}. {title}</div>
+                <div className="mt-0.5 text-[10px] text-slate-400">{subtitle}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 rounded-[7px] border border-[#f6a72a]/40 bg-[#f6a72a]/10 p-2">
+          <div className="mb-2 flex items-center gap-2"><ToneIcon icon={Database} tone="amber" size="sm" /><span className="text-[12px] font-semibold text-white">Firestore Legacy / Migration Mirror</span><StatusPill tone="amber">Legacy</StatusPill></div>
+          <p className="text-[10px] leading-4 text-slate-400">Read support during migration only. Not canonical runtime store.</p>
+        </div>
+      </Panel>
+
+      <Panel title="Live Request Trace" right={<StatusPill tone="emerald">Request in progress</StatusPill>}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="text-[15px] font-semibold text-white">POST /api/agents/AGT-992/chat</div>
+          <div className="flex shrink-0 gap-2"><StatusPill tone="violet">REQ-7f81c2a5</StatusPill><StatusPill tone="slate">1,842 ms</StatusPill></div>
+        </div>
+        <div className="grid grid-cols-[30px_76px_1fr_52px_28px] border-b border-white/[0.07] pb-1.5 font-mono text-[9px] text-slate-500">
+          <span>Step</span><span>ID</span><span>Description</span><span>Latency</span><span>Status</span>
+        </div>
+        {runtimeTrace.map(([step, id, description, latency]) => (
+          <div key={id} className="grid grid-cols-[30px_76px_1fr_52px_28px] py-1.5 font-mono text-[10px] leading-4 text-slate-400">
+            <span className="text-[#73e8a5]">{step}</span>
+            <span className="text-[#8db7ff]">{id}</span>
+            <span className="text-slate-300">{description}</span>
+            <span>{latency}</span>
+            <CheckCircle2 className="h-3.5 w-3.5 text-[#49d581]" />
+          </div>
+        ))}
+        <div className="mt-2 flex justify-between gap-2 border-t border-white/[0.07] pt-2 font-mono text-[10px] text-slate-400">
+          <span>Total Time <b className="ml-2 rounded bg-white/8 px-2 py-1 text-slate-200">1,520 ms</b></span>
+          <span>Quality Status <StatusPill tone="emerald">passed</StatusPill></span>
+          <span>Source Refs <b className="text-slate-200">7</b></span>
+        </div>
+      </Panel>
+
+      <Panel title="Provider Routing" subtitle="Policy-driven routing with resilient fallbacks">
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            ['Gemini', 'gemini-1.5-pro', 'Healthy', '812 ms', 'blue'],
+            ['Groq', 'llama3-70b-8192', 'Healthy', '643 ms', 'rose'],
+            ['Ollama', 'llama3.1:70b', 'Healthy (Local)', '523 ms', 'emerald'],
+          ].map(([name, model, health, latency, tone]) => (
+            <div key={name} className="rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2">
+              <ToneIcon icon={Hexagon} tone={tone as Tone} size="sm" />
+              <div className="mt-2 text-[12px] font-semibold text-white">{name}</div>
+              <div className="mt-1 text-[10px] leading-4 text-slate-400">Provider<br />{model}<br /><span className="text-[#73e8a5]">{health}</span><br />Latency {latency}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 space-y-1">
+          <FieldRow label="Selected Provider" value="Groq (llama3-70b-8192)" tone="emerald" />
+          <FieldRow label="Routed By" value="policy: balanced_latency" />
+          <FieldRow label="Fallback Order" value="Groq -> Gemini -> Ollama" />
+          <FieldRow label="Timeout Handling" value="30s hard timeout + fallback" />
+        </div>
+      </Panel>
+
+      <Panel title="PostgreSQL Canonical Store" subtitle="Schema map (authoritative runtime)">
+        {[
+          ['Core', ['agents', 'messages', 'memories', 'memory_graphs']],
+          ['Identity & Profile', ['profile_analysis_runs', 'agent_relationships', 'relationship_evidence']],
+          ['Execution Surfaces', ['creative_sessions', 'journal_sessions', 'dream_sessions', 'scenario_runs', 'challenge_runs', 'arena_runs']],
+          ['Knowledge & Library', ['library_items', 'library_item_validations', 'library_item_usage_events']],
+          ['Network & Collective', ['collective_broadcasts']],
+        ].map(([group, tables]) => (
+          <div key={String(group)} className="mb-2 rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2">
+            <div className="mb-1.5 text-[11px] font-semibold text-[#c7a9ff]">{group}</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {(tables as string[]).map((table) => (
+                <span key={table} className="flex items-center gap-2 rounded-[4px] border border-white/[0.07] bg-[#050d18] px-2 py-1 font-mono text-[9px] text-slate-300">
+                  <Database className="h-3.5 w-3.5 text-slate-400" />
+                  {table}
                 </span>
               ))}
             </div>
           </div>
-        </section>
+        ))}
+        <div className="font-mono text-[10px] text-[#73e8a5]">All tables are versioned via Drizzle migrations</div>
+      </Panel>
 
-        <section id="workflow" className="px-4 py-12 sm:px-6 lg:px-8">
-          <BentoGridSection />
-        </section>
+      <Panel title="Inspectable Runtime" subtitle="Everything is observable and auditable" className="row-span-2">
+        <div className="space-y-2">
+          {[
+            ['PostgreSQL Canonical', 'Single source of truth', 'blue'],
+            ['Drizzle Schema', 'Type-safe, versioned', 'violet'],
+            ['Bounded Provider Calls', 'Policy + timeouts + retries', 'violet'],
+            ['Server-Only Secrets', 'Keys never exposed to client', 'amber'],
+          ].map(([title, body, tone]) => (
+            <div key={title} className="flex items-center gap-2 rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2">
+              <ToneIcon icon={title.includes('Secrets') ? LockKeyhole : Database} tone={tone as Tone} />
+              <div className="flex-1">
+                <div className="text-[11px] font-semibold text-white">{title}</div>
+                <div className="mt-1 text-[10px] text-slate-400">{body}</div>
+              </div>
+              <CheckCircle2 className="h-4 w-4 text-[#49d581]" />
+            </div>
+          ))}
+        </div>
+        {[
+          ['qualityStatus', 'passed'],
+          ['sourceRefs', '7'],
+          ['audit events', '1,248'],
+          ['usage events', '3,412'],
+          ['staleDomains', '0'],
+          ['changedDomains', '5'],
+          ['legacy_unvalidated compatibility', 'enabled'],
+        ].map(([label, value]) => (
+          <FieldRow key={label} label={label} value={value} tone={value === 'passed' || value === 'enabled' ? 'emerald' : 'slate'} />
+        ))}
+      </Panel>
 
+      <div className="col-span-3 col-start-2 grid min-w-0 grid-cols-[minmax(0,0.95fr)_minmax(0,0.95fr)_minmax(0,1.1fr)_minmax(0,1fr)] gap-3">
+        <Panel title="Quality Gates">
+          {['Output Quality Gate', 'Source Reference Gate', 'Safety & Guardrail Gate', 'Completeness Gate'].map((gate) => (
+            <FieldRow key={gate} label={gate} value="Enforced" tone="emerald" />
+          ))}
+        </Panel>
+        <Panel title="Evaluator Scripts">
+          {['evaluate-creative', 'evaluate-journal', 'evaluate-profile', 'evaluate-scenarios'].map((script) => (
+            <FieldRow key={script} label={script} value="Latest" tone="emerald" />
+          ))}
+        </Panel>
+        <Panel title="Engineering Verification">
+          <FieldRow label="npm run lint" value="Passed 1.2s" tone="emerald" />
+          <FieldRow label="npm run build" value="Passed 6.8s" tone="emerald" />
+          <FieldRow label="npm run db:migrate" value="Up to date" tone="emerald" />
+          <FieldRow label="Dry-run Backfills" value="No changes" tone="emerald" />
+        </Panel>
+        <Panel title="Migration & Backfill" subtitle="Operational utilities">
+          <FieldRow label="Backfill Missing Source Refs" value="Dry-run" tone="violet" />
+          <FieldRow label="Recalculate Signals" value="Dry-run" tone="violet" />
+          <FieldRow label="Rebuild Embeddings" value="Dry-run" tone="violet" />
+          <FieldRow label="Validate Candidates" value="Dry-run" tone="violet" />
+        </Panel>
       </div>
+
+      <Panel title="Server Event Log" subtitle="Real-time operational events" className="col-span-4">
+        <div className="grid grid-cols-[150px_64px_1fr_360px_120px_76px_44px] border-b border-white/[0.07] pb-2 font-mono text-[9px] text-slate-500">
+          <span>Time (UTC)</span><span>Level</span><span>Event</span><span>Details</span><span>Request ID</span><span>Duration</span><span>Status</span>
+        </div>
+        {[
+          ['2025-05-25 12:01:12.123', 'INFO', 'route.validated', 'POST /api/agents/AGT-992/chat validated successfully', 'REQ-7f81c2a5', '14ms'],
+          ['2025-05-25 12:01:12.145', 'INFO', 'repository.tx_committed', 'Assistant message persisted', 'REQ-7f81c2a5', '27ms'],
+          ['2025-05-25 12:01:12.176', 'DEBUG', 'library.extraction.skipped', 'No high-quality candidate extracted', 'REQ-7f81c2a5', '5ms'],
+          ['2025-05-25 12:01:12.198', 'INFO', 'timeline.adapter.emitted', 'Timeline event emitted', 'REQ-7f81c2a5', '21ms'],
+          ['2025-05-25 12:01:12.201', 'INFO', 'provider.fallback.not_needed', 'Groq responded successfully', 'REQ-7f81c2a5', '0ms'],
+          ['2025-05-25 12:01:12.242', 'INFO', 'quality.gate.passed', 'Output quality gate passed', 'REQ-7f81c2a5', '96ms'],
+          ['2025-05-25 12:01:12.258', 'INFO', 'usage.recorded', 'Usage recorded', 'REQ-7f81c2a5', '16ms'],
+        ].map((row) => (
+          <div key={row[2]} className="grid grid-cols-[150px_64px_1fr_360px_120px_76px_44px] py-1.5 font-mono text-[10px] text-slate-400">
+            <span>{row[0]}</span><span className="text-[#73e8a5]">{row[1]}</span><span className="text-slate-300">{row[2]}</span><span className="truncate">{row[3]}</span><span className="text-[#c7a9ff]">{row[4]}</span><span>{row[5]}</span><CheckCircle2 className="h-4 w-4 text-[#49d581]" />
+          </div>
+        ))}
+      </Panel>
+      <Panel title="Runtime Health">
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            ['Uptime', '7d 14h 22m'],
+            ['Requests (24h)', '18,642'],
+            ['Avg Latency', '782 ms'],
+            ['Error Rate', '0.23%'],
+            ['DB Health', 'Healthy'],
+            ['Queue Depth', '18'],
+            ['Providers Healthy', '3 / 3'],
+            ['Active Agents', '128'],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2">
+              <div className="text-[11px] text-slate-400">{label}</div>
+              <div className="mt-1 font-mono text-[14px] text-[#73e8a5]">{value}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex items-center gap-2 font-mono text-[11px] text-[#73e8a5]"><CheckCircle2 className="h-4 w-4" />All systems operational</div>
+      </Panel>
+    </div>
+  )
+}
+
+function ArchitectureCockpit() {
+  const [activeTab, setActiveTab] = useState<CockpitTab>('Agent Core')
+
+  return (
+    <section id="architecture" className="relative z-20 -mt-[185px] bg-transparent px-3 pb-7 pt-0 text-white sm:px-5">
+      <div className="mx-auto w-[calc(100vw-72px)] max-w-[1820px] overflow-hidden rounded-[14px] border border-white/10 bg-[#030914] shadow-[0_30px_120px_-90px_rgba(0,0,0,0.95)]">
+        <CockpitChrome activeTab={activeTab} setActiveTab={setActiveTab} />
+        <div className="overflow-hidden">
+          <div className="w-full p-2">
+            {activeTab === 'Agent Core' && <AgentCoreTab />}
+            {activeTab === 'Execution Labs' && <ExecutionLabsTab />}
+            {activeTab === 'Knowledge Plane' && <KnowledgePlaneTab />}
+            {activeTab === 'Network Intelligence' && <NetworkIntelligenceTab />}
+            {activeTab === 'Runtime' && <RuntimeTab />}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function WorkflowStory() {
+  return (
+    <section id="workflow" className="relative overflow-hidden bg-[#020713] px-5 py-12 text-white sm:py-14">
+      <div
+        className="absolute inset-0 opacity-22"
+        style={{ backgroundImage: "url('/landing_page_bg.png')", backgroundSize: 'cover', backgroundPosition: 'center' }}
+      />
+      <div className="absolute inset-0 bg-[#020713]/82" />
+      <div className="relative mx-auto max-w-[1810px]">
+        <div className="mx-auto max-w-[760px] text-center">
+          <div className="font-mono text-[12px] uppercase tracking-[0.12em] text-[#d8ccff]">Workflow Story</div>
+          <h2 className="mt-3 text-[clamp(2.25rem,3.15vw,3.65rem)] font-semibold leading-[1.02] tracking-tight">
+            Every action leaves a <span className="text-[#b8a1ff]">trace.</span>
+          </h2>
+          <p className="mt-4 text-[15px] leading-6 text-slate-300">
+            Agent Playground turns prompts, runs, relationships, and knowledge into source-backed state you can inspect later.
+          </p>
+        </div>
+
+        <div className="mt-8 grid grid-cols-[1fr_220px] gap-4 max-xl:block">
+          <div>
+            <div className="grid grid-cols-6 gap-3 max-xl:grid-cols-3 max-md:grid-cols-1">
+              {workflowSteps.map((step, index) => (
+                <div key={step.title} className="relative rounded-[8px] border border-white/15 bg-[#071321]/80 p-4">
+                  {index < workflowSteps.length - 1 && (
+                    <div className="absolute -right-4 top-1/2 z-10 flex w-4 items-center">
+                      <span className="h-px flex-1 bg-[#b8a1ff]/65" />
+                      <ArrowRight className="h-4 w-4 text-[#b8a1ff]" />
+                    </div>
+                  )}
+                  <StatusPill tone={step.tone}>{String(index + 1).padStart(2, '0')}</StatusPill>
+                  <div className="mt-5"><ToneIcon icon={step.icon} tone={step.tone} size="lg" /></div>
+                  <h3 className="mt-5 text-[15px] font-semibold text-white">{step.title}</h3>
+                  <p className="mt-2 min-h-[58px] text-[12px] leading-5 text-slate-300">{step.body}</p>
+                  <div className="mt-4 border-y border-white/[0.07] py-2.5">
+                    {step.rows.map((row) => (
+                      <div key={row} className="flex items-center justify-between gap-2 py-1 font-mono text-[10px] text-slate-300">
+                        <span className="truncate">{row}</span>
+                        <StatusPill tone={row.includes('in review') ? 'amber' : row.includes('disputed') ? 'rose' : 'emerald'}>{row.split(' ').at(-1)}</StatusPill>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 text-[11px] text-slate-400">Table / Entity</div>
+                  <div className="mt-1 font-mono text-[13px] text-white">{step.table}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <Panel title="Trace Example" className="max-xl:mt-4">
+            <div className="space-y-2.5">
+              {[
+                ['MSG-188', 'User message', '12:01:12', MessageSquare, 'violet'],
+                ['MEM-442', 'Memory stored', '12:01:12', Network, 'cyan'],
+                ['LIB-9442', 'Library item validated', '12:01:13', BookOpen, 'emerald'],
+                ['TL-8831', 'Timeline event emitted', '12:01:15', Clock3, 'rose'],
+                ['REV-044', 'Provenance revision', '12:01:16', ShieldCheck, 'rose'],
+              ].map(([id, label, time, Icon, tone], index) => (
+                <div key={String(id)} className="relative rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-2.5">
+                  {index < 4 && <ArrowRight className="absolute -bottom-3.5 left-1/2 h-3.5 w-3.5 rotate-90 text-slate-400" />}
+                  <div className="flex items-center gap-2.5">
+                    <ToneIcon icon={Icon as LucideIcon} tone={tone as Tone} />
+                    <div>
+                      <div className={cx('font-mono text-[11px]', toneClass[tone as Tone].text)}>{id}</div>
+                      <div className="text-[11px] text-slate-300">{label}</div>
+                      <div className="font-mono text-[10px] text-slate-500">{time}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </div>
+
+        <Panel title="Persistence & Infrastructure Foundation" className="mt-6">
+          <div className="grid grid-cols-6 gap-2.5 max-xl:grid-cols-3 max-md:grid-cols-1">
+            {foundation.map(([title, body, Icon, status, tone]) => (
+              <div key={title} className="rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-3">
+                <div className="flex items-center gap-3">
+                  <ToneIcon icon={Icon} tone={tone} />
+                  <div>
+                    <div className="text-[13px] font-semibold leading-4 text-white">{title}</div>
+                    <div className="mt-1.5 text-[11px] leading-4 text-slate-400">{body}</div>
+                  </div>
+                </div>
+                <div className="mt-3"><StatusPill tone={tone}>{status}</StatusPill></div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+    </section>
+  )
+}
+
+function FinalCta() {
+  const ribbon = [
+    ['Agent Core', 'Identity & State', Brain, 'violet'],
+    ['Execution Labs', 'Runs & Experiments', FlaskConical, 'blue'],
+    ['Knowledge Plane', 'Library & Governance', BookOpen, 'cyan'],
+    ['Network Intelligence', 'Relationships & Signals', Users, 'rose'],
+    ['Runtime', 'Infrastructure & Proof', Server, 'amber'],
+  ] satisfies Array<[string, string, LucideIcon, Tone]>
+
+  return (
+    <section className="relative overflow-hidden bg-[#020713] px-5 pb-0 pt-12 text-white">
+      <div
+        className="absolute inset-0 opacity-30"
+        style={{ backgroundImage: "url('/landing_page_bg.png')", backgroundSize: 'cover', backgroundPosition: 'center' }}
+      />
+      <div className="absolute inset-0 bg-[#020713]/78" />
+      <div className="relative mx-auto max-w-[1560px] text-center">
+        <div className="font-mono text-[12px] uppercase tracking-[0.12em] text-[#d8ccff]">Start Building</div>
+        <h2 className="mx-auto mt-4 max-w-[800px] text-[clamp(2.4rem,3.6vw,4.2rem)] font-semibold leading-[1.04] tracking-tight">
+          Build your own<br />
+          <span className="text-[#9da7ff]">inspectable</span> <span className="text-[#c9a5ff]">agent</span> <span className="text-[#ff8fa6]">system.</span>
+        </h2>
+        <p className="mx-auto mt-4 max-w-[680px] text-[15px] leading-6 text-slate-300">
+          Create agents, run experiments, validate knowledge, inspect provenance, and keep every important state change traceable.
+        </p>
+        <div className="mt-6 flex justify-center gap-4 max-sm:flex-col">
+          <Link href="/agents/new" className="inline-flex h-12 min-w-64 items-center justify-center gap-4 rounded-[7px] border border-[#b8a1ff]/25 bg-[#a997ff] px-6 text-[15px] font-semibold text-[#050713]">
+            Start Building
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+          <Link href="#architecture" className="inline-flex h-12 min-w-64 items-center justify-center gap-3 rounded-[7px] border border-white/16 bg-[#050b16]/65 px-6 text-[15px] font-semibold text-white">
+            <SquareTerminal className="h-4 w-4" />
+            Open Architecture Cockpit
+          </Link>
+        </div>
+        <div className="mx-auto mt-6 grid max-w-[980px] grid-cols-5 rounded-[8px] border border-white/10 bg-[#050d18]/70 max-lg:grid-cols-2 max-sm:grid-cols-1">
+          {[
+            ['Local-first friendly', Code2, 'violet'],
+            ['PostgreSQL-backed', Database, 'cyan'],
+            ['Provider-flexible', Route, 'blue'],
+            ['Quality-gated', ShieldCheck, 'amber'],
+            ['Source-backed', FileCheck2, 'rose'],
+          ].map(([label, Icon, tone]) => (
+            <div key={String(label)} className="flex items-center justify-center gap-2.5 border-r border-white/10 px-4 py-3 text-[12px] last:border-r-0">
+              <Icon className={cx('h-4 w-4', toneClass[tone as Tone].text)} />
+              {label}
+            </div>
+          ))}
+        </div>
+        <div className="mx-auto mt-7 rounded-[10px] border border-white/10 bg-[#050d18]/70 p-4">
+          <div className="grid grid-cols-5 items-center gap-3 max-xl:grid-cols-1">
+            {ribbon.map(([title, subtitle, Icon, tone], index) => (
+              <div key={title} className="relative flex items-center gap-3 rounded-[7px] border border-white/[0.07] bg-white/[0.03] p-3 text-left">
+                {index < ribbon.length - 1 && <ArrowRight className="absolute -right-5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 max-xl:hidden" />}
+                <ToneIcon icon={Icon} tone={tone} />
+                <div>
+                  <div className="text-[13px] font-semibold text-white">{title}</div>
+                  <div className="mt-0.5 text-[11px] text-slate-400">{subtitle}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <footer className="relative mt-10 border-t border-white/10 px-5 py-6">
+        <div className="mx-auto flex max-w-[1780px] items-center justify-between gap-5 max-md:flex-col">
+          <Link href="/" className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-[8px] border border-[#b8a1ff]/45 bg-[#9b7cf6]/10">
+              <PlaygroundLogo className="h-6 w-6 text-[#d8ccff]" />
+            </span>
+            <span className="text-[15px] font-semibold">Agent Playground</span>
+          </Link>
+          <div className="flex flex-wrap justify-center gap-7 text-[13px] text-slate-300">
+            <Link href="/agents">Agents</Link>
+            <Link href="/dashboard">Dashboard</Link>
+            <Link href="/simulation">Arena</Link>
+            <Link href="#workflow">Docs</Link>
+            <Link href="https://github.com">GitHub</Link>
+          </div>
+          <div className="flex items-center gap-2 text-[13px] text-slate-300">
+            Inspectable Agent OS
+            <span className="grid h-5 w-5 place-items-center rounded-full bg-white/8"><span className="h-2 w-2 rounded-full bg-[#49d581]" /></span>
+          </div>
+        </div>
+      </footer>
+    </section>
+  )
+}
+
+export default function HomePage() {
+  return (
+    <div className="min-h-screen bg-[#020713] text-white">
+      <HeroSection />
+      <ArchitectureCockpit />
+      <WorkflowStory />
+      <FinalCta />
     </div>
   )
 }

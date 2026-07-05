@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
 
 // Floating orbs that create ambient lighting effect
@@ -205,6 +206,12 @@ function NoiseOverlay() {
 
 // Main animated background component
 export function AnimatedBackground({ variant = 'default' }: { variant?: 'default' | 'minimal' | 'intense' }) {
+  const pathname = usePathname()
+
+  if (pathname === '/') {
+    return null
+  }
+
   return (
     <>
       {/* Base gradient */}

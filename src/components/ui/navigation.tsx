@@ -37,6 +37,10 @@ export function Navigation() {
     }
   }, [mobileMenuOpen])
 
+  if (pathname === '/') {
+    return null
+  }
+
   return (
     <motion.header
       initial={{ y: -100 }}
