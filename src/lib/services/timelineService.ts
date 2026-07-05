@@ -13,6 +13,8 @@ import { LearningRepository } from '@/lib/repositories/learningRepository'
 import { MentorshipRepository } from '@/lib/repositories/mentorshipRepository'
 import { KnowledgeRepository } from '@/lib/repositories/knowledgeRepository'
 import { BroadcastRepository } from '@/lib/repositories/broadcastRepository'
+import { LibraryRepository } from '@/lib/repositories/libraryRepository'
+import type { LibraryItemDetail, LibraryValidation } from '@/types/database'
 import type {
   AgentRecord,
   EmotionalEvent,
@@ -194,6 +196,111 @@ function emotionEvent(agent: AgentRecord, event: EmotionalEvent): TimelineEventV
     evidenceRefs: unique([event.linkedMessageId, event.linkedActionId, ...(event.linkedMemoryIds || []), ...(event.evidenceRefs || [])]),
     detail: { intensity: event.intensity, delta: event.delta, confidence: event.confidence, downstreamHints: event.downstreamHints },
   })
+}
+
+function formatValidationVerdict(verdict: string) {
+  return verdict.replaceAll('_', ' ')
+}
+
+function librarySourceRefs(detail: LibraryItemDetail) {
+  return detail.sources.slice(0, 8).map((source) => ({
+    type: source.sourceType,
+    id: source.sourceId,
+    label: source.sourceTitle || `${source.sourceType} source`,
+  }))
+}
+
+function libraryValidationTitle(validation: LibraryValidation) {
+  if (validation.verdict === 'accept') return 'Library item accepted'
+  if (validation.verdict === 'reject') return 'Library item rejected'
+  if (validation.verdict === 'endorse') return 'Library item endorsed'
+  if (validation.verdict === 'dispute') return 'Library item disputed'
+  if (validation.verdict === 'resolve') return 'Library dispute resolved'
+  if (validation.verdict === 'retire') return 'Library item retired'
+  if (validation.verdict === 'merge') return 'Library item merged'
+  return `Library ${formatValidationVerdict(validation.verdict)}`
+}
+
+function libraryEvents(agent: AgentRecord, details: LibraryItemDetail[], broadcasts: Awaited<ReturnType<typeof BroadcastRepository.listRecent>>): TimelineEventV2[] {
+  const itemEvents = details.map((detail) => makeEvent({
+    id: `library-item:${detail.item.id}`,
+    agentId: agent.id,
+    type: 'knowledge',
+    timestamp: detail.item.updatedAt || detail.item.createdAt,
+    title: detail.item.title,
+    summary: summarize(detail.item.claim || detail.item.body),
+    importance: confidenceToImportance(detail.item.confidence, detail.item.status === 'validated' ? 7 : 5),
+    source: 'library_items',
+    sourceId: detail.item.id,
+    status: detail.item.status,
+    qualityStatus: detail.item.qualityStatus,
+    themes: ['library', detail.item.status, detail.item.category, detail.item.scope, ...detail.item.tags],
+    participants: [
+      { id: detail.item.agentId || agent.id, name: detail.item.createdByName || agent.name, role: detail.item.scope === 'network' ? 'network subject' : 'subject' },
+    ],
+    evidenceRefs: detail.sources.map((source) => source.sourceId),
+    sourceRefs: librarySourceRefs(detail),
+    relatedRefs: [
+      ...(detail.item.mergedIntoItemId ? [{ type: 'library_items', id: detail.item.mergedIntoItemId, label: 'Merged into' }] : []),
+      ...(detail.item.supersedesItemId ? [{ type: 'library_items', id: detail.item.supersedesItemId, label: 'Superseded by' }] : []),
+    ],
+    detail: {
+      confidence: detail.item.confidence,
+      visibility: detail.item.visibility,
+      promptEligible: detail.item.payload.contextPolicy?.allowPromptUse !== false && detail.item.status === 'validated',
+      usageCount: detail.item.usageCount,
+    },
+  }))
+
+  const validationEvents = details.flatMap((detail) => detail.validations
+    .filter((validation) => ['accept', 'reject', 'dispute', 'resolve', 'retire', 'merge', 'endorse'].includes(validation.verdict))
+    .map((validation) => makeEvent({
+      id: `library-validation:${validation.id}`,
+      agentId: agent.id,
+      type: 'knowledge',
+      timestamp: validation.createdAt,
+      title: libraryValidationTitle(validation),
+      summary: summarize(validation.rationale),
+      importance: validation.verdict === 'dispute' || validation.verdict === 'retire' || validation.verdict === 'merge' ? 8 : 6,
+      source: 'library_item_validations',
+      sourceId: validation.id,
+      status: validation.verdict,
+      qualityStatus: detail.item.qualityStatus,
+      themes: ['library', 'validation', validation.verdict, detail.item.category, detail.item.status],
+      participants: [
+        { id: validation.agentId || validation.actorName || validation.actorType, name: validation.actorName, role: validation.actorType },
+      ],
+      evidenceRefs: [detail.item.id, ...detail.sources.map((source) => source.sourceId).slice(0, 5)],
+      sourceRefs: librarySourceRefs(detail),
+      relatedRefs: [{ type: 'library_items', id: detail.item.id, label: 'Library item' }],
+      detail: {
+        confidenceDelta: validation.confidenceDelta,
+        itemTitle: detail.item.title,
+        itemStatus: detail.item.status,
+        payload: validation.payload,
+      },
+    })))
+
+  const libraryBroadcastEvents = broadcasts
+    .filter((broadcast) => broadcast.knowledgeId && details.some((detail) => detail.item.id === broadcast.knowledgeId))
+    .map((broadcast) => makeEvent({
+      id: `library-broadcast:${broadcast.id}`,
+      agentId: agent.id,
+      type: 'knowledge',
+      timestamp: broadcast.createdAt,
+      title: broadcast.topic,
+      summary: summarize(broadcast.summary),
+      importance: normalizeImportance(6 + Math.min(4, broadcast.endorsements || 0), 7),
+      source: 'collective_broadcasts',
+      sourceId: broadcast.id,
+      status: 'broadcast',
+      themes: ['library', 'broadcast', 'collective', broadcast.topic],
+      participants: [{ id: broadcast.agentId, name: broadcast.agentName, role: 'broadcaster' }],
+      relatedRefs: broadcast.knowledgeId ? [{ type: 'library_items', id: broadcast.knowledgeId, label: 'Broadcast Library item' }] : [],
+      detail: { reach: broadcast.reach, endorsements: broadcast.endorsements },
+    }))
+
+  return [...itemEvents, ...validationEvents, ...libraryBroadcastEvents]
 }
 
 function passesQuery(event: TimelineEventV2, query: TimelineWorkspaceQuery) {
@@ -628,11 +735,23 @@ export class TimelineService {
       {
         source: 'knowledge',
         load: async (agent) => {
-          const [knowledge, broadcasts] = await Promise.all([
+          const [knowledge, broadcasts, librarySummaries] = await Promise.all([
             KnowledgeRepository.listAll(160),
             BroadcastRepository.listRecent(120),
+            LibraryRepository.listItems({
+              agentId: agent.id,
+              includeNetwork: true,
+              status: 'all',
+              scope: 'all',
+              sort: 'updated',
+              limit: 80,
+            }),
           ])
+          const libraryDetails = (await Promise.all(librarySummaries.map((summary) => LibraryRepository.getItemDetail(summary.id, 16))))
+            .filter((detail): detail is LibraryItemDetail => Boolean(detail))
+
           return [
+            ...libraryEvents(agent, libraryDetails, broadcasts),
             ...knowledge
               .filter((item) => item.contributorId === agent.id || item.usedByAgents?.includes(agent.id))
               .slice(0, 35)
@@ -652,7 +771,7 @@ export class TimelineService {
                 detail: { confidence: item.confidence, endorsements: item.endorsements?.length || 0, disputes: item.disputes?.length || 0 },
               })),
             ...broadcasts
-              .filter((broadcast) => broadcast.agentId === agent.id)
+              .filter((broadcast) => broadcast.agentId === agent.id && !broadcast.knowledgeId?.startsWith('library_item_'))
               .slice(0, 24)
               .map((broadcast) => makeEvent({
                 id: `knowledge-broadcast:${broadcast.id}`,

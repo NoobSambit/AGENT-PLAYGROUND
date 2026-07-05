@@ -45,7 +45,7 @@ Supported query params:
 
 Timeline is server-composed from authoritative PostgreSQL feature records.
 
-It intentionally does not store a `timeline_events` projection in V2. Each source adapter reads a bounded set of records and normalizes them into `TimelineEventV2`.
+It intentionally does not store a `timeline_events` projection in V2. Each source adapter reads a bounded set of records and normalizes them into `TimelineEventV2`. The knowledge adapter includes current Knowledge Library item lifecycle events, Library validation events, Library-backed Collective broadcasts, legacy shared knowledge, and legacy broadcasts.
 
 Current sources:
 

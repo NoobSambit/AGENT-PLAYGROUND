@@ -10,7 +10,7 @@ It answers:
 
 ## UI Entry Point
 
-- Compatibility UI only: `SharedKnowledgeLibrary` in `src/components/knowledge/SharedKnowledgeLibrary.tsx`.
+- Deprecated compatibility UI only: `SharedKnowledgeLibrary` in `src/components/knowledge/SharedKnowledgeLibrary.tsx`.
 - The current `/agents/[id]` Library tab uses `KnowledgeLibraryWorkspace` and the new `library_*` tables instead of this component.
 
 ## API Routes
@@ -59,6 +59,9 @@ The main fields include:
 - Legacy rows without disputes become validated network Library items; rows with disputes become disputed Library items.
 - Backfilled records keep `qualityStatus='legacy_unvalidated'` until a later validation phase upgrades them.
 - `/api/knowledge` continues to read and mutate `shared_knowledge`; the backfill does not redirect that route.
+- Collective Intelligence now reads validated network Library items first and keeps `shared_knowledge` as compatibility input.
+- Collective support/dispute actions on Library-backed cards write `library_item_validations`; support/dispute actions on legacy cards still mutate `shared_knowledge`.
+- Timeline shows both legacy shared knowledge events and current Library lifecycle events.
 
 ## Failure Modes
 

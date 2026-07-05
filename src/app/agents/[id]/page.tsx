@@ -1213,6 +1213,7 @@ export default function AgentDetail() {
               <KnowledgeLibraryWorkspace
                 agentId={currentAgent.id}
                 agentName={currentAgent.name}
+                initialItemId={searchParams.get('libraryItem')}
               />
             ) : activeTab === 'collective' ? (
               <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">

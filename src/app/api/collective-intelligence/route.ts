@@ -3,14 +3,32 @@ import { AgentService } from '@/lib/services/agentService'
 import { KnowledgeService } from '@/lib/services/knowledgeService'
 import { collectiveIntelligenceService } from '@/lib/services/collectiveIntelligenceService'
 import { KnowledgeBroadcast } from '@/types/enhancements'
+import type { LibraryCategory, LibraryItemDetail, SharedKnowledge, KnowledgeCategory } from '@/types/database'
 import { getPersistenceMode, readsFromPostgres } from '@/lib/db/persistence'
 import { BroadcastRepository } from '@/lib/repositories/broadcastRepository'
+import { LibraryRepository } from '@/lib/repositories/libraryRepository'
+import { LibraryService } from '@/lib/services/libraryService'
 import { runMirroredWrite } from '@/lib/persistence/writeMirror'
 import { generateId } from '@/lib/db/utils'
 import { collection, getDocs, orderBy, query, limit, setDoc, doc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 
 const BROADCASTS_COLLECTION = 'collective_broadcasts'
+
+const LIBRARY_TO_SHARED_CATEGORY: Record<LibraryCategory, KnowledgeCategory> = {
+  fact: 'fact',
+  preference: 'opinion',
+  behavior_pattern: 'experience',
+  strength: 'wisdom',
+  weakness: 'wisdom',
+  strategy: 'skill',
+  relationship: 'experience',
+  creative_style: 'experience',
+  emotional_pattern: 'experience',
+  skill: 'skill',
+  risk: 'wisdom',
+  lesson: 'wisdom',
+}
 
 function asBroadcast(value: Record<string, unknown>, id: string): KnowledgeBroadcast {
   return {
@@ -85,6 +103,90 @@ async function saveBroadcast(broadcast: KnowledgeBroadcast): Promise<KnowledgeBr
   })
 }
 
+function validationAgentIds(detail: LibraryItemDetail, verdicts: string[]): string[] {
+  return [...new Set(detail.validations
+    .filter((validation) => verdicts.includes(validation.verdict))
+    .map((validation) => validation.agentId)
+    .filter((agentId): agentId is string => Boolean(agentId)))]
+}
+
+function libraryDetailToSharedKnowledge(detail: LibraryItemDetail, viewerAgentId?: string): SharedKnowledge {
+  const item = detail.item
+  const endorsements = validationAgentIds(detail, ['accept', 'endorse', 'resolve'])
+  const disputes = detail.validations
+    .filter((validation) => validation.verdict === 'dispute')
+    .map((validation) => ({
+      agentId: validation.agentId || validation.actorName || validation.actorType,
+      reason: validation.rationale,
+      timestamp: validation.createdAt,
+    }))
+
+  return {
+    id: item.id,
+    knowledgeSource: 'library_item',
+    libraryItemId: item.id,
+    libraryStatus: item.status,
+    libraryScope: item.scope,
+    libraryDetailHref: item.agentId || viewerAgentId
+      ? `/agents/${encodeURIComponent(item.agentId || viewerAgentId || '')}?tab=knowledge-library&libraryItem=${encodeURIComponent(item.id)}`
+      : undefined,
+    topic: item.title,
+    category: LIBRARY_TO_SHARED_CATEGORY[item.category],
+    content: item.claim,
+    contributorId: item.createdByAgentId || item.agentId || 'network',
+    contributorName: item.createdByName || 'Library',
+    endorsements,
+    disputes,
+    accessCount: item.usageCount,
+    lastAccessedAt: item.lastUsedAt || item.updatedAt,
+    usedByAgents: [...new Set(detail.usageEvents.map((event) => event.agentId).filter((agentId): agentId is string => Boolean(agentId)))],
+    tags: item.tags,
+    confidence: item.confidence,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  }
+}
+
+async function listValidatedNetworkLibraryKnowledge(queryText: string | undefined, limitCount: number, viewerAgentId?: string): Promise<SharedKnowledge[]> {
+  try {
+    const summaries = await LibraryRepository.listItems({
+      includeNetwork: true,
+      status: 'validated',
+      scope: 'network',
+      search: queryText,
+      sort: queryText ? 'updated' : 'confidence',
+      limit: Math.min(Math.max(limitCount, 12), 80),
+    })
+
+    const details = await Promise.all(summaries.map((summary) => LibraryRepository.getItemDetail(summary.id, 12)))
+    return details
+      .filter((detail): detail is LibraryItemDetail => Boolean(detail))
+      .filter((detail) => (
+        detail.item.status === 'validated' &&
+        detail.item.scope === 'network' &&
+        detail.item.payload.contextPolicy?.allowPromptUse !== false
+      ))
+      .map((detail) => libraryDetailToSharedKnowledge(detail, viewerAgentId))
+  } catch (error) {
+    console.error('Failed to load network Library knowledge for Collective Intelligence:', error)
+    return []
+  }
+}
+
+async function getValidatedNetworkLibraryDetail(itemId: string): Promise<LibraryItemDetail | null> {
+  const detail = await LibraryRepository.getItemDetail(itemId)
+  if (
+    !detail ||
+    detail.item.status !== 'validated' ||
+    detail.item.scope !== 'network' ||
+    detail.item.payload.contextPolicy?.allowPromptUse === false
+  ) {
+    return null
+  }
+
+  return detail
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -92,11 +194,13 @@ export async function GET(request: NextRequest) {
     const agentId = searchParams.get('agentId') || undefined
     const limitCount = parseInt(searchParams.get('limit') || '12')
 
-    const [agents, allKnowledge, broadcasts] = await Promise.all([
+    const [agents, legacyKnowledge, libraryKnowledge, broadcasts] = await Promise.all([
       AgentService.getAllAgents(),
       queryText ? KnowledgeService.searchKnowledge(queryText) : KnowledgeService.getAllKnowledge(),
+      listValidatedNetworkLibraryKnowledge(queryText, limitCount, agentId),
       getRecentBroadcasts(limitCount),
     ])
+    const allKnowledge = [...libraryKnowledge, ...legacyKnowledge]
 
     const snapshot = collectiveIntelligenceService.createSnapshot({
       agents,
@@ -122,11 +226,14 @@ export async function POST(request: NextRequest) {
     const { action } = body
 
     if (action === 'broadcast') {
-      const { agentId, topic, summary, knowledgeId } = body
+      const { agentId, knowledgeId } = body
+      let topic = typeof body.topic === 'string' ? body.topic : ''
+      let summary = typeof body.summary === 'string' ? body.summary : ''
+      const knowledgeSource = typeof body.knowledgeSource === 'string' ? body.knowledgeSource : undefined
 
-      if (!agentId || !topic || !summary) {
+      if (!agentId) {
         return NextResponse.json(
-          { error: 'agentId, topic, and summary are required' },
+          { error: 'agentId is required' },
           { status: 400 }
         )
       }
@@ -136,6 +243,25 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: 'Agent not found' },
           { status: 404 }
+        )
+      }
+
+      if (knowledgeId && (knowledgeSource === 'library_item' || String(knowledgeId).startsWith('library_item_'))) {
+        const detail = await getValidatedNetworkLibraryDetail(String(knowledgeId))
+        if (!detail) {
+          return NextResponse.json(
+            { error: 'Only validated network Library items can be broadcast through Collective Intelligence' },
+            { status: 409 }
+          )
+        }
+        topic = topic || detail.item.title
+        summary = summary || detail.item.claim
+      }
+
+      if (!topic || !summary) {
+        return NextResponse.json(
+          { error: 'topic and summary are required' },
+          { status: 400 }
         )
       }
 
@@ -152,12 +278,51 @@ export async function POST(request: NextRequest) {
 
     if (action === 'validate') {
       const { knowledgeId, agentId, verdict, rationale } = body
+      const knowledgeSource = typeof body.knowledgeSource === 'string' ? body.knowledgeSource : undefined
 
       if (!knowledgeId || !agentId || !verdict) {
         return NextResponse.json(
           { error: 'knowledgeId, agentId, and verdict are required' },
           { status: 400 }
         )
+      }
+
+      if (verdict !== 'support' && verdict !== 'dispute') {
+        return NextResponse.json(
+          { error: 'verdict must be support or dispute' },
+          { status: 400 }
+        )
+      }
+
+      const agent = await AgentService.getAgentById(agentId)
+      if (!agent) {
+        return NextResponse.json(
+          { error: 'Agent not found' },
+          { status: 404 }
+        )
+      }
+
+      if (knowledgeSource === 'library_item' || String(knowledgeId).startsWith('library_item_')) {
+        const mutation = await LibraryService.recordCollectiveValidation(agentId, knowledgeId, {
+          actorAgentId: agentId,
+          actorName: agent.name,
+          verdict,
+          rationale: rationale || (
+            verdict === 'support'
+              ? 'Supported during Collective Intelligence review.'
+              : 'Disputed during Collective Intelligence review.'
+          ),
+        })
+
+        return NextResponse.json({
+          success: true,
+          knowledge: libraryDetailToSharedKnowledge({
+            item: mutation.item.item,
+            sources: mutation.item.sources,
+            validations: mutation.item.validations,
+            usageEvents: mutation.item.usageEvents,
+          }, agentId),
+        })
       }
 
       let success = true

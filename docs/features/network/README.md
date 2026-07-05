@@ -24,3 +24,5 @@ Network features care about:
 - reusable knowledge
 
 They usually add to the timeline as a result of real events or completed sessions.
+
+Knowledge Library is now the canonical governance layer for reusable network knowledge. Collective Intelligence reads validated network Library items and writes Library validations for Library-backed support/dispute actions, while Timeline displays Library lifecycle events alongside legacy shared-knowledge compatibility events.

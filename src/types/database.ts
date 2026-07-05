@@ -2768,6 +2768,11 @@ export type KnowledgeCategory =
 
 export interface SharedKnowledge {
   id: string
+  knowledgeSource?: 'shared_knowledge' | 'library_item'
+  libraryItemId?: string
+  libraryStatus?: LibraryItemStatus
+  libraryScope?: LibraryScope
+  libraryDetailHref?: string
   topic: string
   category: KnowledgeCategory
   content: string

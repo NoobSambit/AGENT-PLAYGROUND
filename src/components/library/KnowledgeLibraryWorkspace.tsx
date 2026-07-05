@@ -51,6 +51,7 @@ type PendingAction = InlineAction | RationaleAction | GovernanceAction | 'edit-a
 interface KnowledgeLibraryWorkspaceProps {
   agentId: string
   agentName?: string
+  initialItemId?: string | null
 }
 
 interface CreateFormState {
@@ -302,7 +303,7 @@ async function fetchJson<T>(url: string, init: RequestInit | undefined, fallback
   return response.json() as Promise<T>
 }
 
-export function KnowledgeLibraryWorkspace({ agentId, agentName = 'Operator' }: KnowledgeLibraryWorkspaceProps) {
+export function KnowledgeLibraryWorkspace({ agentId, agentName = 'Operator', initialItemId = null }: KnowledgeLibraryWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('review')
   const [searchInput, setSearchInput] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -349,6 +350,7 @@ export function KnowledgeLibraryWorkspace({ agentId, agentName = 'Operator' }: K
   const workspaceRequestRef = useRef(0)
   const detailRequestRef = useRef(0)
   const defaultTabResolvedRef = useRef(false)
+  const initialItemHandledRef = useRef<string | null>(null)
 
   useEffect(() => {
     selectedItemIdRef.current = selectedItemId
@@ -380,6 +382,7 @@ export function KnowledgeLibraryWorkspace({ agentId, agentName = 'Operator' }: K
     setDetailError(null)
     initialLoadingRef.current = true
     setInitialLoading(true)
+    initialItemHandledRef.current = null
   }, [agentId])
 
   const buildWorkspaceUrl = useCallback((status: WorkspaceTab) => {
@@ -520,6 +523,28 @@ export function KnowledgeLibraryWorkspace({ agentId, agentName = 'Operator' }: K
   useEffect(() => {
     void loadWorkspace({ initial: initialLoadingRef.current })
   }, [activeTab, debouncedSearch, categoryFilter, sourceTypeFilter, scopeFilter, sortMode, retryNonce, loadWorkspace])
+
+  useEffect(() => {
+    if (!initialItemId || initialItemHandledRef.current === initialItemId) {
+      return
+    }
+
+    initialItemHandledRef.current = initialItemId
+    void (async () => {
+      const detail = await fetchDetail(initialItemId, { showSkeleton: true })
+      if (!detail) return
+
+      const status = detail.item.status
+      if (status === 'review' || status === 'validated' || status === 'disputed' || status === 'retired') {
+        setActiveTab(status)
+        await loadWorkspace({
+          statusOverride: status,
+          preferredSelectedId: detail.item.id,
+          initial: false,
+        })
+      }
+    })()
+  }, [fetchDetail, initialItemId, loadWorkspace])
 
   const handleSelectItem = useCallback((itemId: string) => {
     setSelectedItemId(itemId)

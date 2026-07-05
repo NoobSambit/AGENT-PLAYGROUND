@@ -82,6 +82,7 @@ const MAX_DUPLICATE_SUGGESTIONS = 5
 
 type LibraryAction = 'accept' | 'reject' | 'endorse' | 'dispute' | 'resolve' | 'retire' | 'merge' | 'supersede'
 type DisputeResolutionOutcome = 'validated' | 'retired'
+type CollectiveValidationVerdict = 'support' | 'dispute'
 
 export interface LibraryItemEditableFields {
   title: string
@@ -142,6 +143,13 @@ export interface LibraryUsageRecordInput {
   consumerSourceId?: string
   query?: string
   relevanceScores?: Record<string, number>
+}
+
+export interface CollectiveLibraryValidationInput {
+  verdict: CollectiveValidationVerdict
+  actorAgentId: string
+  actorName?: string
+  rationale?: string
 }
 
 export class LibraryServiceError extends Error {
@@ -1095,6 +1103,81 @@ export class LibraryService {
       status: 'retired',
       retiredAt: now,
       retiredBy: input.actorName || input.actorAgentId || agentId,
+      updatedAt: now,
+      payload: {
+        ...detail.item.payload,
+        contextPolicy: {
+          ...detail.item.payload.contextPolicy,
+          allowPromptUse: false,
+        },
+      },
+    })
+
+    return this.mutationResponse(agentId, itemId)
+  }
+
+  static async recordCollectiveValidation(
+    agentId: string,
+    itemId: string,
+    input: CollectiveLibraryValidationInput
+  ): Promise<LibraryMutationResponse> {
+    const detail = await this.requireAccessibleDetail(agentId, itemId)
+    const now = new Date().toISOString()
+    const actorName = input.actorName
+    const rationale = isNonEmptyString(input.rationale)
+      ? normalizeText(input.rationale)
+      : input.verdict === 'support'
+        ? 'Supported from Collective Intelligence review.'
+        : 'Disputed from Collective Intelligence review.'
+
+    if (input.verdict === 'support') {
+      assertTransition(
+        detail.item.status === 'validated' || detail.item.status === 'disputed',
+        'Only validated or disputed Library items can receive Collective support.'
+      )
+
+      await LibraryRepository.addValidationEvent(makeValidation({
+        itemId,
+        verdict: 'endorse',
+        actorType: 'agent',
+        agentId: input.actorAgentId,
+        actorName,
+        rationale,
+        confidenceDelta: 0.05,
+        payload: {
+          source: 'collective_intelligence',
+        },
+      }))
+
+      await LibraryRepository.updateItemLifecycle(itemId, {
+        confidence: applyConfidenceDelta(detail.item, 0.05),
+        updatedAt: now,
+      })
+
+      return this.mutationResponse(agentId, itemId)
+    }
+
+    assertTransition(
+      detail.item.status === 'review' || detail.item.status === 'validated' || detail.item.status === 'disputed',
+      'Only active Library items can be disputed from Collective Intelligence.'
+    )
+
+    await LibraryRepository.addValidationEvent(makeValidation({
+      itemId,
+      verdict: 'dispute',
+      actorType: 'agent',
+      agentId: input.actorAgentId,
+      actorName,
+      rationale,
+      confidenceDelta: -0.08,
+      payload: {
+        source: 'collective_intelligence',
+      },
+    }))
+
+    await LibraryRepository.updateItemLifecycle(itemId, {
+      status: 'disputed',
+      confidence: applyConfidenceDelta(detail.item, -0.08),
       updatedAt: now,
       payload: {
         ...detail.item.payload,

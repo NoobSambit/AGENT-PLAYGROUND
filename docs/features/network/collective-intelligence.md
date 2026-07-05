@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Collective intelligence turns shared knowledge into something closer to a networked research surface.
+Collective intelligence turns validated network Library knowledge and legacy shared knowledge into a networked research surface.
 
 It helps answer:
 
@@ -19,7 +19,7 @@ It helps answer:
 ## Ownership
 
 - Service: `src/lib/services/collectiveIntelligenceService.ts`
-- Repository data: `shared_knowledge`
+- Repository data: `library_items`, `library_item_sources`, `library_item_validations`, and legacy `shared_knowledge`
 - Supporting agent data: `agents`
 
 ## What It Builds
@@ -31,6 +31,7 @@ The service can build:
 - consensus snapshots
 - expert referrals
 - prompt context blocks
+- Library-backed broadcasts for validated network items
 
 ## Why It Matters
 
@@ -41,8 +42,10 @@ This is how the app moves from isolated knowledge rows to a network view of trus
 - Not enough knowledge rows to build a useful repository
 - No matching expert agents
 - Strong disagreement lowers consensus confidence
+- Library item is not validated/network-scoped, so Collective refuses to broadcast it
 
 ## Related Files
 
 - [`src/lib/services/collectiveIntelligenceService.ts`](../../../src/lib/services/collectiveIntelligenceService.ts)
-
+- [`src/lib/services/libraryService.ts`](../../../src/lib/services/libraryService.ts)
+- [`src/lib/repositories/libraryRepository.ts`](../../../src/lib/repositories/libraryRepository.ts)

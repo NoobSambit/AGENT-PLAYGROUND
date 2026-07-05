@@ -28,6 +28,8 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
 9. Detail reloads use `GET /api/agents/[id]/library/items/[itemId]`.
 10. Consumer workflows can request prompt-safe validated context through `POST /api/agents/[id]/library/context`.
 11. Consumers that use a context packet can record cheap usage events through `POST /api/agents/[id]/library/usage`.
+12. Collective Intelligence can broadcast validated network Library items and write support/dispute decisions into the item validation history.
+13. Timeline displays Library item lifecycle events, validation decisions, source refs, and Library-backed Collective broadcasts in the Knowledge source.
 
 ## 4. Backend workflow/pipeline
 
@@ -68,6 +70,10 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
 - Legacy compatibility:
   - `GET|POST /api/knowledge` remains available for `shared_knowledge` callers.
   - It is not used by `KnowledgeLibraryWorkspace`.
+- Cross-section integration:
+  - `GET /api/collective-intelligence` reads validated prompt-eligible network Library items.
+  - `POST /api/collective-intelligence` writes Library-backed support/dispute events through `LibraryService`.
+  - `GET /api/agents/[id]/timeline` derives Library lifecycle events from `library_items`, `library_item_sources`, `library_item_validations`, and `collective_broadcasts`.
 
 ## 6. Data model mapping
 
@@ -132,6 +138,8 @@ The Knowledge Library tab is the agent-scoped review workspace for reusable know
 - Verify detail reload and retry states.
 - Verify context retrieval returns validated prompt-safe packets and excludes review/disputed/rejected/retired/merged/superseded rows.
 - Verify usage recording appends `library_item_usage_events` and updates aggregate fields.
+- Verify Collective can broadcast validated network Library items and support/dispute actions appear in validation history.
+- Verify Timeline shows Library lifecycle and Library-backed broadcast events with source refs.
 - Verify legacy `/api/knowledge` still returns shared knowledge compatibility responses.
 
 ## 12. How to extend safely

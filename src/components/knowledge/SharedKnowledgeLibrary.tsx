@@ -31,6 +31,11 @@ const CATEGORY_COLORS: Record<KnowledgeCategory, string> = {
 
 const panelClass = 'rounded-sm border border-border/70 bg-card/[0.62] p-5 backdrop-blur-xl'
 
+/**
+ * @deprecated Compatibility UI for legacy `shared_knowledge` records.
+ * The `/agents/[id]` Library tab uses `KnowledgeLibraryWorkspace` and
+ * PostgreSQL `library_*` tables for current Knowledge Library behavior.
+ */
 export function SharedKnowledgeLibrary({
   agentId,
   agentName,

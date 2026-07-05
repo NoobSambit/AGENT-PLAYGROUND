@@ -2104,6 +2104,8 @@ Verification:
 
 ### Phase 4: Governance, Network Integration, And Polish
 
+Implementation status: Phase 4A/4B core governance and integration are complete as of 2026-07-03. Merge, supersede, richer dispute resolution, duplicate suggestions, Collective Library broadcasts/validations, and Timeline Library lifecycle events are implemented. The optional full-text index remains deferred; the implementation still uses bounded SQL plus service-side scoring/search.
+
 Goal:
 
 Make Library robust as the long-term knowledge governance layer.
