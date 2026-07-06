@@ -390,9 +390,9 @@ function HomeThemeButton() {
       type="button"
       aria-label="Toggle color theme"
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
-      className="grid h-11 w-11 place-items-center rounded-[8px] border border-white/10 bg-white/[0.035] text-white/82 transition hover:border-[#b8a1ff]/45 hover:bg-white/[0.07]"
+      className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/[0.035] text-white/82 transition-all hover:scale-105 hover:border-white/20 hover:bg-white/[0.07] hover:text-white"
     >
-      {isDark ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+      {isDark ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
     </button>
   )
 }
@@ -493,50 +493,64 @@ function LandingNav() {
   ]
 
   return (
-    <header className="relative z-30 flex h-[76px] w-full items-center border-b border-white/10 bg-[#020713]/90 px-5 text-white backdrop-blur-xl sm:px-8 lg:px-12">
-      <div className="flex flex-1 items-center gap-3">
-        <Link href="/" className="flex items-center gap-3">
-          <span className="grid h-11 w-11 place-items-center rounded-[8px] border border-[#b8a1ff]/45 bg-[#9b7cf6]/10 text-[#d8ccff]">
-            <PlaygroundLogo className="h-6 w-6" />
-          </span>
-          <span className="hidden leading-tight sm:block">
-            <span className="block text-[16px] font-semibold tracking-tight">Agent Playground</span>
-            <span className="block text-[12px] text-slate-300">Inspectable Agent OS</span>
-          </span>
-        </Link>
-      </div>
-
-      <nav className="hidden flex-1 justify-center gap-8 lg:flex">
-        {nav.map(([label, href]) => (
-          <Link
-            key={label}
-            href={href}
-            className={cx(
-              'relative flex h-[76px] items-center px-2 text-[15px] text-white/82 transition hover:text-white',
-              label === 'Home' && 'text-white after:absolute after:inset-x-1 after:bottom-0 after:h-px after:bg-[#b8a1ff]'
-            )}
-          >
-            {label}
+    <div className="absolute inset-x-0 top-6 z-50 flex justify-center">
+      <header className="flex h-[68px] w-[calc(100vw-72px)] max-w-[1820px] items-center justify-between rounded-[24px] border border-white/[0.08] bg-[#050d18]/60 px-4 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+        {/* Left: Logo */}
+        <div className="flex items-center gap-3">
+          <Link href="/" className="group flex items-center gap-3 rounded-[16px] p-1 pr-3 transition hover:bg-white/[0.04]">
+            <span className="grid h-10 w-10 place-items-center rounded-[12px] border border-[#b8a1ff]/30 bg-gradient-to-br from-[#9b7cf6]/20 to-[#9b7cf6]/5 text-[#d8ccff] shadow-[0_0_15px_rgba(155,124,246,0.15)] transition-all group-hover:scale-105 group-hover:border-[#b8a1ff]/50">
+              <PlaygroundLogo className="h-5 w-5" />
+            </span>
+            <span className="hidden leading-tight sm:block">
+              <span className="block text-[15px] font-bold tracking-tight text-white/95">Agent Playground</span>
+              <span className="block text-[11px] font-medium text-[#b8a1ff]/70">Inspectable Agent OS</span>
+            </span>
           </Link>
-        ))}
-      </nav>
+        </div>
 
-      <div className="flex flex-1 items-center justify-end gap-3">
-        <span className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-[12px] text-white/82 md:inline-flex">
-          <Cloud className="h-3.5 w-3.5 text-[#b8a1ff]" />
-          Local + Cloud Runtime
-          <span className="h-1.5 w-1.5 rounded-full bg-[#49d581]" />
-        </span>
-        <HomeThemeButton />
-        <Link
-          href="https://github.com"
-          aria-label="Open GitHub"
-          className="grid h-11 w-11 place-items-center rounded-[8px] border border-white/10 bg-white/[0.035] text-white/82 transition hover:border-[#b8a1ff]/45 hover:bg-white/[0.07]"
-        >
-          <Github className="h-5 w-5" />
-        </Link>
-      </div>
-    </header>
+        {/* Center: Nav Links */}
+        <nav className="hidden items-center gap-1 lg:flex bg-white/[0.02] p-1 rounded-full border border-white/[0.05]">
+          {nav.map(([label, href]) => {
+            const isActive = label === 'Home'
+            return (
+              <Link
+                key={label}
+                href={href}
+                className={cx(
+                  'relative px-5 py-2 text-[14px] font-medium transition-all duration-300 rounded-full',
+                  isActive
+                    ? 'text-white bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)]'
+                    : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                )}
+              >
+                {label}
+              </Link>
+            )
+          })}
+        </nav>
+
+        {/* Right: Actions */}
+        <div className="flex items-center justify-end gap-3">
+          <span className="hidden items-center gap-2 rounded-full border border-white/[0.08] bg-black/40 px-4 py-2 text-[12px] font-medium text-white/80 shadow-inner backdrop-blur-sm md:inline-flex">
+            <Cloud className="h-4 w-4 text-[#b8a1ff]" />
+            Local + Cloud Runtime
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#49d581] opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#49d581]"></span>
+            </span>
+          </span>
+          <div className="h-6 w-px bg-white/10" />
+          <HomeThemeButton />
+          <Link
+            href="https://github.com"
+            aria-label="Open GitHub"
+            className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/[0.035] text-slate-300 transition-all hover:scale-105 hover:border-white/20 hover:bg-white/[0.07] hover:text-white"
+          >
+            <Github className="h-5 w-5" />
+          </Link>
+        </div>
+      </header>
+    </div>
   )
 }
 
@@ -557,7 +571,7 @@ function HeroSection() {
       <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#020713] via-[#020713]/55 to-transparent" />
       <LandingNav />
 
-      <div className="relative z-10 mx-auto flex max-w-[1520px] flex-col items-center px-5 pt-16 text-center sm:pt-16">
+      <div className="relative z-10 mx-auto flex max-w-[1520px] flex-col items-center px-5 pt-32 text-center sm:pt-36">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -642,50 +656,84 @@ function CockpitChrome({
 }) {
   return (
     <>
-      <div className="flex h-8 items-center justify-between border-b border-white/10 bg-[#020713] px-5">
+      <div className="flex h-8 items-center justify-between border-b border-white/[0.04] bg-[#020713]/80 px-5 backdrop-blur-md">
         <div className="flex gap-2">
-          <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
-          <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
-          <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+          <span className="h-3 w-3 rounded-full border border-[#ff5f57]/50 bg-[#ff5f57] shadow-[0_0_10px_rgba(255,95,87,0.2)]" />
+          <span className="h-3 w-3 rounded-full border border-[#febc2e]/50 bg-[#febc2e] shadow-[0_0_10px_rgba(254,188,46,0.2)]" />
+          <span className="h-3 w-3 rounded-full border border-[#28c840]/50 bg-[#28c840] shadow-[0_0_10px_rgba(40,200,64,0.2)]" />
         </div>
-        <div className="flex gap-4 text-slate-500">
+        <div className="flex gap-4 text-slate-500/50">
           <span>-</span>
           <span>[]</span>
           <span>x</span>
         </div>
       </div>
-      <div className="grid h-[58px] grid-cols-[300px_1fr_330px] border-b border-white/10 bg-[#050d18]">
-        <div className="flex items-center gap-3 border-r border-white/8 px-5">
-          <PlaygroundLogo className="h-7 w-7 text-white" />
-          <span className="text-[14px] font-semibold text-white">Agent Playground</span>
+      <div className="relative flex min-h-[68px] items-center justify-between border-b border-white/[0.08] bg-gradient-to-r from-[#050d18] via-[#081321] to-[#050d18] px-5 shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.15] to-transparent" />
+        
+        {/* Left Section */}
+        <div className="flex flex-1 items-center gap-4">
+          <div className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.02] py-1.5 pl-2 pr-3 shadow-[0_0_20px_rgba(184,161,255,0.05)] backdrop-blur-sm">
+            <div className="grid h-8 w-8 place-items-center rounded-[8px] border border-[#b8a1ff]/30 bg-gradient-to-b from-[#b8a1ff]/20 to-transparent">
+              <PlaygroundLogo className="h-5 w-5 text-[#d8ccff]" />
+            </div>
+            <span className="text-[14px] font-bold tracking-tight text-white/90">Agent Playground</span>
+          </div>
           <StatusPill tone="blue">Product Tour</StatusPill>
         </div>
-        <div className="flex items-stretch justify-center">
-          {cockpitTabs.map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActiveTab(tab)}
-              className={cx(
-                'min-w-[164px] border-x border-transparent px-4 text-[13px] text-slate-300 transition hover:bg-white/[0.035] hover:text-white',
-                activeTab === tab && 'border-white/8 bg-[#101b34] text-[#b8a1ff] shadow-[inset_0_-2px_0_#9b7cf6]'
-              )}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center justify-end gap-3 px-5">
-          <CircleHelp className="h-4 w-4 text-slate-300" />
-          <Settings className="h-4 w-4 text-slate-300" />
-          <div className="h-8 w-px bg-white/10" />
-          <div className="text-right">
-            <div className="text-[12px] font-semibold text-white">Platform Operator</div>
-            <div className="text-[10px] text-slate-500">Admin</div>
+
+        {/* Center Section: Tabs */}
+        <div className="flex shrink-0 items-center justify-center">
+          <div className="flex items-center gap-1 rounded-[14px] border border-white/[0.08] bg-[#02050a]/60 p-1.5 shadow-[inset_0_1px_4px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+            {cockpitTabs.map((tab) => {
+              const isActive = activeTab === tab
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={cx(
+                    'relative px-5 py-2 text-[13px] font-medium transition-colors duration-300',
+                    isActive ? 'text-white' : 'rounded-[10px] text-slate-400 hover:bg-white/[0.02] hover:text-white'
+                  )}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="cockpit-tab-indicator"
+                      className="absolute inset-0 rounded-[10px] border border-[#9b7cf6]/50 bg-gradient-to-b from-[#9b7cf6]/20 to-[#9b7cf6]/5 shadow-[0_0_15px_rgba(155,124,246,0.15)]"
+                      initial={false}
+                      transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                    />
+                  )}
+                  <span className="relative z-10">{tab}</span>
+                </button>
+              )
+            })}
           </div>
-          <div className="relative grid h-10 w-10 place-items-center rounded-full bg-white/[0.06] text-[12px] text-white">
-            OP
-            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border border-[#050d18] bg-[#49d581]" />
+        </div>
+
+        {/* Right Section */}
+        <div className="flex flex-1 items-center justify-end gap-4">
+          <div className="flex items-center gap-3 text-slate-400">
+            <button type="button" className="transition hover:text-white" aria-label="Help">
+              <CircleHelp className="h-4 w-4" />
+            </button>
+            <button type="button" className="transition hover:text-white" aria-label="Settings">
+              <Settings className="h-4 w-4" />
+            </button>
+          </div>
+          
+          <div className="h-8 w-px bg-white/10" />
+          
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className="text-[12px] font-semibold tracking-tight text-white">Platform Operator</div>
+              <div className="text-[10px] font-medium text-[#b8a1ff]/80">Admin</div>
+            </div>
+            <div className="relative grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-gradient-to-b from-white/[0.08] to-transparent text-[12px] font-bold text-white shadow-inner backdrop-blur-sm transition-transform hover:scale-105">
+              OP
+              <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-[1.5px] border-[#050d18] bg-[#49d581] shadow-[0_0_8px_rgba(73,213,129,0.5)]" />
+            </div>
           </div>
         </div>
       </div>
@@ -1795,10 +1843,10 @@ function FinalCta() {
   return (
     <section className="relative overflow-hidden bg-[#020713] px-5 pb-0 pt-12 text-white">
       <div
-        className="absolute inset-0 opacity-30"
-        style={{ backgroundImage: "url('/landing_page_bg.png')", backgroundSize: 'cover', backgroundPosition: 'center' }}
+        className="absolute inset-0"
+        style={{ backgroundImage: "url('/landing_footer.png')", backgroundSize: 'cover', backgroundPosition: 'center' }}
       />
-      <div className="absolute inset-0 bg-[#020713]/78" />
+      <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-[#020713] via-[#020713]/80 to-transparent backdrop-blur-sm [mask-image:linear-gradient(to_bottom,black_30%,transparent)]" />
       <div className="relative mx-auto max-w-[1560px] text-center">
         <div className="font-mono text-[12px] uppercase tracking-[0.12em] text-[#d8ccff]">Start Building</div>
         <h2 className="mx-auto mt-4 max-w-[800px] text-[clamp(2.4rem,3.6vw,4.2rem)] font-semibold leading-[1.04] tracking-tight">
@@ -1847,24 +1895,63 @@ function FinalCta() {
           </div>
         </div>
       </div>
-      <footer className="relative mt-10 border-t border-white/10 px-5 py-6">
-        <div className="mx-auto flex max-w-[1780px] items-center justify-between gap-5 max-md:flex-col">
-          <Link href="/" className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-[8px] border border-[#b8a1ff]/45 bg-[#9b7cf6]/10">
-              <PlaygroundLogo className="h-6 w-6 text-[#d8ccff]" />
-            </span>
-            <span className="text-[15px] font-semibold">Agent Playground</span>
-          </Link>
-          <div className="flex flex-wrap justify-center gap-7 text-[13px] text-slate-300">
-            <Link href="/agents">Agents</Link>
-            <Link href="/dashboard">Dashboard</Link>
-            <Link href="/simulation">Arena</Link>
-            <Link href="#workflow">Docs</Link>
-            <Link href="https://github.com">GitHub</Link>
+      <footer className="relative mt-8 border-t border-white/10 px-5 py-6">
+        <div className="mx-auto max-w-[1780px]">
+          <div className="grid grid-cols-[minmax(320px,1.2fr)_minmax(420px,1fr)_minmax(320px,0.85fr)] gap-6 max-lg:grid-cols-1">
+            <div className="max-w-[520px]">
+              <Link href="/" className="inline-flex items-center gap-3">
+                <span className="grid h-11 w-11 place-items-center rounded-[9px] border border-[#b8a1ff]/45 bg-[#9b7cf6]/10">
+                  <PlaygroundLogo className="h-6 w-6 text-[#d8ccff]" />
+                </span>
+                <span>
+                  <span className="block text-[15px] font-semibold text-white">Agent Playground</span>
+                  <span className="block font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Inspectable Agent OS</span>
+                </span>
+              </Link>
+              <p className="mt-3 max-w-[430px] text-[12px] leading-5 text-slate-400">
+                Local-first agent workspace for memory, runtime state, knowledge governance, relationships, and replayable audit trails.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-5 text-left">
+              {[
+                ['Product', [['Agents', '/agents'], ['Dashboard', '/dashboard'], ['Arena', '/simulation']]],
+                ['Architecture', [['Cockpit', '#architecture'], ['Workflow', '#workflow'], ['Runtime', '#architecture']]],
+                ['Project', [['Docs', '#workflow'], ['GitHub', 'https://github.com'], ['Start', '/agents/new']]],
+              ].map(([group, links]) => (
+                <div key={String(group)}>
+                  <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">{group}</div>
+                  <div className="space-y-1.5 text-[12px] text-slate-300">
+                    {(links as string[][]).map(([label, href]) => (
+                      <Link key={label} href={href} className="block hover:text-white">
+                        {label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-[8px] border border-white/10 bg-[#050d18]/70 p-3">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500">Runtime Status</span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#49d581]/25 bg-[#49d581]/8 px-2 py-1 font-mono text-[10px] text-[#73e8a5]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#49d581]" />
+                  Healthy
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 font-mono text-[10px] text-slate-400">
+                <span className="rounded-[5px] border border-white/[0.07] bg-white/[0.03] px-2 py-1.5">PostgreSQL canonical</span>
+                <span className="rounded-[5px] border border-white/[0.07] bg-white/[0.03] px-2 py-1.5">Quality gated</span>
+                <span className="rounded-[5px] border border-white/[0.07] bg-white/[0.03] px-2 py-1.5">Timeline preserved</span>
+                <span className="rounded-[5px] border border-white/[0.07] bg-white/[0.03] px-2 py-1.5">Providers flexible</span>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2 text-[13px] text-slate-300">
-            Inspectable Agent OS
-            <span className="grid h-5 w-5 place-items-center rounded-full bg-white/8"><span className="h-2 w-2 rounded-full bg-[#49d581]" /></span>
+
+          <div className="mt-5 flex items-center justify-between border-t border-white/[0.08] pt-4 font-mono text-[10px] uppercase tracking-[0.1em] text-slate-500 max-md:flex-col max-md:gap-2">
+            <span>Agent Playground / Inspectable agent runtime</span>
+            <span>Local + Cloud Runtime / Audit preserved</span>
           </div>
         </div>
       </footer>
