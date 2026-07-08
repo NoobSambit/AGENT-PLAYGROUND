@@ -1,0 +1,164 @@
+# Raw Response Index
+
+- `001-preflight-agents-list-compact` preflight agents list compact: `manual-test-reports/political-agents-2026-07-07/raw-responses/001-preflight-agents-list-compact.json`
+- `002-create-agent-bjp` create agent bjp: `manual-test-reports/political-agents-2026-07-07/raw-responses/002-create-agent-bjp.json`
+- `003-create-agent-congress` create agent congress: `manual-test-reports/political-agents-2026-07-07/raw-responses/003-create-agent-congress.json`
+- `004-create-agent-analyst` create agent analyst: `manual-test-reports/political-agents-2026-07-07/raw-responses/004-create-agent-analyst.json`
+- `005-baseline-bjp-agent` baseline bjp agent: `manual-test-reports/political-agents-2026-07-07/raw-responses/005-baseline-bjp-agent.json`
+- `006-baseline-bjp-learning` baseline bjp learning: `manual-test-reports/political-agents-2026-07-07/raw-responses/006-baseline-bjp-learning.json`
+- `007-baseline-bjp-timeline` baseline bjp timeline: `manual-test-reports/political-agents-2026-07-07/raw-responses/007-baseline-bjp-timeline.json`
+- `008-baseline-bjp-neural` baseline bjp neural: `manual-test-reports/political-agents-2026-07-07/raw-responses/008-baseline-bjp-neural.json`
+- `009-baseline-bjp-memories` baseline bjp memories: `manual-test-reports/political-agents-2026-07-07/raw-responses/009-baseline-bjp-memories.json`
+- `010-baseline-bjp-memory-graph` baseline bjp memory graph: `manual-test-reports/political-agents-2026-07-07/raw-responses/010-baseline-bjp-memory-graph.json`
+- `011-baseline-bjp-library` baseline bjp library: `manual-test-reports/political-agents-2026-07-07/raw-responses/011-baseline-bjp-library.json`
+- `012-baseline-congress-agent` baseline congress agent: `manual-test-reports/political-agents-2026-07-07/raw-responses/012-baseline-congress-agent.json`
+- `013-baseline-congress-learning` baseline congress learning: `manual-test-reports/political-agents-2026-07-07/raw-responses/013-baseline-congress-learning.json`
+- `014-baseline-congress-timeline` baseline congress timeline: `manual-test-reports/political-agents-2026-07-07/raw-responses/014-baseline-congress-timeline.json`
+- `015-baseline-congress-neural` baseline congress neural: `manual-test-reports/political-agents-2026-07-07/raw-responses/015-baseline-congress-neural.json`
+- `016-baseline-congress-memories` baseline congress memories: `manual-test-reports/political-agents-2026-07-07/raw-responses/016-baseline-congress-memories.json`
+- `017-baseline-congress-memory-graph` baseline congress memory graph: `manual-test-reports/political-agents-2026-07-07/raw-responses/017-baseline-congress-memory-graph.json`
+- `018-baseline-congress-library` baseline congress library: `manual-test-reports/political-agents-2026-07-07/raw-responses/018-baseline-congress-library.json`
+- `019-baseline-analyst-agent` baseline analyst agent: `manual-test-reports/political-agents-2026-07-07/raw-responses/019-baseline-analyst-agent.json`
+- `020-baseline-analyst-learning` baseline analyst learning: `manual-test-reports/political-agents-2026-07-07/raw-responses/020-baseline-analyst-learning.json`
+- `021-baseline-analyst-timeline` baseline analyst timeline: `manual-test-reports/political-agents-2026-07-07/raw-responses/021-baseline-analyst-timeline.json`
+- `022-baseline-analyst-neural` baseline analyst neural: `manual-test-reports/political-agents-2026-07-07/raw-responses/022-baseline-analyst-neural.json`
+- `023-baseline-analyst-memories` baseline analyst memories: `manual-test-reports/political-agents-2026-07-07/raw-responses/023-baseline-analyst-memories.json`
+- `024-baseline-analyst-memory-graph` baseline analyst memory graph: `manual-test-reports/political-agents-2026-07-07/raw-responses/024-baseline-analyst-memory-graph.json`
+- `025-baseline-analyst-library` baseline analyst library: `manual-test-reports/political-agents-2026-07-07/raw-responses/025-baseline-analyst-library.json`
+- `026-chat-bjp-turn-1` chat bjp turn 1: `manual-test-reports/political-agents-2026-07-07/raw-responses/026-chat-bjp-turn-1.json`
+- `027-chat-bjp-turn-2` chat bjp turn 2: `manual-test-reports/political-agents-2026-07-07/raw-responses/027-chat-bjp-turn-2.json`
+- `028-chat-bjp-turn-3` chat bjp turn 3: `manual-test-reports/political-agents-2026-07-07/raw-responses/028-chat-bjp-turn-3.json`
+- `029-chat-bjp-turn-4` chat bjp turn 4: `manual-test-reports/political-agents-2026-07-07/raw-responses/029-chat-bjp-turn-4.json`
+- `030-chat-bjp-turn-5` chat bjp turn 5: `manual-test-reports/political-agents-2026-07-07/raw-responses/030-chat-bjp-turn-5.json`
+- `031-chat-congress-turn-1` chat congress turn 1: `manual-test-reports/political-agents-2026-07-07/raw-responses/031-chat-congress-turn-1.json`
+- `032-chat-congress-turn-2` chat congress turn 2: `manual-test-reports/political-agents-2026-07-07/raw-responses/032-chat-congress-turn-2.json`
+- `033-chat-congress-turn-3` chat congress turn 3: `manual-test-reports/political-agents-2026-07-07/raw-responses/033-chat-congress-turn-3.json`
+- `034-chat-congress-turn-4` chat congress turn 4: `manual-test-reports/political-agents-2026-07-07/raw-responses/034-chat-congress-turn-4.json`
+- `035-chat-congress-turn-5` chat congress turn 5: `manual-test-reports/political-agents-2026-07-07/raw-responses/035-chat-congress-turn-5.json`
+- `036-chat-analyst-turn-1` chat analyst turn 1: `manual-test-reports/political-agents-2026-07-07/raw-responses/036-chat-analyst-turn-1.json`
+- `037-chat-analyst-turn-2` chat analyst turn 2: `manual-test-reports/political-agents-2026-07-07/raw-responses/037-chat-analyst-turn-2.json`
+- `038-chat-analyst-turn-3` chat analyst turn 3: `manual-test-reports/political-agents-2026-07-07/raw-responses/038-chat-analyst-turn-3.json`
+- `039-chat-analyst-turn-4` chat analyst turn 4: `manual-test-reports/political-agents-2026-07-07/raw-responses/039-chat-analyst-turn-4.json`
+- `040-chat-analyst-turn-5` chat analyst turn 5: `manual-test-reports/political-agents-2026-07-07/raw-responses/040-chat-analyst-turn-5.json`
+- `041-postchat-bjp-memories` postchat bjp memories: `manual-test-reports/political-agents-2026-07-07/raw-responses/041-postchat-bjp-memories.json`
+- `042-postchat-bjp-memory-recall` postchat bjp memory recall: `manual-test-reports/political-agents-2026-07-07/raw-responses/042-postchat-bjp-memory-recall.json`
+- `043-postchat-bjp-memory-graph` postchat bjp memory graph: `manual-test-reports/political-agents-2026-07-07/raw-responses/043-postchat-bjp-memory-graph.json`
+- `044-postchat-bjp-memory-graph-relevant` postchat bjp memory graph relevant: `manual-test-reports/political-agents-2026-07-07/raw-responses/044-postchat-bjp-memory-graph-relevant.json`
+- `045-postchat-bjp-neural` postchat bjp neural: `manual-test-reports/political-agents-2026-07-07/raw-responses/045-postchat-bjp-neural.json`
+- `046-postchat-congress-memories` postchat congress memories: `manual-test-reports/political-agents-2026-07-07/raw-responses/046-postchat-congress-memories.json`
+- `047-postchat-congress-memory-recall` postchat congress memory recall: `manual-test-reports/political-agents-2026-07-07/raw-responses/047-postchat-congress-memory-recall.json`
+- `048-postchat-congress-memory-graph` postchat congress memory graph: `manual-test-reports/political-agents-2026-07-07/raw-responses/048-postchat-congress-memory-graph.json`
+- `049-postchat-congress-memory-graph-relevant` postchat congress memory graph relevant: `manual-test-reports/political-agents-2026-07-07/raw-responses/049-postchat-congress-memory-graph-relevant.json`
+- `050-postchat-congress-neural` postchat congress neural: `manual-test-reports/political-agents-2026-07-07/raw-responses/050-postchat-congress-neural.json`
+- `051-postchat-analyst-memories` postchat analyst memories: `manual-test-reports/political-agents-2026-07-07/raw-responses/051-postchat-analyst-memories.json`
+- `052-postchat-analyst-memory-recall` postchat analyst memory recall: `manual-test-reports/political-agents-2026-07-07/raw-responses/052-postchat-analyst-memory-recall.json`
+- `053-postchat-analyst-memory-graph` postchat analyst memory graph: `manual-test-reports/political-agents-2026-07-07/raw-responses/053-postchat-analyst-memory-graph.json`
+- `054-postchat-analyst-memory-graph-relevant` postchat analyst memory graph relevant: `manual-test-reports/political-agents-2026-07-07/raw-responses/054-postchat-analyst-memory-graph-relevant.json`
+- `055-postchat-analyst-neural` postchat analyst neural: `manual-test-reports/political-agents-2026-07-07/raw-responses/055-postchat-analyst-neural.json`
+- `056-learning-bjp-before` learning bjp before: `manual-test-reports/political-agents-2026-07-07/raw-responses/056-learning-bjp-before.json`
+- `057-learning-bjp-quality` learning bjp quality: `manual-test-reports/political-agents-2026-07-07/raw-responses/057-learning-bjp-quality.json`
+- `058-learning-bjp-analyze-conversation` learning bjp analyze conversation: `manual-test-reports/political-agents-2026-07-07/raw-responses/058-learning-bjp-analyze-conversation.json`
+- `059-learning-bjp-generate-goals` learning bjp generate goals: `manual-test-reports/political-agents-2026-07-07/raw-responses/059-learning-bjp-generate-goals.json`
+- `060-learning-bjp-create-adaptation` learning bjp create adaptation: `manual-test-reports/political-agents-2026-07-07/raw-responses/060-learning-bjp-create-adaptation.json`
+- `061-learning-bjp-update-skill` learning bjp update skill: `manual-test-reports/political-agents-2026-07-07/raw-responses/061-learning-bjp-update-skill.json`
+- `062-learning-bjp-after` learning bjp after: `manual-test-reports/political-agents-2026-07-07/raw-responses/062-learning-bjp-after.json`
+- `063-learning-congress-before` learning congress before: `manual-test-reports/political-agents-2026-07-07/raw-responses/063-learning-congress-before.json`
+- `064-learning-congress-quality` learning congress quality: `manual-test-reports/political-agents-2026-07-07/raw-responses/064-learning-congress-quality.json`
+- `065-learning-congress-analyze-conversation` learning congress analyze conversation: `manual-test-reports/political-agents-2026-07-07/raw-responses/065-learning-congress-analyze-conversation.json`
+- `066-learning-congress-generate-goals` learning congress generate goals: `manual-test-reports/political-agents-2026-07-07/raw-responses/066-learning-congress-generate-goals.json`
+- `067-learning-congress-create-adaptation` learning congress create adaptation: `manual-test-reports/political-agents-2026-07-07/raw-responses/067-learning-congress-create-adaptation.json`
+- `068-learning-congress-update-skill` learning congress update skill: `manual-test-reports/political-agents-2026-07-07/raw-responses/068-learning-congress-update-skill.json`
+- `069-learning-congress-after` learning congress after: `manual-test-reports/political-agents-2026-07-07/raw-responses/069-learning-congress-after.json`
+- `070-learning-analyst-before` learning analyst before: `manual-test-reports/political-agents-2026-07-07/raw-responses/070-learning-analyst-before.json`
+- `071-learning-analyst-quality` learning analyst quality: `manual-test-reports/political-agents-2026-07-07/raw-responses/071-learning-analyst-quality.json`
+- `072-learning-analyst-analyze-conversation` learning analyst analyze conversation: `manual-test-reports/political-agents-2026-07-07/raw-responses/072-learning-analyst-analyze-conversation.json`
+- `073-learning-analyst-generate-goals` learning analyst generate goals: `manual-test-reports/political-agents-2026-07-07/raw-responses/073-learning-analyst-generate-goals.json`
+- `074-learning-analyst-create-adaptation` learning analyst create adaptation: `manual-test-reports/political-agents-2026-07-07/raw-responses/074-learning-analyst-create-adaptation.json`
+- `075-learning-analyst-update-skill` learning analyst update skill: `manual-test-reports/political-agents-2026-07-07/raw-responses/075-learning-analyst-update-skill.json`
+- `076-learning-analyst-after` learning analyst after: `manual-test-reports/political-agents-2026-07-07/raw-responses/076-learning-analyst-after.json`
+- `077-relationship-bjp-congress-conflict-checkpoint` relationship bjp congress conflict checkpoint: `manual-test-reports/political-agents-2026-07-07/raw-responses/077-relationship-bjp-congress-conflict-checkpoint.json`
+- `078-relationship-bjp-analyst-constructive-checkpoint` relationship bjp analyst constructive checkpoint: `manual-test-reports/political-agents-2026-07-07/raw-responses/078-relationship-bjp-analyst-constructive-checkpoint.json`
+- `079-relationship-congress-analyst-agreement-checkpoint` relationship congress analyst agreement checkpoint: `manual-test-reports/political-agents-2026-07-07/raw-responses/079-relationship-congress-analyst-agreement-checkpoint.json`
+- `080-relationships-fetch-bjp` relationships fetch bjp: `manual-test-reports/political-agents-2026-07-07/raw-responses/080-relationships-fetch-bjp.json`
+- `081-relationships-fetch-congress` relationships fetch congress: `manual-test-reports/political-agents-2026-07-07/raw-responses/081-relationships-fetch-congress.json`
+- `082-relationships-fetch-analyst` relationships fetch analyst: `manual-test-reports/political-agents-2026-07-07/raw-responses/082-relationships-fetch-analyst.json`
+- `083-relationship-recompute-bjp-congress` relationship recompute bjp congress: `manual-test-reports/political-agents-2026-07-07/raw-responses/083-relationship-recompute-bjp-congress.json`
+- `084-arena-debate-democratic-consolidation-create` arena debate democratic consolidation create: `manual-test-reports/political-agents-2026-07-07/raw-responses/084-arena-debate-democratic-consolidation-create.json`
+- `085-arena-debate-democratic-consolidation-execute` arena debate democratic consolidation execute: `manual-test-reports/political-agents-2026-07-07/raw-responses/085-arena-debate-democratic-consolidation-execute.json`
+- `086-arena-debate-democratic-consolidation-detail` arena debate democratic consolidation detail: `manual-test-reports/political-agents-2026-07-07/raw-responses/086-arena-debate-democratic-consolidation-detail.json`
+- `087-arena-debate-welfare-federalism-growth-security-create` arena debate welfare federalism growth security create: `manual-test-reports/political-agents-2026-07-07/raw-responses/087-arena-debate-welfare-federalism-growth-security-create.json`
+- `088-arena-debate-welfare-federalism-growth-security-execute` arena debate welfare federalism growth security execute: `manual-test-reports/political-agents-2026-07-07/raw-responses/088-arena-debate-welfare-federalism-growth-security-execute.json`
+- `089-arena-debate-welfare-federalism-growth-security-detail` arena debate welfare federalism growth security detail: `manual-test-reports/political-agents-2026-07-07/raw-responses/089-arena-debate-welfare-federalism-growth-security-detail.json`
+- `090-journal-create-bjp` journal create bjp: `manual-test-reports/political-agents-2026-07-07/raw-responses/090-journal-create-bjp.json`
+- `091-journal-generate-bjp` journal generate bjp: `manual-test-reports/political-agents-2026-07-07/raw-responses/091-journal-generate-bjp.json`
+- `092-journal-save-bjp` journal save bjp: `manual-test-reports/political-agents-2026-07-07/raw-responses/092-journal-save-bjp.json`
+- `093-dream-create-congress` dream create congress: `manual-test-reports/political-agents-2026-07-07/raw-responses/093-dream-create-congress.json`
+- `094-dream-generate-congress` dream generate congress: `manual-test-reports/political-agents-2026-07-07/raw-responses/094-dream-generate-congress.json`
+- `095-dream-save-congress` dream save congress: `manual-test-reports/political-agents-2026-07-07/raw-responses/095-dream-save-congress.json`
+- `096-creative-create-analyst` creative create analyst: `manual-test-reports/political-agents-2026-07-07/raw-responses/096-creative-create-analyst.json`
+- `097-creative-generate-analyst` creative generate analyst: `manual-test-reports/political-agents-2026-07-07/raw-responses/097-creative-generate-analyst.json`
+- `098-creative-publish-analyst` creative publish analyst: `manual-test-reports/political-agents-2026-07-07/raw-responses/098-creative-publish-analyst.json`
+- `099-profile-run-create-analyst` profile run create analyst: `manual-test-reports/political-agents-2026-07-07/raw-responses/099-profile-run-create-analyst.json`
+- `100-profile-run-execute-analyst` profile run execute analyst: `manual-test-reports/political-agents-2026-07-07/raw-responses/100-profile-run-execute-analyst.json`
+- `101-challenge-bootstrap-analyst` challenge bootstrap analyst: `manual-test-reports/political-agents-2026-07-07/raw-responses/101-challenge-bootstrap-analyst.json`
+- `102-challenge-create-constitutional-crisis` challenge create constitutional crisis: `manual-test-reports/political-agents-2026-07-07/raw-responses/102-challenge-create-constitutional-crisis.json`
+- `103-library-create-bjp` library create bjp: `manual-test-reports/political-agents-2026-07-07/raw-responses/103-library-create-bjp.json`
+- `104-library-create-congress` library create congress: `manual-test-reports/political-agents-2026-07-07/raw-responses/104-library-create-congress.json`
+- `105-library-create-analyst` library create analyst: `manual-test-reports/political-agents-2026-07-07/raw-responses/105-library-create-analyst.json`
+- `106-library-context-bjp` library context bjp: `manual-test-reports/political-agents-2026-07-07/raw-responses/106-library-context-bjp.json`
+- `107-library-usage-bjp` library usage bjp: `manual-test-reports/political-agents-2026-07-07/raw-responses/107-library-usage-bjp.json`
+- `108-library-workspace-final-bjp` library workspace final bjp: `manual-test-reports/political-agents-2026-07-07/raw-responses/108-library-workspace-final-bjp.json`
+- `109-library-context-congress` library context congress: `manual-test-reports/political-agents-2026-07-07/raw-responses/109-library-context-congress.json`
+- `110-library-usage-congress` library usage congress: `manual-test-reports/political-agents-2026-07-07/raw-responses/110-library-usage-congress.json`
+- `111-library-workspace-final-congress` library workspace final congress: `manual-test-reports/political-agents-2026-07-07/raw-responses/111-library-workspace-final-congress.json`
+- `112-library-context-analyst` library context analyst: `manual-test-reports/political-agents-2026-07-07/raw-responses/112-library-context-analyst.json`
+- `113-library-usage-analyst` library usage analyst: `manual-test-reports/political-agents-2026-07-07/raw-responses/113-library-usage-analyst.json`
+- `114-library-workspace-final-analyst` library workspace final analyst: `manual-test-reports/political-agents-2026-07-07/raw-responses/114-library-workspace-final-analyst.json`
+- `115-collective-query-indian-politics` collective query indian politics: `manual-test-reports/political-agents-2026-07-07/raw-responses/115-collective-query-indian-politics.json`
+- `116-legacy-knowledge-query-indian-politics` legacy knowledge query indian politics: `manual-test-reports/political-agents-2026-07-07/raw-responses/116-legacy-knowledge-query-indian-politics.json`
+- `117-collective-final-snapshot` collective final snapshot: `manual-test-reports/political-agents-2026-07-07/raw-responses/117-collective-final-snapshot.json`
+- `118-final-bjp-agent` final bjp agent: `manual-test-reports/political-agents-2026-07-07/raw-responses/118-final-bjp-agent.json`
+- `119-final-bjp-learning` final bjp learning: `manual-test-reports/political-agents-2026-07-07/raw-responses/119-final-bjp-learning.json`
+- `120-final-bjp-relationships` final bjp relationships: `manual-test-reports/political-agents-2026-07-07/raw-responses/120-final-bjp-relationships.json`
+- `121-final-bjp-timeline` final bjp timeline: `manual-test-reports/political-agents-2026-07-07/raw-responses/121-final-bjp-timeline.json`
+- `122-final-bjp-neural` final bjp neural: `manual-test-reports/political-agents-2026-07-07/raw-responses/122-final-bjp-neural.json`
+- `123-final-bjp-memories` final bjp memories: `manual-test-reports/political-agents-2026-07-07/raw-responses/123-final-bjp-memories.json`
+- `124-final-bjp-library` final bjp library: `manual-test-reports/political-agents-2026-07-07/raw-responses/124-final-bjp-library.json`
+- `125-final-congress-agent` final congress agent: `manual-test-reports/political-agents-2026-07-07/raw-responses/125-final-congress-agent.json`
+- `126-final-congress-learning` final congress learning: `manual-test-reports/political-agents-2026-07-07/raw-responses/126-final-congress-learning.json`
+- `127-final-congress-relationships` final congress relationships: `manual-test-reports/political-agents-2026-07-07/raw-responses/127-final-congress-relationships.json`
+- `128-final-congress-timeline` final congress timeline: `manual-test-reports/political-agents-2026-07-07/raw-responses/128-final-congress-timeline.json`
+- `129-final-congress-neural` final congress neural: `manual-test-reports/political-agents-2026-07-07/raw-responses/129-final-congress-neural.json`
+- `130-final-congress-memories` final congress memories: `manual-test-reports/political-agents-2026-07-07/raw-responses/130-final-congress-memories.json`
+- `131-final-congress-library` final congress library: `manual-test-reports/political-agents-2026-07-07/raw-responses/131-final-congress-library.json`
+- `132-final-analyst-agent` final analyst agent: `manual-test-reports/political-agents-2026-07-07/raw-responses/132-final-analyst-agent.json`
+- `133-final-analyst-learning` final analyst learning: `manual-test-reports/political-agents-2026-07-07/raw-responses/133-final-analyst-learning.json`
+- `134-final-analyst-relationships` final analyst relationships: `manual-test-reports/political-agents-2026-07-07/raw-responses/134-final-analyst-relationships.json`
+- `135-final-analyst-timeline` final analyst timeline: `manual-test-reports/political-agents-2026-07-07/raw-responses/135-final-analyst-timeline.json`
+- `136-final-analyst-neural` final analyst neural: `manual-test-reports/political-agents-2026-07-07/raw-responses/136-final-analyst-neural.json`
+- `137-final-analyst-memories` final analyst memories: `manual-test-reports/political-agents-2026-07-07/raw-responses/137-final-analyst-memories.json`
+- `138-final-analyst-library` final analyst library: `manual-test-reports/political-agents-2026-07-07/raw-responses/138-final-analyst-library.json`
+
+- `139-challenge-rerun-create-pair-conflict-repair` challenge rerun create: `manual-test-reports/political-agents-2026-07-07/raw-responses/139-challenge-rerun-create-pair-conflict-repair.json`
+- `140-challenge-rerun-execute-pair-conflict-repair` challenge rerun execute: `manual-test-reports/political-agents-2026-07-07/raw-responses/140-challenge-rerun-execute-pair-conflict-repair.json`
+- `141-challenge-rerun-detail-pair-conflict-repair` challenge rerun detail: `manual-test-reports/political-agents-2026-07-07/raw-responses/141-challenge-rerun-detail-pair-conflict-repair.json`
+
+- `142-library-accept-bjp-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/142-library-accept-bjp-remediation.json`
+- `143-library-accept-congress-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/143-library-accept-congress-remediation.json`
+- `144-library-endorse-analyst-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/144-library-endorse-analyst-remediation.json`
+- `145-collective-broadcast-analyst-library-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/145-collective-broadcast-analyst-library-remediation.json`
+- `146-collective-support-analyst-library-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/146-collective-support-analyst-library-remediation.json`
+- `147-collective-dispute-analyst-library-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/147-collective-dispute-analyst-library-remediation.json`
+- `148-library-resolve-analyst-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/148-library-resolve-analyst-remediation.json`
+- `149-library-retire-congress-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/149-library-retire-congress-remediation.json`
+- `150-library-detail-bjp-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/150-library-detail-bjp-remediation.json`
+- `151-library-detail-congress-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/151-library-detail-congress-remediation.json`
+- `152-library-detail-analyst-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/152-library-detail-analyst-remediation.json`
+- `153-collective-final-after-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/153-collective-final-after-remediation.json`
+- `154-timeline-analyst-after-library-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/154-timeline-analyst-after-library-remediation.json`
+- `155-library-context-analyst-after-remediation`: `manual-test-reports/political-agents-2026-07-07/raw-responses/155-library-context-analyst-after-remediation.json`
+
+- `156-regression-red-learning-update-skill`: pre-fix reproduction of learning update failure: `manual-test-reports/political-agents-2026-07-07/raw-responses/156-regression-red-learning-update-skill.json`
+- `157-regression-red-relationship-recompute`: pre-fix reproduction of relationship recompute failure: `manual-test-reports/political-agents-2026-07-07/raw-responses/157-regression-red-relationship-recompute.json`
+- `158-regression-green-learning-update-skill`: post-fix learning update verification: `manual-test-reports/political-agents-2026-07-07/raw-responses/158-regression-green-learning-update-skill.json`
+- `159-regression-green-relationship-recompute`: post-fix relationship recompute verification: `manual-test-reports/political-agents-2026-07-07/raw-responses/159-regression-green-relationship-recompute.json`

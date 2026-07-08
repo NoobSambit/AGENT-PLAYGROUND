@@ -1,0 +1,175 @@
+{
+  "agents": {
+    "bjp": {
+      "id": "agent_f8795d3136f3454398e1aeebcc665969",
+      "name": "POLTEST-20260707-Bharat Strategist"
+    },
+    "congress": {
+      "id": "agent_82174162fdf449f98a08eac378963e4d",
+      "name": "POLTEST-20260707-Janata Socialist"
+    },
+    "analyst": {
+      "id": "agent_f671c3fc34a940ee9059f60ffb7707f6",
+      "name": "POLTEST-20260707-Samvidhan Analyst"
+    }
+  },
+  "failures": [
+    {
+      "id": "068-learning-congress-update-skill",
+      "label": "learning congress update skill",
+      "status": 500,
+      "stderr": "",
+      "body": "{\"error\":\"Failed to update skill\"}"
+    },
+    {
+      "id": "083-relationship-recompute-bjp-congress",
+      "label": "relationship recompute bjp congress",
+      "status": 500,
+      "stderr": "",
+      "body": "{\"error\":\"Relationship pair not found\"}"
+    },
+    {
+      "id": "102-challenge-create-constitutional-crisis",
+      "label": "challenge create constitutional crisis",
+      "status": 400,
+      "stderr": "",
+      "body": "{\"error\":\"Unsupported challenge template.\"}"
+    }
+  ],
+  "postRunFixes": {
+    "calls": [
+      {
+        "id": "156-regression-red-learning-update-skill",
+        "status": 500,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/156-regression-red-learning-update-skill.json"
+      },
+      {
+        "id": "157-regression-red-relationship-recompute",
+        "status": 500,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/157-regression-red-relationship-recompute.json"
+      },
+      {
+        "id": "158-regression-green-learning-update-skill",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/158-regression-green-learning-update-skill.json"
+      },
+      {
+        "id": "159-regression-green-relationship-recompute",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/159-regression-green-relationship-recompute.json"
+      }
+    ],
+    "resolvedFailureIds": [
+      "068-learning-congress-update-skill",
+      "083-relationship-recompute-bjp-congress"
+    ],
+    "remainingExpectedNon200": [
+      "092-journal-save-bjp",
+      "102-challenge-create-constitutional-crisis"
+    ],
+    "unresolvedCodeFailures": []
+  },
+  "commandCount": 159,
+  "reportDir": "manual-test-reports/political-agents-2026-07-07",
+  "model": "qwen2.5:7b",
+  "challengeRerun": {
+    "create": {
+      "status": 201,
+      "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/139-challenge-rerun-create-pair-conflict-repair.json"
+    },
+    "execute": {
+      "status": 200,
+      "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/140-challenge-rerun-execute-pair-conflict-repair.json"
+    },
+    "detail": {
+      "status": 200,
+      "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/141-challenge-rerun-detail-pair-conflict-repair.json"
+    },
+    "runId": "challenge_run_64fa8e2f1f19480184ac7c1ebbd7b734"
+  },
+  "libraryCollectiveRemediation": {
+    "calls": [
+      {
+        "id": "142-library-accept-bjp-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/142-library-accept-bjp-remediation.json"
+      },
+      {
+        "id": "143-library-accept-congress-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/143-library-accept-congress-remediation.json"
+      },
+      {
+        "id": "144-library-endorse-analyst-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/144-library-endorse-analyst-remediation.json"
+      },
+      {
+        "id": "145-collective-broadcast-analyst-library-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/145-collective-broadcast-analyst-library-remediation.json"
+      },
+      {
+        "id": "146-collective-support-analyst-library-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/146-collective-support-analyst-library-remediation.json"
+      },
+      {
+        "id": "147-collective-dispute-analyst-library-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/147-collective-dispute-analyst-library-remediation.json"
+      },
+      {
+        "id": "148-library-resolve-analyst-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/148-library-resolve-analyst-remediation.json"
+      },
+      {
+        "id": "149-library-retire-congress-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/149-library-retire-congress-remediation.json"
+      },
+      {
+        "id": "150-library-detail-bjp-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/150-library-detail-bjp-remediation.json"
+      },
+      {
+        "id": "151-library-detail-congress-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/151-library-detail-congress-remediation.json"
+      },
+      {
+        "id": "152-library-detail-analyst-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/152-library-detail-analyst-remediation.json"
+      },
+      {
+        "id": "153-collective-final-after-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/153-collective-final-after-remediation.json"
+      },
+      {
+        "id": "154-timeline-analyst-after-library-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/154-timeline-analyst-after-library-remediation.json"
+      },
+      {
+        "id": "155-library-context-analyst-after-remediation",
+        "status": 200,
+        "file": "manual-test-reports/political-agents-2026-07-07/raw-responses/155-library-context-analyst-after-remediation.json"
+      }
+    ],
+    "unresolved": []
+  },
+  "rawResponseCount": 159,
+  "additionalDocs": [
+    "10-complete-output-catalog.md",
+    "11-endpoint-coverage-matrix.md",
+    "12-full-transcripts-and-events.md",
+    "13-agent-behavior-dossiers.md",
+    "14-research-packet-guide.md",
+    "15-library-lifecycle-and-collective-dossier.md",
+    "16-post-run-issue-fixes.md"
+  ]
+}

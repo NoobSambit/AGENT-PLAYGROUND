@@ -88,6 +88,15 @@ interface SynthesisOutcome {
   rawOutput: Record<string, unknown>
 }
 
+function normalizeRecomputePairId(pairId: string): string {
+  const parts = pairId.split('::')
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    return pairId
+  }
+
+  return relationshipPairId(parts[0], parts[1])
+}
+
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value))
 }
@@ -712,13 +721,15 @@ export class RelationshipOrchestrator {
   }
 
   async recomputePair(pairId: string) {
+    const canonicalPairId = normalizeRecomputePairId(pairId)
     const relationship = await getPairById(pairId)
+      || (canonicalPairId !== pairId ? await getPairById(canonicalPairId) : null)
 
     if (!relationship) {
       throw new Error('Relationship pair not found')
     }
 
-    const evidence = await listEvidenceByPair(pairId, 12)
+    const evidence = await listEvidenceByPair(relationship.id, 12)
     return this.applyExistingEvidence({
       sourceKind: 'manual',
       sourceId: generateId('relationship_recompute'),

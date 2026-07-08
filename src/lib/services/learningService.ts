@@ -811,7 +811,12 @@ export class LearningService {
 
     const observation = (await listObservations(agentId, 10)).find((item) => item.category === category)
     if (!observation) {
-      return existingSkill
+      if (existingSkill) {
+        return existingSkill
+      }
+
+      const baselineSkill = metaLearningService.updateSkillProgression(null, [], category)
+      return saveSkill(agentId, baselineSkill)
     }
 
     const updatedSkill = metaLearningService.updateSkillFromObservation(existingSkill, observation)
