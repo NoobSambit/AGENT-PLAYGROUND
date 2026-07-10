@@ -37,7 +37,7 @@ export function Navigation() {
     }
   }, [mobileMenuOpen])
 
-  if (pathname === '/' || pathname === '/agents') {
+  if (pathname === '/' || pathname === '/agents' || pathname === '/simulation') {
     return null
   }
 

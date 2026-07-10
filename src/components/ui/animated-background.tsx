@@ -208,7 +208,7 @@ function NoiseOverlay() {
 export function AnimatedBackground({ variant = 'default' }: { variant?: 'default' | 'minimal' | 'intense' }) {
   const pathname = usePathname()
 
-  if (pathname === '/') {
+  if (pathname === '/' || pathname === '/simulation') {
     return null
   }
 
