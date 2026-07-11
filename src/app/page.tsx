@@ -493,7 +493,7 @@ function LandingNav() {
   ]
 
   return (
-    <div className="absolute inset-x-0 top-6 z-50 flex justify-center">
+    <div className="absolute inset-x-0 top-2 z-50 flex justify-center">
       <header className="flex h-[68px] w-[calc(100vw-72px)] max-w-[1820px] items-center justify-between rounded-[24px] border border-white/[0.08] bg-[#050d18]/60 px-4 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl">
         {/* Left: Logo */}
         <div className="flex items-center gap-3">

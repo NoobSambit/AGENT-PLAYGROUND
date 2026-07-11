@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Circle,
   Clock3,
+  Cloud,
   Copy,
   Crown,
   Database,
@@ -858,51 +859,48 @@ function ArenaOperatorNav() {
   ]
 
   return (
-    <header className="sticky top-0 z-50 flex h-[72px] w-full items-center gap-2 overflow-hidden border-b border-white/10 bg-[#06101b]/96 px-4 backdrop-blur-xl lg:px-7">
-      <Link href="/" className="flex min-w-0 flex-1 items-center gap-3 lg:flex-none lg:min-w-[280px]">
-        <span className="grid h-10 w-10 place-items-center rounded-[5px] border border-[#c9b8ff]/30 bg-[#111b2a] text-[#d8ccff]">
-          <PlaygroundLogo className="h-7 w-7" />
-        </span>
-        <span className="hidden min-w-0 leading-tight sm:block">
-          <span className="block truncate text-[17px] font-bold tracking-[-0.02em] text-white">Agent Playground</span>
-          <span className="block truncate text-[13px] text-slate-300">Inspectable Agent OS</span>
-        </span>
-      </Link>
-      <nav className="hidden flex-1 items-center justify-center gap-9 lg:flex">
-        {nav.map((item) => (
-          <Link
-            key={item.label}
-            href={item.href}
-            className={cx(
-              'relative flex h-[72px] items-center px-1 text-[15px] font-medium',
-              item.label === 'Arena' ? 'text-white' : 'text-slate-300 hover:text-white'
-            )}
-          >
-            {item.label}
-            {item.label === 'Arena' && <span className="absolute inset-x-0 bottom-0 h-[3px] rounded-t-full bg-[#b38cff]" />}
-          </Link>
-        ))}
-      </nav>
-      <div className="ml-auto flex shrink-0 items-center justify-end gap-2 sm:gap-3">
-        <span className="hidden h-10 items-center gap-2 rounded-[6px] border border-white/12 bg-[#0b1725] px-4 text-[13px] text-slate-200 md:inline-flex">
-          <span className="h-2 w-2 rounded-full bg-[#63df8a]" />
-          Local + Cloud Runtime
-        </span>
-        <button
-          type="button"
-          aria-label="Toggle color theme"
-          onClick={() => setTheme(isDark ? 'light' : 'dark')}
-          className="grid h-9 w-9 place-items-center rounded-[5px] text-slate-200 hover:bg-white/5"
-        >
-          {isDark ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
-        </button>
-        <Link href="https://github.com" aria-label="Open GitHub" className="grid h-9 w-9 place-items-center rounded-[5px] text-slate-200 hover:bg-white/5">
-          <Github className="h-5 w-5" />
+    <div className="sticky top-0 z-50 flex justify-center bg-[#040b13]/88 py-2 backdrop-blur-xl">
+      <header className="flex h-[68px] w-[calc(100vw-24px)] max-w-[1756px] items-center justify-between rounded-[24px] border border-white/[0.08] bg-[#050d18]/78 px-4 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl sm:w-[calc(100vw-48px)] xl:w-[calc(100vw-64px)]">
+        <Link href="/" className="group flex min-w-0 items-center gap-3 rounded-[16px] p-1 pr-3 transition hover:bg-white/[0.04]">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] border border-[#b8a1ff]/30 bg-gradient-to-br from-[#9b7cf6]/20 to-[#9b7cf6]/5 text-[#d8ccff] shadow-[0_0_15px_rgba(155,124,246,0.15)] transition-all group-hover:scale-105 group-hover:border-[#b8a1ff]/50">
+            <PlaygroundLogo className="h-5 w-5" />
+          </span>
+          <span className="hidden min-w-0 leading-tight sm:block">
+            <span className="block truncate text-[15px] font-bold tracking-tight text-white/95">Agent Playground</span>
+            <span className="block truncate text-[12px] font-medium text-[#b8a1ff]/70">Inspectable Agent OS</span>
+          </span>
         </Link>
-        <span className="hidden h-8 w-px bg-white/12 sm:block" />
-        <span className="hidden h-9 w-9 place-items-center rounded-full bg-[#7657d9] font-mono text-[13px] font-bold text-white ring-1 ring-white/20 sm:grid">OP</span>
-      </div>
-    </header>
+
+        <nav className="hidden items-center gap-1 rounded-full border border-white/[0.05] bg-white/[0.02] p-1 lg:flex">
+          {nav.map((item) => {
+            const active = item.label === 'Arena'
+            return (
+              <Link key={item.label} href={item.href} aria-current={active ? 'page' : undefined} className={cx('relative rounded-full px-5 py-2 text-[15px] font-medium transition-all duration-300', active ? 'bg-white/10 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)]' : 'text-slate-400 hover:bg-white/[0.04] hover:text-white')}>
+                {item.label}
+              </Link>
+            )
+          })}
+        </nav>
+
+        <div className="flex items-center justify-end gap-3">
+          <span className="hidden items-center gap-2 rounded-full border border-white/[0.08] bg-black/40 px-4 py-2 text-[13px] font-medium text-white/80 shadow-inner backdrop-blur-sm md:inline-flex">
+            <Cloud className="h-4 w-4 text-[#b8a1ff]" />
+            Local + Cloud Runtime
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#49d581] opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#49d581]" />
+            </span>
+          </span>
+          <span className="hidden h-6 w-px bg-white/10 md:block" />
+          <button type="button" aria-label="Toggle color theme" onClick={() => setTheme(isDark ? 'light' : 'dark')} className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/[0.035] text-slate-300 transition-all hover:scale-105 hover:border-white/20 hover:bg-white/[0.07] hover:text-white">
+            {isDark ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+          </button>
+          <Link href="https://github.com" aria-label="Open GitHub" className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/[0.035] text-slate-300 transition-all hover:scale-105 hover:border-white/20 hover:bg-white/[0.07] hover:text-white">
+            <Github className="h-5 w-5" />
+          </Link>
+        </div>
+      </header>
+    </div>
   )
 }
 
@@ -1365,13 +1363,16 @@ function DraftSetup(props: {
                 const selected = selectedAgentIds.includes(agent.id)
                 const accent = participantAccent(index)
                 return (
-                  <button key={agent.id} type="button" onClick={() => onToggleAgent(agent.id)} className={cx('rounded-[6px] border p-3 text-left transition', selected ? accent.panel : 'border-white/10 bg-[#07111d] hover:border-white/18')}>
+                  <div key={agent.id} className={cx('rounded-[6px] border p-3 transition', selected ? accent.panel : 'border-white/10 bg-[#07111d] hover:border-white/18')}>
                     <div className="flex items-center justify-between gap-2">
                       <span className={cx('truncate text-[13px] font-semibold', selected ? accent.text : 'text-white')}>{agent.name}</span>
-                      <span className={cx('h-2 w-2 rounded-full', selected ? accent.dot : 'bg-slate-600')} />
+                      <button type="button" onClick={() => onToggleAgent(agent.id)} aria-label={`${selected ? 'Remove' : 'Add'} ${agent.name} ${selected ? 'from' : 'to'} the debate`} className={cx('inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[4px] border px-2 text-[11px] font-semibold transition', selected ? 'border-[#ff8ea5]/22 bg-[#ff8ea5]/[0.045] text-[#ff9daf] hover:bg-[#ff8ea5]/[0.09]' : 'border-white/[0.08] bg-white/[0.025] text-slate-300 hover:border-[#bfa4ff]/25 hover:text-white')}>
+                        {selected ? <X className="h-3 w-3" /> : <UserPlus className="h-3 w-3" />}
+                        {selected ? 'Remove' : 'Add'}
+                      </button>
                     </div>
                     <p className="mt-1 line-clamp-2 text-[12px] leading-4 text-slate-400">{agent.persona}</p>
-                  </button>
+                  </div>
                 )
               })}
             </div>
@@ -1392,7 +1393,7 @@ function DraftSetup(props: {
                 />
               )
             }) : selectedAgents.map((agent, index) => (
-              <DraftAgentSeat key={agent.id} agent={agent} index={index} />
+              <DraftAgentSeat key={agent.id} agent={agent} index={index} onRemove={() => onToggleAgent(agent.id)} />
             ))}
             {selectedAgentIds.length < 4 && <AddSeatGhost />}
           </div>
@@ -1867,7 +1868,7 @@ function TranscriptToolbar({ query, setQuery, roundFilter, setRoundFilter, round
     { id: 'system', label: 'System' },
   ]
   return (
-    <div className="sticky top-[76px] z-30 rounded-[6px] border border-white/[0.065] bg-[#06101b]/95 p-2 shadow-[0_16px_36px_-28px_rgba(0,0,0,0.95)] backdrop-blur-xl">
+    <div className="sticky top-[88px] z-30 rounded-[6px] border border-white/[0.065] bg-[#06101b]/95 p-2 shadow-[0_16px_36px_-28px_rgba(0,0,0,0.95)] backdrop-blur-xl">
       <div className="grid gap-2 2xl:grid-cols-[minmax(220px,1fr)_132px_auto_auto_auto]">
         <label className="flex h-9 min-w-0 items-center gap-2 rounded-[5px] border border-white/[0.08] bg-[#040b13] px-3 focus-within:border-[#bfa4ff]/35">
           <Search className="h-3.5 w-3.5 shrink-0 text-slate-500" />
@@ -3425,13 +3426,13 @@ function SeatPlannerCard({ seat, index, editable, onChange }: { seat: ArenaSeat;
   )
 }
 
-function DraftAgentSeat({ agent, index }: { agent: { id: string; name: string; persona: string }; index: number }) {
+function DraftAgentSeat({ agent, index, onRemove }: { agent: { id: string; name: string; persona: string }; index: number; onRemove: () => void }) {
   const accent = participantAccent(index)
   return (
     <div className={cx('rounded-[7px] border p-3', accent.panel)}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="text-[15px] font-semibold text-white">{agent.name}</span>
-        <span className="rounded-[4px] border border-[#ffd079]/35 bg-[#ffd079]/10 px-2 py-0.5 text-[12px] text-[#ffd079]">Draft</span>
+        <button type="button" onClick={onRemove} aria-label={`Remove ${agent.name} from the debate`} className="inline-flex h-7 items-center gap-1.5 rounded-[4px] border border-[#ff8ea5]/22 bg-[#ff8ea5]/[0.045] px-2 text-[11px] font-semibold text-[#ff9daf] hover:bg-[#ff8ea5]/[0.09]"><X className="h-3 w-3" />Remove</button>
       </div>
       <p className="line-clamp-5 text-[13px] leading-5 text-slate-300">{agent.persona}</p>
     </div>
