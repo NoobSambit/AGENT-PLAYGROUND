@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo } from 'react'
+import React, { useId, useMemo } from 'react'
 import { EmotionalEvent, EmotionalProfile, EmotionalState, EmotionType, EMOTION_COLORS } from '@/types/database'
 import { emotionalService } from '@/lib/services/emotionalService'
 
@@ -30,6 +30,8 @@ const EMOTION_LABELS: Record<EmotionType, string> = {
   disgust: 'Disgust'
 }
 
+const SIGNAL_SCALE_CEILINGS = [0.25, 0.5, 0.75, 1] as const
+
 function resolveValues(
   emotionalState: EmotionalState | undefined,
   emotionalProfile: EmotionalProfile | undefined,
@@ -55,7 +57,6 @@ function resolveDominantEmotion(
 export function EmotionRadar({
   emotionalState,
   emotionalProfile,
-  recentEvents = [],
   mode = 'live',
   size = 300,
   showLabels = true,
@@ -64,19 +65,26 @@ export function EmotionRadar({
   const values = resolveValues(emotionalState, emotionalProfile, mode)
   const dominantEmotion = resolveDominantEmotion(emotionalState, emotionalProfile, mode)
   const center = size / 2
-  const radius = (size / 2) - 45 // Increased padding for labels
+  const chartPadding = showLabels ? Math.max(44, Math.round(size * 0.2)) : Math.max(14, Math.round(size * 0.08))
+  const radius = (size / 2) - chartPadding
+  const labelRadius = radius + Math.max(17, Math.round(size * 0.08))
+  const gradientId = `radar-gradient-${useId().replace(/:/g, '')}`
+  const glowId = `radar-glow-${useId().replace(/:/g, '')}`
+  const scaleCeiling = SIGNAL_SCALE_CEILINGS.find((ceiling) => (
+    Math.max(...EMOTIONS.map((emotion) => values[emotion] || 0)) <= ceiling
+  )) || 1
+  const scaleLabel = `0–${Math.round(scaleCeiling * 100)}%`
 
   const currentPoints = useMemo(() => {
     return EMOTIONS.map((emotion, index) => {
       const angle = (index * 2 * Math.PI) / EMOTIONS.length - Math.PI / 2
       const value = values[emotion] || 0
-      // Ensure a minimum value for the radar shape to be visible even if 0
-      const displayValue = Math.max(value, 0.05)
+      const displayValue = Math.min(1, value / scaleCeiling)
       const x = center + Math.cos(angle) * radius * displayValue
       const y = center + Math.sin(angle) * radius * displayValue
       return { x, y, emotion, value: displayValue }
     })
-  }, [center, radius, values])
+  }, [center, radius, scaleCeiling, values])
 
   const currentPath = currentPoints.map((point, index) =>
     `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`
@@ -97,33 +105,50 @@ export function EmotionRadar({
 
   const labelPositions = EMOTIONS.map((emotion, index) => {
     const angle = (index * 2 * Math.PI) / EMOTIONS.length - Math.PI / 2
-    const labelRadius = radius + 32 // More breathing room
+    const cosine = Math.cos(angle)
+    const isRight = cosine > 0.35
+    const isLeft = cosine < -0.35
+    const textAnchor: 'start' | 'middle' | 'end' = isRight ? 'end' : isLeft ? 'start' : 'middle'
     return {
-      x: center + Math.cos(angle) * labelRadius,
+      x: Math.min(size - 8, Math.max(8, center + cosine * labelRadius)),
       y: center + Math.sin(angle) * labelRadius,
-      emotion
+      emotion,
+      textAnchor,
     }
   })
 
   const color = EMOTION_COLORS[dominantEmotion]
-  const latestEvent = recentEvents[0]
+  const supportingEmotions = EMOTIONS
+    .map((emotion) => ({ emotion, intensity: values[emotion] || 0 }))
+    .sort((left, right) => right.intensity - left.intensity)
+    .slice(0, 3)
 
   return (
-    <div className={`relative flex flex-col items-center select-none ${className}`}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="drop-shadow-2xl">
+    <div className={`relative flex w-full flex-col items-center select-none ${className}`}>
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        role="img"
+        aria-label={`${mode === 'temperament' ? 'Temperament' : 'Live emotion'} radar using a ${scaleLabel} detail scale. Current lead: ${EMOTION_LABELS[dominantEmotion]}.`}
+        className="overflow-visible drop-shadow-[0_12px_22px_rgba(0,0,0,0.32)]"
+      >
+        <title>{mode === 'temperament' ? 'Temperament radar' : 'Live emotion radar'}</title>
         <defs>
-          <radialGradient id={`radarGradient-${mode}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-            <stop offset="0%" stopColor={color} stopOpacity="0.4" />
-            <stop offset="100%" stopColor={color} stopOpacity="0.1" />
+          <radialGradient id={gradientId} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+            <stop offset="0%" stopColor={color} stopOpacity="0.36" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.07" />
           </radialGradient>
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
+          <filter id={glowId} x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="2" result="coloredBlur" />
             <feMerge>
               <feMergeNode in="coloredBlur" />
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
         </defs>
+
+        <circle cx={center} cy={center} r={radius} fill="#141f30" fillOpacity="0.64" />
 
         {/* Grid Circles */}
         {gridCircles.map((circle, index) => (
@@ -133,10 +158,10 @@ export function EmotionRadar({
             cy={center}
             r={circle.r}
             fill="none"
-            stroke="currentColor"
-            strokeOpacity={0.08}
+            stroke="#8495b2"
+            strokeOpacity={index === 3 ? 0.24 : 0.12}
             strokeWidth={1}
-            strokeDasharray={index === 3 ? "0" : "4 4"}
+            strokeDasharray={index === 3 ? "0" : "3 4"}
           />
         ))}
 
@@ -148,8 +173,8 @@ export function EmotionRadar({
             y1={center}
             x2={line.x2}
             y2={line.y2}
-            stroke="currentColor"
-            strokeOpacity={0.12}
+            stroke="#8495b2"
+            strokeOpacity={0.16}
             strokeWidth={1}
           />
         ))}
@@ -157,11 +182,11 @@ export function EmotionRadar({
         {/* Data Path */}
         <path
           d={currentPath}
-          fill={`url(#radarGradient-${mode})`}
+          fill={`url(#${gradientId})`}
           stroke={color}
-          strokeWidth={2.5}
+          strokeWidth={2.2}
           className="transition-all duration-700 ease-in-out"
-          filter="url(#glow)"
+          filter={`url(#${glowId})`}
         />
 
         {/* Data Points */}
@@ -170,54 +195,54 @@ export function EmotionRadar({
             key={index}
             cx={point.x}
             cy={point.y}
-            r={3.5}
+            r={3.25}
             fill={EMOTION_COLORS[point.emotion]}
-            stroke="white"
-            strokeWidth={1.5}
+            stroke="#f6f7fb"
+            strokeWidth={1.25}
             className="transition-all duration-700 ease-in-out drop-shadow-md"
           />
         ))}
 
         {/* Labels */}
-        {showLabels && labelPositions.map((position, index) => {
-          // Adjust labels at the extremes for better centering
-          const isTop = index === 0
-          const isBottom = index === 4
-          const isRight = index > 0 && index < 4
+        {showLabels && labelPositions.map((position) => {
           return (
             <text
-              key={index}
+              key={position.emotion}
               x={position.x}
               y={position.y}
-              textAnchor={isTop || isBottom ? "middle" : isRight ? "start" : "end"}
+              textAnchor={position.textAnchor}
               dominantBaseline="middle"
-              className="fill-muted-foreground/80 font-medium tracking-tight"
-              style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+              fill="#aebbd1"
+              style={{ fontSize: `${Math.max(9, Math.round(size * 0.042))}px`, fontWeight: 600, letterSpacing: '0.055em' }}
             >
-              {EMOTION_LABELS[position.emotion]}
+              {EMOTION_LABELS[position.emotion].toUpperCase()}
             </text>
           )
         })}
       </svg>
 
-      <div className="mt-4 inline-flex items-center gap-2.5 rounded-full border border-border/40 bg-background/50 px-3.5 py-1.5 backdrop-blur-sm">
+      <div className="mt-2 inline-flex min-h-8 items-center gap-2 rounded-full border border-[#50617e]/65 bg-[#101a29]/95 px-3.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
         <div
-          className="w-2.5 h-2.5 rounded-full shadow-sm animate-pulse"
-          style={{ backgroundColor: color, boxShadow: `0 0 10px ${color}` }}
+          className="h-2 w-2 rounded-full shadow-sm animate-pulse"
+          style={{ backgroundColor: color, boxShadow: `0 0 9px ${color}` }}
         />
-        <span className="text-[11px] font-semibold text-foreground/90 uppercase tracking-wider">
+        <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#e4eaf5]">
           {mode === 'temperament' ? 'Temperament lead:' : 'Current lead:'} {EMOTION_LABELS[dominantEmotion]}
+        </span>
+        <span className="h-3 w-px bg-[#50617e]/70" aria-hidden="true" />
+        <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[#9fafd0]" aria-label={`Detail scale ${scaleLabel}`}>
+          Scale {scaleLabel}
         </span>
       </div>
 
-      {latestEvent?.topEmotions?.length ? (
-        <div className="mt-3 flex flex-wrap justify-center gap-2">
-          {latestEvent.topEmotions.slice(0, 3).map((entry) => (
+      {supportingEmotions.length ? (
+        <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+          {supportingEmotions.map((entry) => (
             <span
               key={`${entry.emotion}-${entry.intensity}`}
-              className="rounded-full border border-border/40 bg-background/60 px-2.5 py-1 text-[10px] font-medium text-muted-foreground"
+              className="rounded-full border border-[#3b4b64]/75 bg-[#101a29]/80 px-2.5 py-1 text-[10px] font-medium text-[#b8c5d9]"
             >
-              {EMOTION_LABELS[entry.emotion]} {(entry.intensity * 100).toFixed(0)}%
+              {EMOTION_LABELS[entry.emotion]} {Math.round(entry.intensity * 100)}%
             </span>
           ))}
         </div>

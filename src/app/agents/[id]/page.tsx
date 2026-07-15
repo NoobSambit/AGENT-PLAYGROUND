@@ -8,15 +8,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
-import { MemoryRecord, AgentRecord, ScenarioAnalyticsSummary, ScenarioBranchPoint, ScenarioIntervention, ScenarioRunRecord, EMOTION_COLORS, EmotionType, MessageRenderBlock } from '@/types/database'
-import { ArrowLeft, Send, User, MessageCircle, Brain, TrendingUp, Heart, Clock, Palette, Moon, BookOpen, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles, LayoutDashboard } from 'lucide-react'
+import { MemoryRecord, AgentRecord, ScenarioAnalyticsSummary, ScenarioBranchPoint, ScenarioIntervention, ScenarioRunRecord, EMOTION_COLORS, EmotionType, MessageRenderBlock, LibraryStats, TimelineWorkspacePayload } from '@/types/database'
+import { Send, User, MessageCircle, Brain, TrendingUp, Heart, Clock, Palette, Moon, BookOpen, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles, LayoutDashboard, LogOut } from 'lucide-react'
 import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { motion } from 'framer-motion'
 import { GradientOrb } from '@/components/ui/animated-background'
 import { MetaLearningState, SkillProgression } from '@/types/metaLearning'
 
 // Phase 1 Components
-import { EmotionRadar, EmotionBars, EmotionRadarMini } from '@/components/emotions/EmotionRadar'
+import { EmotionRadar, EmotionBars } from '@/components/emotions/EmotionRadar'
 import { EmotionTimeline } from '@/components/emotions/EmotionTimeline'
 import { TimelineExplorer } from '@/components/timeline/TimelineExplorer'
 
@@ -41,12 +41,11 @@ import { LibraryInfluenceTrace } from '@/components/library/LibraryInfluenceTrac
 import { MentorshipHub } from '@/components/mentorship/MentorshipHub'
 import { CollectiveIntelligencePanel } from '@/components/collective/CollectiveIntelligencePanel'
 import { NeuralActivityView } from '@/components/neural/NeuralActivityView'
-import { LLMProviderToggle } from '@/components/llm/LLMProviderToggle'
-import { buildLLMPreferenceHeaders, getClientModelForProvider, LLM_PROVIDER_LABELS } from '@/lib/llm/clientPreference'
+import { buildLLMPreferenceHeaders, getClientModelForProvider } from '@/lib/llm/clientPreference'
 import { useLLMPreferenceStore } from '@/stores/llmPreferenceStore'
+import { AgentOverviewCockpit } from '@/components/agents/AgentOverviewCockpit'
 
 // Phase 1 Services
-import { agentStatsService } from '@/lib/services/agentStatsService'
 import { emotionalService } from '@/lib/services/emotionalService'
 
 type TabType =
@@ -131,11 +130,13 @@ export default function AgentDetail() {
   const [runningScenario, setRunningScenario] = useState(false)
   const [memoryRefreshToken, setMemoryRefreshToken] = useState(0)
   const [profileRefreshToken, setProfileRefreshToken] = useState(0)
+  const [overviewTimeline, setOverviewTimeline] = useState<TimelineWorkspacePayload | null>(null)
+  const [overviewLibraryStats, setOverviewLibraryStats] = useState<LibraryStats | null>(null)
+  const [overviewTimelineLoading, setOverviewTimelineLoading] = useState(false)
+  const [overviewLibraryLoading, setOverviewLibraryLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
 
-  // Get agent stats with defaults
-  const agentStats = currentAgent?.stats || agentStatsService.createDefaultStats()
   const agentEmotionalProfile = currentAgent?.emotionalProfile || emotionalService.createEmotionalProfile(currentAgent?.coreTraits)
   const agentEmotionalState = currentAgent?.emotionalState || emotionalService.createDefaultEmotionalState()
   const agentEmotionalHistory = currentAgent?.emotionalHistory || []
@@ -204,6 +205,61 @@ export default function AgentDetail() {
     setSelectedBranchPoint(null)
     setSelectedIntervention(null)
   }, [currentAgent?.id])
+
+  useEffect(() => {
+    if (!currentAgent || activeTab !== 'overview') {
+      return
+    }
+
+    let cancelled = false
+    setOverviewTimelineLoading(true)
+    setOverviewLibraryLoading(true)
+
+    const loadOverviewData = async () => {
+      const [timelineResult, libraryResult] = await Promise.allSettled([
+        fetch(`/api/agents/${encodeURIComponent(currentAgent.id)}/timeline?limit=7`, { cache: 'no-store' })
+          .then(async (response) => {
+            if (!response.ok) throw new Error('Timeline unavailable')
+            return response.json() as Promise<TimelineWorkspacePayload>
+          }),
+        fetch(`/api/agents/${encodeURIComponent(currentAgent.id)}/library?limit=1`, { cache: 'no-store' })
+          .then(async (response) => {
+            if (!response.ok) throw new Error('Library unavailable')
+            return response.json() as Promise<{ stats?: LibraryStats }>
+          }),
+      ])
+
+      if (cancelled) {
+        return
+      }
+
+      if (timelineResult.status === 'fulfilled') {
+        const payload = timelineResult.value
+        if (!cancelled) {
+          setOverviewTimeline(payload)
+        }
+      } else {
+        setOverviewTimeline(null)
+      }
+      setOverviewTimelineLoading(false)
+
+      if (libraryResult.status === 'fulfilled') {
+        const payload = libraryResult.value
+        if (!cancelled) {
+          setOverviewLibraryStats(payload.stats || null)
+        }
+      } else {
+        setOverviewLibraryStats(null)
+      }
+      setOverviewLibraryLoading(false)
+    }
+
+    void loadOverviewData()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab, currentAgent])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -478,104 +534,101 @@ export default function AgentDetail() {
   }
 
   return (
-    <div className="relative mt-4 min-h-screen overflow-x-hidden pt-4 pb-20">
-      {/* Decorative orbs */}
-      <GradientOrb className="w-[600px] h-[600px] -top-[200px] -right-[200px] opacity-20" color="violet" />
-      <GradientOrb className="w-[400px] h-[400px] top-1/2 -left-[200px] opacity-15" color="cyan" />
-
-      <div className="relative z-10 mx-auto w-full min-w-0 px-4 md:px-8">
-        <div className="flex flex-col gap-6">
-          {/* Main Dashboard Header */}
+    <div className="relative min-h-screen overflow-x-hidden bg-[#070d17] pb-12 pt-3 text-[#edf2ff]">
+      <div className="relative z-10 mx-auto w-full min-w-0 max-w-[1800px] px-4 md:px-5">
+        <div className="flex flex-col gap-3">
           <motion.header
-            initial={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-surface/40 border border-border/40 p-6 rounded-sm backdrop-blur-xl flex flex-col lg:flex-row lg:items-center justify-between gap-6"
+            className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(430px,1fr)_180px]"
           >
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-sm bg-primary/10 text-primary border border-primary/20 shadow-lg shadow-primary/5">
-                <PlaygroundLogo className="h-6 w-6" />
+            <div className="flex min-w-0 items-center gap-4 rounded-[6px] border border-[#314057]/80 bg-[#0e1826]/92 px-3.5 py-3 shadow-[0_18px_50px_-38px_rgba(0,0,0,0.95)]">
+              <div className="flex h-[70px] w-[70px] shrink-0 items-center justify-center rounded-[7px] border border-[#d4e0ff]/55 bg-gradient-to-br from-[#d4e0ff] via-[#9ab7f2] to-[#5e7fc6] text-white shadow-[0_10px_28px_-12px_rgba(121,159,229,0.86)]">
+                <PlaygroundLogo className="h-10 w-10" />
               </div>
-              <div>
-                <div className="flex items-center gap-3 mb-1">
-                  <h1 className="text-3xl font-black tracking-tighter text-foreground uppercase">
-                    {currentAgent.name}
-                  </h1>
-                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-[9px] uppercase font-bold text-emerald-500 tracking-widest">{currentAgent.status}</span>
-                  </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="truncate text-[19px] font-semibold tracking-[-0.035em] text-[#f3f5fb] sm:text-[21px]">{currentAgent.name}</h1>
+                  <span className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize',
+                    currentAgent.status === 'active' ? 'border-emerald-300/35 text-emerald-200' : currentAgent.status === 'training' ? 'border-amber-300/35 text-amber-200' : 'border-rose-300/35 text-rose-200'
+                  )}>
+                    <span className={cn('h-1.5 w-1.5 rounded-full', currentAgent.status === 'active' ? 'bg-emerald-300' : currentAgent.status === 'training' ? 'bg-amber-300' : 'bg-rose-300')} />
+                    {currentAgent.status}
+                  </span>
                 </div>
-                <p className="text-muted-foreground text-xs leading-relaxed lowercase italic opacity-70">
-                  &quot;{currentAgent.persona}&quot;
-                </p>
+                <p className="mt-1.5 line-clamp-2 max-w-2xl text-[12px] leading-5 text-[#c0cada]">{currentAgent.persona}</p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 lg:justify-end">
-              <div className="flex items-center gap-4 px-4 py-2 bg-muted/20 border border-border/20 rounded-sm">
-                <div className="flex flex-col">
-                  <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Context Nodes</span>
-                  <span className="text-xs font-bold text-foreground">{currentAgent.memoryCount || 0}</span>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2">
+              {[
+                { icon: Brain, label: 'Context nodes', value: currentAgent.memoryCount || 0, tone: 'text-blue-200' },
+                { icon: Users, label: 'Social vectors', value: currentAgent.relationshipCount || 0, tone: 'text-cyan-200' },
+                { icon: Network, label: 'Model runtime', value: activeProviderModel, tone: 'text-orange-200' },
+                { icon: Heart, label: 'Last emotion', value: agentEmotionalState.status === 'active' ? formatEmotionLabel(agentEmotionalState.dominantEmotion) : 'Dormant', tone: 'text-rose-200' },
+              ].map(({ icon: Icon, label, value, tone }) => (
+                <div key={label} className="flex min-w-0 items-center gap-2.5 rounded-[5px] border border-[#314057]/75 bg-[#101a29]/88 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+                  <Icon className={cn('h-5 w-5 shrink-0 stroke-[1.45]', tone)} aria-hidden="true" />
+                  <div className="min-w-0 leading-tight">
+                    <div className="truncate text-[10px] font-medium text-[#aebbd1]">{label}</div>
+                    <div className="truncate pt-0.5 text-[14px] font-semibold tracking-[-0.02em] text-[#f2f5ff]">{value}</div>
+                  </div>
                 </div>
-                <div className="flex flex-col">
-                  <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Social Vectors</span>
-                  <span className="text-xs font-bold text-foreground">{currentAgent.relationshipCount || 0}</span>
-                </div>
-                <div className="h-8 w-[1px] bg-border/20" />
-                <div className="flex flex-col">
-                  <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Model Runtime</span>
-                  <span className="text-xs font-bold text-foreground truncate max-w-[120px]">{activeProviderModel}</span>
-                </div>
-              </div>
-              
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => router.back()}
-                  className="px-4 h-10 rounded-sm border border-border/60 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-surface-strong transition-all flex items-center gap-2"
-                >
-                  <ArrowLeft className="h-3 w-3" /> Exit
-                </button>
-              </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 xl:grid-cols-1">
+              <button type="button" onClick={() => handleTabChange('chat')} className="flex h-10 items-center justify-center gap-2 rounded-[5px] bg-[#a9c2ff] px-3 text-[13px] font-semibold text-[#111e3b] shadow-[0_12px_24px_-15px_rgba(147,181,255,0.95)] transition hover:bg-[#c7d7ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c4d4ff] focus-visible:ring-offset-2 focus-visible:ring-offset-[#09111e]">
+                Open chat <MessageCircle className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <button type="button" onClick={() => router.back()} className="flex h-10 items-center justify-center gap-2 rounded-[5px] border border-[#829fd6] bg-[#111b2a] px-3 text-[13px] font-semibold text-[#edf2ff] transition hover:bg-[#1b2a45] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c4d4ff] focus-visible:ring-offset-2 focus-visible:ring-offset-[#09111e]">
+                Exit workspace <LogOut className="h-4 w-4" aria-hidden="true" />
+              </button>
             </div>
           </motion.header>
 
           {/* Horizontal Navigation Row */}
-          <nav className="sticky top-2 z-50 bg-surface/80 border border-border/40 p-1 rounded-sm backdrop-blur-xl shadow-xl shadow-background/20 w-full overflow-hidden">
-            <div className="flex items-center gap-6 px-4 overflow-x-auto scrollbar-none no-scrollbar py-1">
+          <nav aria-label="Agent workspaces" className="sticky top-2 z-50 w-full overflow-hidden rounded-[7px] border border-[#34435a]/85 bg-[linear-gradient(118deg,#101b2a_0%,#0b1421_48%,#101927_100%)] p-2 shadow-[0_18px_50px_-38px_rgba(0,0,0,0.95)] backdrop-blur-xl">
+            <div className="flex items-center gap-1 overflow-x-auto scrollbar-none no-scrollbar">
               {[
-                { label: 'Core', items: ['overview', 'chat', 'emotions', 'neural', 'timeline', 'memory', 'relationships', 'learning'] },
-                { label: 'Generative', items: ['scenarios', 'creative', 'dreams', 'journal'] },
-                { label: 'Intelligence', items: ['profile', 'challenges', 'knowledge-graph', 'knowledge-library', 'collective', 'mentorship'] }
-              ].map((group, idx) => (
-                <div key={group.label} className="flex items-center gap-1 shrink-0">
-                  <div className="text-[9px] uppercase font-black tracking-[0.25em] text-muted-foreground/30 mr-3 select-none">
+                { label: 'Core', items: ['overview', 'chat', 'emotions', 'neural', 'timeline', 'memory', 'relationships', 'learning'], labelClass: 'border-[#536ea9]/60 bg-[#162341] text-[#c3d3ff]' },
+                { label: 'Generative', items: ['scenarios', 'creative', 'dreams', 'journal'], labelClass: 'border-[#a87968]/55 bg-[#30211f] text-[#ffd0bc]' },
+                { label: 'Intelligence', items: ['profile', 'challenges', 'knowledge-graph', 'knowledge-library', 'collective', 'mentorship'], labelClass: 'border-[#9d6e82]/55 bg-[#30202a] text-[#ffc4d3]' }
+              ].map((group, index) => (
+                <div key={group.label} role="group" aria-label={`${group.label} workspaces`} className={cn(
+                  'flex shrink-0 items-center gap-1 px-2 py-1',
+                  index > 0 && 'border-l border-[#34435a]/80 pl-3'
+                )}>
+                  <span className={cn('mr-1 inline-flex h-7 items-center rounded-[4px] border px-2 text-[9px] font-bold uppercase tracking-[0.14em] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]', group.labelClass)}>
                     {group.label}
-                  </div>
-                  <div className="flex items-center gap-1">
+                  </span>
+                  <div className="flex items-center gap-0.5">
                     {TAB_CONFIG.filter(t => group.items.includes(t.id)).map((tab) => {
                       const Icon = tab.icon
                       const isActive = activeTab === tab.id
                       return (
                         <button
                           key={tab.id}
+                          type="button"
                           onClick={() => handleTabChange(tab.id)}
+                          aria-current={isActive ? 'page' : undefined}
                           className={cn(
-                            "flex items-center gap-2 px-3 py-1.5 rounded-sm transition-all duration-200 group relative whitespace-nowrap",
+                            "group relative flex min-h-10 items-center gap-2 rounded-[4px] border border-transparent px-3 py-2 transition-all duration-200 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c4d4ff] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1421]",
                             isActive 
-                              ? "bg-primary text-primary-foreground shadow-md shadow-primary/20" 
-                              : "text-muted-foreground/80 hover:bg-surface-strong hover:text-foreground"
+                              ? "border-[#c6d7ff]/75 bg-[linear-gradient(135deg,#dce6ff_0%,#aec6ff_52%,#7e9ce3_100%)] text-[#111e3b] shadow-[0_8px_20px_-11px_rgba(150,183,255,0.86),inset_0_1px_0_rgba(255,255,255,0.5)]"
+                              : "text-[#b9c6da] hover:border-[#46556e]/80 hover:bg-[#18263a] hover:text-[#f4f6ff]"
                           )}
                         >
-                          <Icon className={cn("h-3.5 w-3.5", isActive ? "text-white" : "text-primary/50 group-hover:text-primary")} />
-                          <span className="text-[11px] font-bold uppercase tracking-wider">{tab.label}</span>
+                          <Icon className={cn("h-3.5 w-3.5 stroke-[1.8] transition-transform duration-200 group-hover:scale-110", isActive ? "text-[#111e3b]" : "text-[#a8bef7] group-hover:text-[#d5e1ff]")} aria-hidden="true" />
+                          <span className="text-[11px] font-semibold">{tab.label}</span>
                           {isActive && (
-                            <motion.div layoutId="nav-active" className="absolute -bottom-1 left-2 right-2 h-0.5 bg-white/30 rounded-full" />
+                            <motion.div layoutId="agent-workspace-active" className="absolute inset-x-3 bottom-1 h-px bg-[#4f6eae]/55" />
                           )}
                         </button>
                       )
                     })}
                   </div>
-                  {idx < 2 && <div className="ml-5 h-6 w-[1px] bg-border/20" />}
                 </div>
               ))}
             </div>
@@ -585,135 +638,15 @@ export default function AgentDetail() {
           <main className="min-w-0 space-y-6">
 
         <div className="flex flex-col gap-6">
-          {/* Agent Info - Overview Tab Only */}
           {activeTab === 'overview' && (
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="grid grid-cols-1 lg:grid-cols-3 gap-6"
-            >
-            <div className="p-6 rounded-sm premium-card">
-              <CardHeader className="space-y-4 p-0 pb-4">
-                <CardTitle className="flex items-center gap-3 text-xl">
-                  <div className="icon-container icon-container-purple">
-                    <PlaygroundLogo className="h-5 w-5" />
-                  </div>
-                  Agent Information
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6 p-0">
-                <div className="space-y-3">
-                  <h4 className="text-sm font-medium text-muted-foreground">Status</h4>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-3 h-3 rounded-full transition-all duration-300 ${
-                      currentAgent.status === 'active' ? 'bg-green-400 shadow-lg shadow-green-400/30' :
-                      currentAgent.status === 'training' ? 'bg-yellow-400 shadow-lg shadow-yellow-400/30' : 'bg-gray-400'
-                    }`} />
-                    <span className="capitalize font-medium">{currentAgent.status}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <h4 className="text-sm font-medium text-muted-foreground">Goals</h4>
-                  <ul className="space-y-2">
-                    {currentAgent.goals.length > 0 ? currentAgent.goals.map((goal, index) => (
-                      <li key={index} className="text-sm flex items-start gap-3 p-2 rounded-sm bg-muted/30">
-                        <span className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
-                        <span className="leading-relaxed">{goal}</span>
-                      </li>
-                    )) : (
-                      <li className="text-sm text-muted-foreground p-2 rounded-sm bg-muted/30">
-                        No explicit goals set yet.
-                      </li>
-                    )}
-                  </ul>
-                </div>
-
-                <div className="space-y-3">
-                  <h4 className="text-sm font-medium text-muted-foreground">Created</h4>
-                  <p className="text-sm font-medium">
-                    {new Date(currentAgent.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  <h4 className="text-sm font-medium text-muted-foreground">LLM Runtime</h4>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
-                      {LLM_PROVIDER_LABELS[selectedProvider]}
-                    </span>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
-                      {activeProviderModel}
-                    </span>
-                  </div>
-                  <LLMProviderToggle compact />
-                </div>
-              </CardContent>
-            </div>
-            {/* Phase 1: Emotion Mini Display */}
-            <div className="p-6 rounded-sm premium-card">
-              <CardHeader className="space-y-4 p-0 pb-4">
-                <CardTitle className="flex items-center gap-3 text-xl">
-                  <div className="icon-container icon-container-pink">
-                    <Heart className="h-5 w-5" />
-                  </div>
-                  Live Emotion
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col items-center p-0">
-                <div className="relative mb-4 flex justify-center">
-                  <div className="absolute inset-0 scale-75 blur-2xl bg-pink-500/10 rounded-full" />
-                  <EmotionRadarMini
-                    emotionalState={agentEmotionalState}
-                    emotionalProfile={agentEmotionalProfile}
-                    size={110}
-                  />
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-medium capitalize">
-                    {agentEmotionalState.status === 'active'
-                      ? formatEmotionLabel(agentEmotionalState.dominantEmotion)
-                      : 'Dormant'}
-                  </div>
-                  <div className="mt-2 text-xs leading-relaxed text-muted-foreground line-clamp-2">
-                    {emotionalService.getEmotionalSummary(agentEmotionalState, agentEmotionalProfile)}
-                  </div>
-                </div>
-              </CardContent>
-            </div>
-
-            <div className="p-6 rounded-sm premium-card">
-              <CardHeader className="space-y-4 p-0 pb-4">
-                <CardTitle className="flex items-center gap-3 text-xl">
-                  <div className="icon-container icon-container-cyan">
-                    <MessageCircle className="h-5 w-5" />
-                  </div>
-                  Chat Statistics
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6 p-0">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-4 rounded-sm bg-violet-500/10">
-                    <div className="text-3xl font-bold text-violet-400 mb-1">{agentStats.totalMessages}</div>
-                    <div className="text-sm text-muted-foreground">Messages</div>
-                  </div>
-                  <div className="text-center p-4 rounded-sm bg-cyan-500/10">
-                    <div className="text-3xl font-bold text-cyan-400 mb-1">{agentStats.conversationCount}</div>
-                    <div className="text-sm text-muted-foreground">Sessions</div>
-                  </div>
-                  <div className="text-center p-4 rounded-sm bg-emerald-500/10">
-                    <div className="text-3xl font-bold text-emerald-400 mb-1">{currentAgent.relationshipCount || 0}</div>
-                    <div className="text-sm text-muted-foreground">Relationships</div>
-                  </div>
-                  <div className="text-center p-4 rounded-sm bg-amber-500/10">
-                    <div className="text-3xl font-bold text-amber-400 mb-1">{currentAgent.memoryCount || 0}</div>
-                    <div className="text-sm text-muted-foreground">Memories</div>
-                  </div>
-                </div>
-              </CardContent>
-            </div>
-            </motion.div>
+            <AgentOverviewCockpit
+              agent={currentAgent as AgentRecord}
+              timeline={overviewTimeline}
+              timelineLoading={overviewTimelineLoading}
+              libraryStats={overviewLibraryStats}
+              libraryLoading={overviewLibraryLoading}
+              onOpenTab={handleTabChange}
+            />
           )}
 
           {/* Main Content Area */}
