@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useId, useMemo } from 'react'
+import React, { useMemo } from 'react'
 import { EmotionalEvent, EmotionalProfile, EmotionalState, EmotionType, EMOTION_COLORS } from '@/types/database'
 import { emotionalService } from '@/lib/services/emotionalService'
 
@@ -11,6 +11,7 @@ interface EmotionRadarProps {
   mode?: 'live' | 'temperament'
   size?: number
   showLabels?: boolean
+  palette?: Partial<Record<EmotionType, string>>
   className?: string
 }
 
@@ -60,6 +61,7 @@ export function EmotionRadar({
   mode = 'live',
   size = 300,
   showLabels = true,
+  palette,
   className = ''
 }: EmotionRadarProps) {
   const values = resolveValues(emotionalState, emotionalProfile, mode)
@@ -68,8 +70,6 @@ export function EmotionRadar({
   const chartPadding = showLabels ? Math.max(44, Math.round(size * 0.2)) : Math.max(14, Math.round(size * 0.08))
   const radius = (size / 2) - chartPadding
   const labelRadius = radius + Math.max(17, Math.round(size * 0.08))
-  const gradientId = `radar-gradient-${useId().replace(/:/g, '')}`
-  const glowId = `radar-glow-${useId().replace(/:/g, '')}`
   const scaleCeiling = SIGNAL_SCALE_CEILINGS.find((ceiling) => (
     Math.max(...EMOTIONS.map((emotion) => values[emotion] || 0)) <= ceiling
   )) || 1
@@ -117,7 +117,7 @@ export function EmotionRadar({
     }
   })
 
-  const color = EMOTION_COLORS[dominantEmotion]
+  const color = palette?.[dominantEmotion] || EMOTION_COLORS[dominantEmotion]
   const supportingEmotions = EMOTIONS
     .map((emotion) => ({ emotion, intensity: values[emotion] || 0 }))
     .sort((left, right) => right.intensity - left.intensity)
@@ -134,20 +134,6 @@ export function EmotionRadar({
         className="overflow-visible drop-shadow-[0_12px_22px_rgba(0,0,0,0.32)]"
       >
         <title>{mode === 'temperament' ? 'Temperament radar' : 'Live emotion radar'}</title>
-        <defs>
-          <radialGradient id={gradientId} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-            <stop offset="0%" stopColor={color} stopOpacity="0.36" />
-            <stop offset="100%" stopColor={color} stopOpacity="0.07" />
-          </radialGradient>
-          <filter id={glowId} x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="2" result="coloredBlur" />
-            <feMerge>
-              <feMergeNode in="coloredBlur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-
         <circle cx={center} cy={center} r={radius} fill="#141f30" fillOpacity="0.64" />
 
         {/* Grid Circles */}
@@ -182,11 +168,11 @@ export function EmotionRadar({
         {/* Data Path */}
         <path
           d={currentPath}
-          fill={`url(#${gradientId})`}
+          fill={color}
+          fillOpacity="0.16"
           stroke={color}
           strokeWidth={2.2}
           className="transition-all duration-700 ease-in-out"
-          filter={`url(#${glowId})`}
         />
 
         {/* Data Points */}
@@ -196,7 +182,7 @@ export function EmotionRadar({
             cx={point.x}
             cy={point.y}
             r={3.25}
-            fill={EMOTION_COLORS[point.emotion]}
+            fill={palette?.[point.emotion] || EMOTION_COLORS[point.emotion]}
             stroke="#f6f7fb"
             strokeWidth={1.25}
             className="transition-all duration-700 ease-in-out drop-shadow-md"
