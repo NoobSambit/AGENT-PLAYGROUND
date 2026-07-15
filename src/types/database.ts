@@ -477,6 +477,13 @@ export interface MessageRenderData {
   blocks: MessageRenderBlock[]
 }
 
+export interface ChatTurnOutcome {
+  version: 1
+  changedDomains: string[]
+  staleDomains: string[]
+  completedAt: string
+}
+
 export interface MessageMetadata {
   format?: 'plain-text-v1' | 'markdown-v1' | 'blocks-v1'
   render?: MessageRenderData
@@ -498,6 +505,7 @@ export interface MessageMetadata {
   libraryContextError?: string
   libraryUsageRecordedAt?: string
   libraryContextItems?: LibraryInfluenceTraceItem[]
+  chatTurnOutcome?: ChatTurnOutcome
   [key: string]: unknown
 }
 

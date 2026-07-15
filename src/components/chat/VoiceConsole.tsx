@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react'
+import { AudioLines, Mic, MicOff, Volume2, VolumeX } from 'lucide-react'
 import { EmotionalState, LinguisticProfile } from '@/types/database'
 import { VoiceProfile } from '@/types/enhancements'
 import { emotionalService } from '@/lib/services/emotionalService'
@@ -152,68 +152,77 @@ export function VoiceConsole({
   }
 
   return (
-    <div className="mt-4 rounded-sm border border-border/60 bg-background/45 p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <section className="overflow-hidden rounded-xl border border-[#5f4a5b] bg-[#21171d] shadow-[0_12px_32px_rgba(0,0,0,0.18)]">
+      <div className="flex items-center gap-2 border-b border-[#503a49] px-3.5 py-3">
+        <AudioLines className="h-4 w-4 text-[#f3c5d5]" aria-hidden="true" />
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">Voice Console</div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Voice delivery for {agentName}. {voiceProfile.styleHint}
-          </p>
+          <h3 className="text-sm font-semibold tracking-tight text-[#eef5ff]">Voice console</h3>
+          <p className="mt-0.5 text-[10px] text-[#8fa4bf]">Browser speech controls for {agentName}</p>
+        </div>
+      </div>
+
+      <div className="space-y-3 p-3.5">
+        <div className="grid grid-cols-2 gap-2 text-[10px]">
+          <div className="rounded-lg border border-[#694d5d] bg-[#2a1d26] px-2.5 py-2">
+            <span className="block uppercase tracking-[0.14em] text-[#b09aa7]">Rate</span>
+            <span className="mt-1 block font-semibold text-[#ffd9df]">{voiceProfile.rate.toFixed(2)}×</span>
+          </div>
+          <div className="rounded-lg border border-[#4d6959] bg-[#18221c] px-2.5 py-2">
+            <span className="block uppercase tracking-[0.14em] text-[#a4b9aa]">Output</span>
+            <span className={`mt-1 block font-semibold ${voiceEnabled ? 'text-emerald-200' : 'text-[#9aacbf]'}`}>{voiceEnabled ? 'Available' : 'Unavailable'}</span>
+          </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={isListening ? stopListening : startListening}
             disabled={!recognitionAvailable}
-            className={`inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-medium transition-all ${
+            className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9bdddb]/80 ${
               isListening
-                ? 'bg-rose-500 text-white'
-                : 'border border-border/70 bg-card/[0.62] text-foreground'
-            } disabled:opacity-50`}
+                ? 'border-rose-200/45 bg-rose-300/15 text-rose-100'
+                : 'border-[#4b7775] bg-[#102523] text-[#c9f0eb] hover:border-[#9bdddb]/55'
+            } disabled:cursor-not-allowed disabled:opacity-45`}
           >
-            {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            {isListening ? 'Stop listening' : 'Dictate'}
+            {isListening ? <MicOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Mic className="h-3.5 w-3.5" aria-hidden="true" />}
+            {isListening ? 'Stop dictation' : 'Dictate'}
           </button>
 
           <button
             type="button"
             onClick={() => speak(lastAgentMessage?.content || value)}
             disabled={!voiceEnabled || !(lastAgentMessage?.content || value)}
-            className="inline-flex h-10 items-center gap-2 rounded-full border border-border/70 bg-card/[0.62] px-4 text-sm font-medium text-foreground disabled:opacity-50"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#8b6672]/70 bg-[#2a1d28] px-2 text-xs font-semibold text-[#ffdbe4] transition hover:border-[#ffc0d1]/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffc0d1]/80 disabled:cursor-not-allowed disabled:opacity-45"
           >
-            <Volume2 className="h-4 w-4" />
-            Speak response
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              window.speechSynthesis.cancel()
-            }}
-            disabled={!voiceEnabled}
-            className="inline-flex h-10 items-center gap-2 rounded-full border border-border/70 bg-card/[0.62] px-4 text-sm font-medium text-foreground disabled:opacity-50"
-          >
-            <VolumeX className="h-4 w-4" />
-            Stop audio
+            <Volume2 className="h-3.5 w-3.5" aria-hidden="true" /> Speak reply
           </button>
         </div>
-      </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <span className="soft-pill">rate {voiceProfile.rate.toFixed(2)}</span>
-        <span className="soft-pill">pitch {voiceProfile.pitch.toFixed(2)}</span>
-        <label className="inline-flex items-center gap-2 rounded-full border border-border/60 px-3 py-2">
-          <input
-            type="checkbox"
-            checked={autoSpeak}
-            onChange={(event) => setAutoSpeak(event.target.checked)}
-            className="rounded"
-          />
-          Auto-speak replies
-        </label>
+        <button
+          type="button"
+          onClick={() => {
+            window.speechSynthesis.cancel()
+          }}
+          disabled={!voiceEnabled}
+          className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-rose-300/35 bg-rose-300/5 text-xs font-semibold text-rose-100 transition hover:bg-rose-300/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200/80 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          <VolumeX className="h-3.5 w-3.5" aria-hidden="true" /> Stop audio
+        </button>
+
+        <div className="flex items-center justify-between border-t border-[#503a49] pt-3 text-[10px] text-[#c5adb9]">
+          <span>pitch {voiceProfile.pitch.toFixed(2)} · emotion-adaptive</span>
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-[#f0d5df]">
+            <input
+              type="checkbox"
+              checked={autoSpeak}
+              onChange={(event) => setAutoSpeak(event.target.checked)}
+              className="h-3.5 w-3.5 rounded border-[#876a79] bg-[#2a1d26] text-rose-300 focus:ring-rose-200"
+            />
+            Auto-speak
+          </label>
+        </div>
       </div>
-    </div>
+    </section>
   )
 }
 

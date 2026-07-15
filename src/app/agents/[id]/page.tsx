@@ -1,15 +1,14 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { useAgentStore } from '@/stores/agentStore'
 import { useMessageStore } from '@/stores/messageStore'
-import { MemoryRecord, AgentRecord, ScenarioAnalyticsSummary, ScenarioBranchPoint, ScenarioIntervention, ScenarioRunRecord, EMOTION_COLORS, EmotionType, MessageRenderBlock, LibraryStats, TimelineWorkspacePayload } from '@/types/database'
-import { Send, User, MessageCircle, Brain, TrendingUp, Heart, Clock, Palette, Moon, BookOpen, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles, LayoutDashboard, LogOut } from 'lucide-react'
+import { MemoryRecord, AgentRecord, ScenarioAnalyticsSummary, ScenarioBranchPoint, ScenarioIntervention, ScenarioRunRecord, EMOTION_COLORS, EmotionType, LibraryStats, TimelineWorkspacePayload } from '@/types/database'
+import { MessageCircle, Brain, TrendingUp, Heart, Clock, Palette, Moon, BookOpen, Swords, Network, Library, GraduationCap, Users, Languages, Sparkles, LayoutDashboard, LogOut } from 'lucide-react'
 import { PlaygroundLogo } from '@/components/PlaygroundLogo'
 import { motion } from 'framer-motion'
 import { GradientOrb } from '@/components/ui/animated-background'
@@ -31,13 +30,11 @@ import { RelationshipWorkspace } from '@/components/relationships/RelationshipWo
 import { MetaLearningDashboard } from '@/components/learning/MetaLearningDashboard'
 
 import { ParallelRealityExplorer } from '@/components/parallel/ParallelRealityExplorer'
-import { VoiceConsole } from '@/components/chat/VoiceConsole'
-import { ChatMessageContent } from '@/components/chat/ChatMessageContent'
+import { ChatConversationConsole } from '@/components/chat/ChatConversationConsole'
 
 // Phase 3 Components
 import { KnowledgeGraph } from '@/components/knowledge/KnowledgeGraph'
 import { KnowledgeLibraryWorkspace } from '@/components/library/KnowledgeLibraryWorkspace'
-import { LibraryInfluenceTrace } from '@/components/library/LibraryInfluenceTrace'
 import { MentorshipHub } from '@/components/mentorship/MentorshipHub'
 import { CollectiveIntelligencePanel } from '@/components/collective/CollectiveIntelligencePanel'
 import { NeuralActivityView } from '@/components/neural/NeuralActivityView'
@@ -114,6 +111,8 @@ export default function AgentDetail() {
   const selectedProvider = useLLMPreferenceStore((state) => state.provider)
 
   const [newMessage, setNewMessage] = useState('')
+  const [chatSending, setChatSending] = useState(false)
+  const [chatError, setChatError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabType>('overview')
   const [agentResolved, setAgentResolved] = useState(false)
   const [memories, setMemories] = useState<MemoryRecord[]>([])
@@ -134,9 +133,6 @@ export default function AgentDetail() {
   const [overviewLibraryStats, setOverviewLibraryStats] = useState<LibraryStats | null>(null)
   const [overviewTimelineLoading, setOverviewTimelineLoading] = useState(false)
   const [overviewLibraryLoading, setOverviewLibraryLoading] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-
-
   const agentEmotionalProfile = currentAgent?.emotionalProfile || emotionalService.createEmotionalProfile(currentAgent?.coreTraits)
   const agentEmotionalState = currentAgent?.emotionalState || emotionalService.createDefaultEmotionalState()
   const agentEmotionalHistory = currentAgent?.emotionalHistory || []
@@ -260,14 +256,6 @@ export default function AgentDetail() {
       cancelled = true
     }
   }, [activeTab, currentAgent])
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
 
   // Load memories when switching to memory tab
   const loadMemories = async (forceRefresh = false) => {
@@ -409,6 +397,8 @@ export default function AgentDetail() {
     const trimmedMessage = newMessage.trim()
     if (!trimmedMessage || !currentAgent) return
 
+    setChatError(null)
+    setChatSending(true)
     try {
       const conversationHistory = messages
         .filter(msg => msg.agentId === currentAgent.id)
@@ -429,42 +419,46 @@ export default function AgentDetail() {
         })
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        if (data.userMessage) {
-          addMessage(data.userMessage)
-        }
-        if (data.agentMessage) {
-          addMessage(data.agentMessage)
-        }
-        if (data.agent) {
-          updateAgent(data.agent.id, data.agent)
-          if (currentAgent.id === data.agent.id) {
-            setCurrentAgent(data.agent)
-          }
-        }
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null
+        throw new Error(payload?.error || 'The chat turn could not be completed.')
+      }
 
-        const changedDomains = Array.isArray(data.changedDomains) ? data.changedDomains as string[] : []
-        const staleDomains = Array.isArray(data.staleDomains) ? data.staleDomains as string[] : []
-
-        if (changedDomains.includes('memory') || staleDomains.includes('memory')) {
-          setMemoryRefreshToken((value) => value + 1)
+      const data = await response.json()
+      if (data.userMessage) {
+        addMessage(data.userMessage)
+      }
+      if (data.agentMessage) {
+        addMessage(data.agentMessage)
+      }
+      if (data.agent) {
+        updateAgent(data.agent.id, data.agent)
+        if (currentAgent.id === data.agent.id) {
+          setCurrentAgent(data.agent)
         }
+      }
 
-        if (changedDomains.includes('profile_traits') || staleDomains.includes('profile_analysis')) {
-          setProfileRefreshToken((value) => value + 1)
-        }
+      const changedDomains = Array.isArray(data.changedDomains) ? data.changedDomains as string[] : []
+      const staleDomains = Array.isArray(data.staleDomains) ? data.staleDomains as string[] : []
 
-        if (activeTab === 'learning') {
-          await loadLearningData()
-        }
-      } else {
-        console.error('Failed to process chat turn')
+      if (changedDomains.includes('memory') || staleDomains.includes('memory')) {
+        setMemoryRefreshToken((value) => value + 1)
+      }
+
+      if (changedDomains.includes('profile_traits') || staleDomains.includes('profile_analysis')) {
+        setProfileRefreshToken((value) => value + 1)
+      }
+
+      if (activeTab === 'learning') {
+        await loadLearningData()
       }
 
       setNewMessage('')
     } catch (error) {
       console.error('Failed to send message:', error)
+      setChatError(error instanceof Error ? error.message : 'The chat turn could not be completed.')
+    } finally {
+      setChatSending(false)
     }
   }
 
@@ -652,149 +646,20 @@ export default function AgentDetail() {
           {/* Main Content Area */}
           <div className="min-w-0">
             {activeTab === 'chat' ? (
-              /* Chat Interface */
-              <div className="space-y-4">
-                <Card className="h-[650px] flex flex-col backdrop-blur-sm bg-card/80 border-0 shadow-2xl">
-                  <CardHeader className="border-b border-border/50 space-y-4">
-                    <CardTitle className="flex items-center gap-3 text-2xl">
-                      <div className="p-2 rounded-sm bg-primary/10">
-                        <PlaygroundLogo className="h-6 w-6 text-primary" />
-                      </div>
-                      Chat with {currentAgent.name}
-                    </CardTitle>
-                    <CardDescription className="text-base leading-relaxed">
-                      Start a conversation with your AI agent
-                    </CardDescription>
-                  </CardHeader>
-
-                  {/* Messages */}
-                  <CardContent className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {messages.length === 0 && !messagesLoading ? (
-                      <div className="flex items-center justify-center h-full text-center">
-                        <div className="space-y-4">
-                          <div className="p-4 rounded-full bg-primary/10 mx-auto w-fit">
-                            <MessageCircle className="h-16 w-16 text-primary" />
-                          </div>
-                          <div className="space-y-2">
-                            <h3 className="text-xl font-semibold text-foreground">Start a conversation</h3>
-                            <p className="text-muted-foreground max-w-md">
-                              Send a message to begin chatting with {currentAgent.name}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        {messages.map((message, index) => (
-                          <div
-                            key={message.id}
-                            className={`flex gap-4 ${
-                              message.type === 'user' ? 'justify-end' : 'justify-start'
-                            }`}
-                            style={{
-                              animationDelay: `${index * 100}ms`,
-                              animation: 'fadeIn 0.4s ease-out forwards'
-                            }}
-                          >
-                            {message.type === 'agent' && (
-                              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0 shadow-lg">
-                                <PlaygroundLogo className="h-5 w-5 text-primary-foreground" />
-                              </div>
-                            )}
-
-                            <div
-                              className={`max-w-[75%] rounded-sm px-5 py-4 shadow-sm ${
-                                message.type === 'user'
-                                  ? 'bg-primary text-primary-foreground rounded-br-md'
-                                  : 'bg-muted text-card-foreground rounded-bl-md'
-                              }`}
-                            >
-                              <ChatMessageContent
-                                content={message.content}
-                                blocks={Array.isArray(message.metadata?.render?.blocks)
-                                  ? message.metadata.render.blocks as MessageRenderBlock[]
-                                  : undefined}
-                                variant={message.type === 'user' ? 'user' : 'assistant'}
-                              />
-                              <div className={`text-xs mt-2 flex items-center gap-2 ${
-                                message.type === 'user'
-                                  ? 'text-primary-foreground/70'
-                                  : 'text-muted-foreground'
-                              }`}>
-                                {new Date(message.timestamp).toLocaleTimeString()}
-                                {message.metadata?.langchain === true && (
-                                  <div className="group relative">
-                                    <div className="flex items-center gap-1 text-xs bg-accent/20 px-2 py-1 rounded-full">
-                                      <span className="text-accent">🧩</span>
-                                      <span>LangChain</span>
-                                    </div>
-                                    {(() => {
-                                      const toolsUsed = message.metadata?.toolsUsed as string[] | undefined
-                                      return toolsUsed && toolsUsed.length > 0 && (
-                                        <div className="absolute bottom-full left-0 mb-1 px-2 py-1 bg-popover text-popover-foreground text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                                          Tools: {toolsUsed.join(', ')}
-                                        </div>
-                                      )
-                                    })()}
-                                  </div>
-                                )}
-                              </div>
-                              {message.type === 'agent' && message.metadata?.libraryContextStatus && (
-                                <details className="mt-3 rounded-sm border border-border/30 bg-background/20 p-2">
-                                  <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                                    Inspect metadata
-                                  </summary>
-                                  <div className="mt-2">
-                                    <LibraryInfluenceTrace metadata={message.metadata} compact />
-                                  </div>
-                                </details>
-                              )}
-                            </div>
-
-                            {message.type === 'user' && (
-                              <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center flex-shrink-0 shadow-lg">
-                                <User className="h-5 w-5 text-secondary-foreground" />
-                              </div>
-                            )}
-                          </div>
-                        ))}
-
-                        <div ref={messagesEndRef} />
-                      </>
-                    )}
-                  </CardContent>
-
-                  {/* Message Input */}
-                  <div className="border-t border-border/50 p-6 bg-card/50">
-                    <form onSubmit={handleSendMessage} className="flex gap-4">
-                      <Input
-                        placeholder={`Message ${currentAgent.name}...`}
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        className="flex-1 h-12 px-4 text-base border-2 focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all duration-200"
-                        disabled={messagesLoading}
-                      />
-                      <Button
-                        type="submit"
-                        disabled={!newMessage.trim() || messagesLoading}
-                        className="gap-2 px-6 py-3 text-base font-medium rounded-sm shadow-lg hover:shadow-xl transition-all duration-200"
-                      >
-                        <Send className="h-5 w-5" />
-                        Send
-                      </Button>
-                    </form>
-                  </div>
-                </Card>
-
-                <VoiceConsole
-                  agentName={currentAgent.name}
-                  messages={messages}
-                  value={newMessage}
-                  onChange={setNewMessage}
-                  linguisticProfile={currentAgent.linguisticProfile}
-                  emotionalState={currentAgent.emotionalState}
-                />
-              </div>
+              <ChatConversationConsole
+                agent={currentAgent as AgentRecord}
+                messages={messages}
+                draft={newMessage}
+                isSending={chatSending}
+                isLoading={messagesLoading}
+                error={chatError}
+                onDraftChange={setNewMessage}
+                onSend={handleSendMessage}
+                onClearDraft={() => {
+                  setNewMessage('')
+                  setChatError(null)
+                }}
+              />
             ) : activeTab === 'memory' ? (
               <MemoryConsole
                 agentId={currentAgent.id}

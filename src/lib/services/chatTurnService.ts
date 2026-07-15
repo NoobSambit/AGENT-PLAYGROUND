@@ -362,6 +362,20 @@ export class ChatTurnService {
       ...(personalityUpdate ? ['profile_analysis'] : []),
     ]
 
+    agentMessage = {
+      ...agentMessage,
+      metadata: {
+        ...(agentMessage.metadata || {}),
+        chatTurnOutcome: {
+          version: 1,
+          changedDomains,
+          staleDomains,
+          completedAt: new Date().toISOString(),
+        },
+      },
+    }
+    await MessageService.updateMessage(agentMessage.id, { metadata: agentMessage.metadata })
+
     return {
       userMessage,
       agentMessage,
