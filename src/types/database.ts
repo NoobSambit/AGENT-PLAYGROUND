@@ -217,6 +217,7 @@ export interface TimelineEventV2 {
   timestamp: string
   title: string
   summary: string
+  content?: string
   importance: number
   source: string
   sourceId: string

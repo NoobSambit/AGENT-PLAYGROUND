@@ -687,11 +687,7 @@ export default function AgentDetail() {
                 </CardContent>
               </Card>
             ) : activeTab === 'timeline' ? (
-              <Card className="backdrop-blur-sm bg-card/80 border-0 shadow-xl">
-                <CardContent className="p-6">
-                  <TimelineExplorer agentId={currentAgent.id} agentName={currentAgent.name} />
-                </CardContent>
-              </Card>
+              <TimelineExplorer agentId={currentAgent.id} agentName={currentAgent.name} />
             ) : activeTab === 'relationships' ? (
               <RelationshipWorkspace
                 agentId={currentAgent.id}
