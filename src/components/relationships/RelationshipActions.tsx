@@ -5,7 +5,6 @@ import { BookOpen, GitBranch, Handshake, Loader2, ShieldAlert } from 'lucide-rea
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
 import type { RelationshipWorkspaceDetail } from '@/types/database'
-import { Collapsible } from './RelationshipAtoms'
 import { labelStyle, percentage, subPanel } from './RelationshipHelpers'
 
 // ─── PromptGuidance ───────────────────────────────────────────────────────────
@@ -87,14 +86,12 @@ interface ConflictAnalysis {
 
 function ConflictStudio({
   detail,
-  agentId,
   agentName,
   mediatorOptions,
   onAnalyze,
   onResolve,
 }: {
   detail: RelationshipWorkspaceDetail
-  agentId: string
   agentName: string
   mediatorOptions: Array<{ id: string; name: string }>
   onAnalyze: (topic: string, currentPos: string, otherPos: string, mediatorId: string) => Promise<ConflictAnalysis | null>
@@ -276,24 +273,29 @@ export function RelationshipActions({
   return (
     <div className="space-y-3">
       {/* Conflict Studio */}
-      <Collapsible title="Conflict Studio" icon={ShieldAlert} accent="text-pastel-red">
+      <section className={`${subPanel} overflow-hidden`} aria-labelledby="conflict-studio-title">
+        <header className="flex items-center gap-2 border-b border-[#263950] px-4 py-3"><ShieldAlert className="h-4 w-4 text-[#e38b8c]" aria-hidden="true" /><div><h2 id="conflict-studio-title" className="text-sm font-semibold text-[#edf3fb]">Conflict studio</h2><p className="mt-0.5 text-[11px] text-[#9db0c7]">Analyze before applying any social change.</p></div></header>
+        <div className="p-4">
         <ConflictStudio
           detail={detail}
-          agentId={agentId}
           agentName={agentName}
           mediatorOptions={mediatorOptions}
           onAnalyze={onAnalyzeConflict}
           onResolve={onResolveConflict}
         />
-      </Collapsible>
+        </div>
+      </section>
 
       {/* Prompt Guidance */}
-      <Collapsible title="Prompt Intelligence" icon={BookOpen} accent="text-pastel-purple">
-        <PromptGuidance detail={detail} agentId={agentId} agentName={agentName} />
-      </Collapsible>
+      <section className={`${subPanel} overflow-hidden`} aria-labelledby="relationship-prompt-guidance">
+        <header className="flex items-center gap-2 border-b border-[#263950] px-4 py-3"><BookOpen className="h-4 w-4 text-[#d2c4f2]" aria-hidden="true" /><h2 id="relationship-prompt-guidance" className="text-sm font-semibold text-[#edf3fb]">Prompt intelligence</h2></header>
+        <div className="p-4"><PromptGuidance detail={detail} agentId={agentId} agentName={agentName} /></div>
+      </section>
 
       {/* Manual Checkpoint */}
-      <Collapsible title="Manual Checkpoint" icon={GitBranch} accent="text-pastel-green">
+      <section className={`${subPanel} overflow-hidden`} aria-labelledby="relationship-manual-checkpoint">
+        <header className="flex items-center gap-2 border-b border-[#263950] px-4 py-3"><GitBranch className="h-4 w-4 text-[#91d4ae]" aria-hidden="true" /><h2 id="relationship-manual-checkpoint" className="text-sm font-semibold text-[#edf3fb]">Manual checkpoint</h2></header>
+        <div className="p-4">
         <div className="space-y-3">
           <div className="text-[11px] text-muted-foreground leading-relaxed">
             Capture a reviewed social observation without editing metrics directly. This becomes permanent evidence.
@@ -318,7 +320,8 @@ export function RelationshipActions({
             Save Checkpoint
           </Button>
         </div>
-      </Collapsible>
+        </div>
+      </section>
     </div>
   )
 }

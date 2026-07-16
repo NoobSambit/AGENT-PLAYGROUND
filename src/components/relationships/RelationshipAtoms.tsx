@@ -25,7 +25,7 @@ export function MetricBar({
           {Math.round(value * 100)}%
         </span>
       </div>
-      <div className="h-1 rounded-full bg-muted/30">
+      <div className="h-1 rounded-full bg-[#263950]">
         <motion.div
           initial={false}
           animate={{ width: `${Math.max(3, value * 100)}%` }}
@@ -86,7 +86,7 @@ export function Collapsible({
   const [open, setOpen] = useState(defaultOpen)
 
   return (
-    <div className="rounded-sm border border-border/30 bg-muted/10">
+    <div className="rounded-lg border border-[#263950] bg-[#101c2b]">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -120,7 +120,7 @@ export function Collapsible({
             transition={{ duration: 0.2, ease: 'easeInOut' }}
             className="overflow-hidden"
           >
-            <div className="border-t border-border/20 px-4 pb-4 pt-3">{children}</div>
+            <div className="border-t border-[#263950] px-4 pb-4 pt-3">{children}</div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -192,7 +192,7 @@ export function NetworkStatTile({
 // ─── EmptyInline ─────────────────────────────────────────────────────────────
 export function EmptyInline({ text }: { text: string }) {
   return (
-    <div className="rounded-sm border border-dashed border-border/25 px-3 py-5 text-center text-[12px] italic text-muted-foreground/60">
+    <div className="rounded-lg border border-dashed border-[#30445d] px-3 py-5 text-center text-[12px] italic text-[#8da0b7]">
       {text}
     </div>
   )

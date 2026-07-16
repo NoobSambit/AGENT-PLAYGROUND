@@ -576,7 +576,7 @@ export default function AgentDetail() {
           </motion.header>
 
           {/* Horizontal Navigation Row */}
-          <nav aria-label="Agent workspaces" className="sticky top-2 z-50 w-full overflow-hidden rounded-[7px] border border-[#34435a]/85 bg-[linear-gradient(118deg,#101b2a_0%,#0b1421_48%,#101927_100%)] p-2 shadow-[0_18px_50px_-38px_rgba(0,0,0,0.95)] backdrop-blur-xl">
+          <nav aria-label="Agent workspaces" className="sticky top-2 z-40 w-full overflow-hidden rounded-[7px] border border-[#34435a]/85 bg-[linear-gradient(118deg,#101b2a_0%,#0b1421_48%,#101927_100%)] p-2 shadow-[0_18px_50px_-38px_rgba(0,0,0,0.95)] backdrop-blur-xl">
             <div className="flex items-center gap-1 overflow-x-auto scrollbar-none no-scrollbar">
               {[
                 { label: 'Core', items: ['overview', 'chat', 'emotions', 'neural', 'timeline', 'memory', 'relationships', 'learning'], labelClass: 'border-[#536ea9]/60 bg-[#162341] text-[#c3d3ff]' },

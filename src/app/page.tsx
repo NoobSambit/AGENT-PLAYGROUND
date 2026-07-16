@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { useTheme } from 'next-themes'
 import { motion } from 'framer-motion'
 import {
   ArrowRight,
@@ -21,14 +20,12 @@ import {
   FileText,
   FlaskConical,
   GitBranch,
-  Github,
   Heart,
   Hexagon,
   History,
   Layers,
   LockKeyhole,
   MessageSquare,
-  Moon,
   Network,
   Play,
   Route,
@@ -38,7 +35,6 @@ import {
   ShieldCheck,
   Sparkles,
   SquareTerminal,
-  Sun,
   Table2,
   Trophy,
   UserRound,
@@ -47,6 +43,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { PlaygroundLogo } from '@/components/PlaygroundLogo'
+import { GlobalNavbar } from '@/components/GlobalNavbar'
 
 type Tone = 'violet' | 'cyan' | 'emerald' | 'amber' | 'rose' | 'blue' | 'slate'
 
@@ -377,26 +374,6 @@ function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ')
 }
 
-function HomeThemeButton() {
-  const { resolvedTheme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => setMounted(true), [])
-
-  const isDark = !mounted || resolvedTheme === 'dark'
-
-  return (
-    <button
-      type="button"
-      aria-label="Toggle color theme"
-      onClick={() => setTheme(isDark ? 'light' : 'dark')}
-      className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/[0.035] text-white/82 transition-all hover:scale-105 hover:border-white/20 hover:bg-white/[0.07] hover:text-white"
-    >
-      {isDark ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-    </button>
-  )
-}
-
 function ToneIcon({
   icon: Icon,
   tone = 'violet',
@@ -484,74 +461,7 @@ function MiniFlow({ steps, tone = 'violet' }: { steps: string[]; tone?: Tone }) 
 }
 
 function LandingNav() {
-  const nav = [
-    ['Home', '#top'],
-    ['Agents', '/agents'],
-    ['Dashboard', '/dashboard'],
-    ['Arena', '/simulation'],
-    ['Docs', '#workflow'],
-  ]
-
-  return (
-    <div className="absolute inset-x-0 top-2 z-50 flex justify-center">
-      <header className="flex h-[68px] w-[calc(100vw-72px)] max-w-[1820px] items-center justify-between rounded-[24px] border border-white/[0.08] bg-[#050d18]/60 px-4 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl">
-        {/* Left: Logo */}
-        <div className="flex items-center gap-3">
-          <Link href="/" className="group flex items-center gap-3 rounded-[16px] p-1 pr-3 transition hover:bg-white/[0.04]">
-            <span className="grid h-10 w-10 place-items-center rounded-[12px] border border-[#b8a1ff]/30 bg-gradient-to-br from-[#9b7cf6]/20 to-[#9b7cf6]/5 text-[#d8ccff] shadow-[0_0_15px_rgba(155,124,246,0.15)] transition-all group-hover:scale-105 group-hover:border-[#b8a1ff]/50">
-              <PlaygroundLogo className="h-5 w-5" />
-            </span>
-            <span className="hidden leading-tight sm:block">
-              <span className="block text-[15px] font-bold tracking-tight text-white/95">Agent Playground</span>
-              <span className="block text-[11px] font-medium text-[#b8a1ff]/70">Inspectable Agent OS</span>
-            </span>
-          </Link>
-        </div>
-
-        {/* Center: Nav Links */}
-        <nav className="hidden items-center gap-1 lg:flex bg-white/[0.02] p-1 rounded-full border border-white/[0.05]">
-          {nav.map(([label, href]) => {
-            const isActive = label === 'Home'
-            return (
-              <Link
-                key={label}
-                href={href}
-                className={cx(
-                  'relative px-5 py-2 text-[14px] font-medium transition-all duration-300 rounded-full',
-                  isActive
-                    ? 'text-white bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)]'
-                    : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-                )}
-              >
-                {label}
-              </Link>
-            )
-          })}
-        </nav>
-
-        {/* Right: Actions */}
-        <div className="flex items-center justify-end gap-3">
-          <span className="hidden items-center gap-2 rounded-full border border-white/[0.08] bg-black/40 px-4 py-2 text-[12px] font-medium text-white/80 shadow-inner backdrop-blur-sm md:inline-flex">
-            <Cloud className="h-4 w-4 text-[#b8a1ff]" />
-            Local + Cloud Runtime
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#49d581] opacity-75"></span>
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#49d581]"></span>
-            </span>
-          </span>
-          <div className="h-6 w-px bg-white/10" />
-          <HomeThemeButton />
-          <Link
-            href="https://github.com"
-            aria-label="Open GitHub"
-            className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/[0.035] text-slate-300 transition-all hover:scale-105 hover:border-white/20 hover:bg-white/[0.07] hover:text-white"
-          >
-            <Github className="h-5 w-5" />
-          </Link>
-        </div>
-      </header>
-    </div>
-  )
+  return <GlobalNavbar floating />
 }
 
 function HeroSection() {

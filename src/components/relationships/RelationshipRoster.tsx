@@ -52,8 +52,15 @@ function NetworkMap({
             <g
               key={item.pairId}
               onClick={() => onSelect(item.pairId)}
-              className="cursor-pointer"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  onSelect(item.pairId)
+                }
+              }}
+              className="cursor-pointer focus:outline-none"
               role="button"
+              tabIndex={0}
               aria-label={`Select ${item.otherAgentName}`}
             >
               <line
@@ -191,7 +198,7 @@ export function RelationshipRoster({
   }, [bootstrap.roster, filter, query])
 
   return (
-    <aside className="flex flex-col gap-3">
+    <aside className="flex h-full min-h-0 flex-col gap-3">
       {/* Roster Header */}
       <div className="flex items-center gap-2 px-1">
         <Target className="h-4 w-4 text-muted-foreground" />
@@ -237,7 +244,7 @@ export function RelationshipRoster({
       </div>
 
       {/* Roster list */}
-      <div className="max-h-[440px] space-y-1.5 overflow-y-auto pr-0.5">
+      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
         {filteredRoster.length > 0 ? (
           filteredRoster.map((item) => (
             <RosterCard

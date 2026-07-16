@@ -6,10 +6,10 @@ import type {
 } from '@/types/database'
 
 export const premiumPanel =
-  'rounded-md border border-border/40 bg-card/40 backdrop-blur-md shadow-sm'
-export const subPanel = 'rounded-sm border border-border/30 bg-muted/20'
+  'rounded-xl border border-[#2d4058] bg-[#0c1726] shadow-[0_12px_30px_rgba(0,0,0,0.16)]'
+export const subPanel = 'rounded-lg border border-[#263950] bg-[#101c2b]'
 export const labelStyle =
-  'text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80'
+  'text-[10px] font-bold uppercase tracking-[0.16em] text-[#8da0b7]'
 
 export const filterOptions = [
   { id: 'all', label: 'All' },
