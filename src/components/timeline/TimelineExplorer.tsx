@@ -9,6 +9,7 @@ import {
   Brush,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Clock3,
   Copy,
@@ -75,6 +76,7 @@ const SOURCE_CONFIG: Record<TimelineEventV2Type, SourceConfig> = {
 }
 
 const SOURCE_ORDER = Object.keys(SOURCE_CONFIG) as TimelineEventV2Type[]
+const EVENTS_PER_PAGE = 12
 const QUALITY_OPTIONS: Array<{ value: TimelineQualityFilter; label: string }> = [
   { value: 'all', label: 'All quality' },
   { value: 'passed', label: 'Passed' },
@@ -112,10 +114,6 @@ function formatTime(value: string) {
 
 function formatSourceName(value: string) {
   return value.replace(/[_-]/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
-}
-
-function compactId(value: string) {
-  return value.length > 26 ? `${value.slice(0, 14)}…${value.slice(-7)}` : value
 }
 
 function previewText(value: string, limit = 180) {
@@ -426,19 +424,37 @@ function ClusterGroup({
 
 function ReferenceList({ title, refs }: { title: string; refs: TimelineSourceRefV2[] }) {
   if (!refs.length) return null
+  const hasOnlyGenericEvidence = refs.every((ref) => ref.label === 'Linked evidence')
   return (
     <section className={quietPanelClass}>
       <h3 className="border-b border-[#263950] px-3 py-2 text-xs font-semibold text-[#dce8f6]">{title}</h3>
-      <div className="divide-y divide-[#263950]">
-        {refs.slice(0, 6).map((ref) => (
-          <div key={`${ref.type}:${ref.id}:${ref.label}`} className="flex items-center justify-between gap-3 px-3 py-2 text-[11px]">
-            <div className="min-w-0"><p className="truncate font-medium text-[#cdd9e7]">{ref.label}</p><p className="mt-0.5 truncate text-[#8295ad]">{formatSourceName(ref.type)} · {compactId(ref.id)}</p></div>
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#7e91a8]" aria-hidden="true" />
-          </div>
-        ))}
-      </div>
+      {hasOnlyGenericEvidence ? (
+        <p className="px-3 py-2.5 text-[11px] leading-4 text-[#9db0c7]">{refs.length} evidence record{refs.length === 1 ? '' : 's'} preserved with this event.</p>
+      ) : (
+        <div className="divide-y divide-[#263950]">
+          {refs.slice(0, 6).map((ref) => (
+            <div key={`${ref.type}:${ref.id}:${ref.label}`} className="px-3 py-2 text-[11px]">
+              <p className="truncate font-medium text-[#cdd9e7]">{ref.label}</p>
+              <p className="mt-0.5 truncate text-[#8295ad]">{formatSourceName(ref.type)} record</p>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   )
+}
+
+function participantLabel(participant: TimelineEventV2['participants'][number]) {
+  if (participant.name) return participant.name
+  if (participant.role?.includes('self')) return 'Current agent'
+  if (participant.role === 'related') return 'Related agent'
+  return participant.role ? formatSourceName(participant.role) : 'Linked participant'
+}
+
+function pageNumbers(currentPage: number, pageCount: number) {
+  if (pageCount <= 5) return Array.from({ length: pageCount }, (_, index) => index + 1)
+  const windowStart = Math.min(Math.max(currentPage - 2, 1), pageCount - 4)
+  return Array.from({ length: 5 }, (_, index) => windowStart + index)
 }
 
 function getDownstreamEffects(event: TimelineEventV2) {
@@ -467,8 +483,8 @@ function EventInspector({ event }: { event: TimelineEventV2 | null }) {
 
   if (!event) {
     return (
-      <aside className="hidden lg:block">
-        <div className={cn(quietPanelClass, 'flex min-h-[520px] flex-col items-center justify-center px-8 text-center')}>
+      <aside className="hidden h-full min-h-0 lg:block">
+        <div className={cn(quietPanelClass, 'flex h-full min-h-[520px] flex-col items-center justify-center px-8 text-center')}>
           <Clock3 className="h-7 w-7 text-[#8da0b7]" aria-hidden="true" />
           <h2 className="mt-3 text-sm font-semibold text-[#dce8f6]">Select an event</h2>
           <p className="mt-1.5 max-w-[230px] text-xs leading-5 text-[#8fa1b8]">Inspect the source, quality state, participants, themes, and preserved references here.</p>
@@ -493,7 +509,7 @@ function EventInspector({ event }: { event: TimelineEventV2 | null }) {
   }
 
   return (
-    <aside className="space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto" aria-label="Selected timeline event">
+    <aside className="h-full min-h-0 space-y-3 overflow-y-auto pr-1" aria-label="Selected timeline event">
       <header className={cn(quietPanelClass, 'flex items-center justify-between gap-3 px-4 py-3')} style={{ borderColor: `${config.accent}55` }}>
         <div className="flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-md border" style={{ color: config.accent, borderColor: `${config.accent}55`, backgroundColor: `${config.accent}12` }}><EventIcon type={event.type} className="h-3.5 w-3.5" /></span><h2 className="text-sm font-semibold text-[#edf3fb]">Selected event</h2></div>
         <button type="button" onClick={() => void copyEventId()} className="inline-flex min-h-7 items-center gap-1.5 rounded-md border border-[#30445d] bg-[#101c2b] px-2 text-[10px] font-medium text-[#aebed0] hover:text-[#edf3fb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a9bdea]" aria-label="Copy selected event ID">
@@ -537,14 +553,13 @@ function EventInspector({ event }: { event: TimelineEventV2 | null }) {
           <h3 className="border-b border-[#263950] px-3 py-2 text-xs font-semibold text-[#dce8f6]">Source</h3>
           <dl className="divide-y divide-[#263950] px-3 text-[11px]">
             <div className="flex items-center justify-between gap-3 py-2"><dt className="text-[#8fa1b8]">Source table</dt><dd className="max-w-[62%] truncate text-right font-medium text-[#cdd9e7]">{formatSourceName(event.source)}</dd></div>
-            <div className="flex items-center justify-between gap-3 py-2"><dt className="text-[#8fa1b8]">Source ID</dt><dd className="max-w-[62%] truncate text-right font-mono text-[#aebed0]">{compactId(event.sourceId)}</dd></div>
             {event.status && <div className="flex items-center justify-between gap-3 py-2"><dt className="text-[#8fa1b8]">Status</dt><dd className="max-w-[62%] truncate text-right font-medium text-[#cdd9e7]">{formatSourceName(event.status)}</dd></div>}
           </dl>
         </section>
 
         {event.themes.length > 0 && <section><h3 className={eyebrowClass}>Themes</h3><div className="mt-2 flex flex-wrap gap-1.5">{event.themes.slice(0, 8).map((theme) => <span key={theme} className="rounded-md border border-[#30445d] bg-[#101c2b] px-2 py-1 text-[10px] text-[#b7c8dc]">{theme}</span>)}</div></section>}
 
-        {event.participants.length > 0 && <section className={quietPanelClass}><h3 className="border-b border-[#263950] px-3 py-2 text-xs font-semibold text-[#dce8f6]">Participants</h3><div className="divide-y divide-[#263950]">{event.participants.slice(0, 5).map((participant) => <div key={`${participant.id}:${participant.role}`} className="px-3 py-2 text-[11px]"><p className="font-medium text-[#cdd9e7]">{participant.name || participant.id}</p>{participant.role && <p className="mt-0.5 text-[#8fa1b8]">{participant.role}</p>}</div>)}</div></section>}
+        {event.participants.length > 0 && <section className={quietPanelClass}><h3 className="border-b border-[#263950] px-3 py-2 text-xs font-semibold text-[#dce8f6]">Participants</h3><div className="divide-y divide-[#263950]">{event.participants.slice(0, 5).map((participant) => <div key={`${participant.id}:${participant.role}`} className="px-3 py-2 text-[11px]"><p className="font-medium text-[#cdd9e7]">{participantLabel(participant)}</p>{participant.role && <p className="mt-0.5 text-[#8fa1b8]">{formatSourceName(participant.role)}</p>}</div>)}</div></section>}
 
         {effects.length > 0 && <section className={quietPanelClass}><h3 className="border-b border-[#263950] px-3 py-2 text-xs font-semibold text-[#dce8f6]">Downstream effects</h3><div className="space-y-1.5 px-3 py-2.5">{effects.map((effect) => <p key={effect.label} className="flex gap-2 text-[11px] leading-4 text-[#b9c8d8]"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: effect.tone }} aria-hidden="true" />{effect.label}</p>)}</div></section>}
 
@@ -571,6 +586,7 @@ export function TimelineExplorer({ agentId, agentName, className = '' }: Timelin
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
 
   const sourceCounts = useMemo(() => {
     const counts = new Map<TimelineEventV2Type, number>()
@@ -591,6 +607,7 @@ export function TimelineExplorer({ agentId, agentName, className = '' }: Timelin
       if (minImportance > 0) params.set('minImportance', String(minImportance))
       const data = await parseResponse<TimelineWorkspacePayload>(await fetch(`/api/agents/${agentId}/timeline?${params.toString()}`, { cache: 'no-store' }))
       setPayload(data)
+      setPage(1)
       setSelectedEvent((current) => current && data.events.some((event) => event.id === current.id) ? current : data.events[0] || null)
     } catch (nextError) {
       console.error('Failed to load timeline workspace:', nextError)
@@ -610,7 +627,23 @@ export function TimelineExplorer({ agentId, agentName, className = '' }: Timelin
   const events = payload?.events || []
   const clusters = payload?.clusters || []
   const firstCluster = clusters[0]
+  const pageCount = Math.max(1, Math.ceil(events.length / EVENTS_PER_PAGE))
+  const currentPage = Math.min(page, pageCount)
+  const pageStart = (currentPage - 1) * EVENTS_PER_PAGE
+  const pageEvents = events.slice(pageStart, pageStart + EVENTS_PER_PAGE)
+  const pageEventIds = new Set(pageEvents.map((event) => event.id))
+  const pageClusters = clusters.flatMap((cluster) => {
+    const eventIds = cluster.eventIds.filter((eventId) => pageEventIds.has(eventId))
+    return eventIds.length ? [{ ...cluster, eventIds, count: eventIds.length }] : []
+  })
   const hasActiveFilters = activeTypes.length > 0 || quality !== 'all' || minImportance > 0 || Boolean(query.trim())
+
+  const selectPage = (nextPage: number) => {
+    const resolvedPage = Math.min(Math.max(nextPage, 1), pageCount)
+    setPage(resolvedPage)
+    const firstEvent = events[(resolvedPage - 1) * EVENTS_PER_PAGE]
+    if (firstEvent) setSelectedEvent(firstEvent)
+  }
 
   return (
     <section className={cn('space-y-3', className)} aria-label={`${agentName} timeline`}>
@@ -618,8 +651,8 @@ export function TimelineExplorer({ agentId, agentName, className = '' }: Timelin
       {filterOpen && <div id="timeline-filters" className={panelClass}><FilterDrawer coverage={payload?.coverage || []} sourceCounts={sourceCounts} activeTypes={activeTypes} quality={quality} minImportance={minImportance} query={query} onQueryChange={setQuery} onQualityChange={setQuality} onImportanceChange={setMinImportance} onToggleType={toggleType} onShowAll={() => setActiveTypes([])} /></div>}
       {payload && <SourceCoverageGrid coverage={payload.coverage} />}
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.75fr)] 2xl:grid-cols-[minmax(0,1fr)_minmax(500px,0.82fr)]">
-        <main className={panelClass}>
+      <div className="grid gap-3 lg:h-[760px] lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.75fr)] 2xl:grid-cols-[minmax(0,1fr)_minmax(500px,0.82fr)]">
+        <main className={cn(panelClass, 'flex min-h-0 flex-col')}>
         <header className="flex flex-wrap items-center gap-3 border-b border-[#263950] px-4 py-3">
           <div className="flex min-w-0 items-center gap-2.5"><Clock3 className="h-4 w-4 shrink-0 text-[#a9bdea]" aria-hidden="true" /><h1 className="truncate text-sm font-semibold text-[#edf3fb]">{firstCluster ? formatDay(firstCluster.startTime) : 'Event stream'}</h1><span className="text-xs text-[#9db0c7]">{events.length} event{events.length === 1 ? '' : 's'}</span></div>
           <div className="ml-auto flex items-center gap-2">
@@ -628,16 +661,25 @@ export function TimelineExplorer({ agentId, agentName, className = '' }: Timelin
           </div>
         </header>
 
-        {error && <div className="m-3 flex items-start gap-2 rounded-lg border border-[#e38b8c]/40 bg-[#301c25] p-3 text-sm text-[#f0bac2]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><div><p className="font-semibold">Timeline failed to load</p><p className="mt-1 text-xs">{error}</p></div></div>}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {error && <div className="m-3 flex items-start gap-2 rounded-lg border border-[#e38b8c]/40 bg-[#301c25] p-3 text-sm text-[#f0bac2]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><div><p className="font-semibold">Timeline failed to load</p><p className="mt-1 text-xs">{error}</p></div></div>}
 
-        {loading ? <TimelineSkeleton /> : events.length === 0 ? (
-          <div className="px-6 py-16 text-center"><Filter className="mx-auto h-7 w-7 text-[#8da0b7]" aria-hidden="true" /><h2 className="mt-3 text-sm font-semibold text-[#dce8f6]">No timeline events found</h2><p className="mx-auto mt-1.5 max-w-sm text-xs leading-5 text-[#8fa1b8]">Adjust the filters or create saved artifacts, relationship changes, memories, or conversations for this agent.</p></div>
-        ) : (
-          <div className="divide-y divide-[#263950]">
-            {clusters.map((cluster, index) => <ClusterGroup key={cluster.id} cluster={cluster} events={events} selectedId={selectedEvent?.id} onSelect={setSelectedEvent} first={index === 0} />)}
-            {payload?.nextCursor && <p className="border-t border-[#263950] px-4 py-2.5 text-center text-[11px] text-[#8194ab]">Showing the newest {events.length} indexed events.</p>}
+          {loading ? <TimelineSkeleton /> : events.length === 0 ? (
+            <div className="px-6 py-16 text-center"><Filter className="mx-auto h-7 w-7 text-[#8da0b7]" aria-hidden="true" /><h2 className="mt-3 text-sm font-semibold text-[#dce8f6]">No timeline events found</h2><p className="mx-auto mt-1.5 max-w-sm text-xs leading-5 text-[#8fa1b8]">Adjust the filters or create saved artifacts, relationship changes, memories, or conversations for this agent.</p></div>
+          ) : (
+            <div className="divide-y divide-[#263950]">
+              {pageClusters.map((cluster, index) => <ClusterGroup key={`${cluster.id}:${currentPage}`} cluster={cluster} events={pageEvents} selectedId={selectedEvent?.id} onSelect={setSelectedEvent} first={index === 0} />)}
+            </div>
+          )}
+        </div>
+        {!loading && events.length > 0 && <nav className="flex flex-wrap items-center justify-between gap-2 border-t border-[#263950] px-3 py-2.5" aria-label="Timeline pages">
+          <p className="text-[11px] text-[#8fa1b8]">Showing {pageStart + 1}–{Math.min(pageStart + EVENTS_PER_PAGE, events.length)} of {events.length}</p>
+          <div className="flex items-center gap-1" role="list">
+            <button type="button" onClick={() => selectPage(currentPage - 1)} disabled={currentPage === 1} className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md border border-[#30445d] bg-[#101c2b] text-[#b7c8dc] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a9bdea]" aria-label="Previous page"><ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" /></button>
+            {pageNumbers(currentPage, pageCount).map((pageNumber) => <button key={pageNumber} type="button" onClick={() => selectPage(pageNumber)} aria-current={pageNumber === currentPage ? 'page' : undefined} className={cn('inline-flex min-h-8 min-w-8 items-center justify-center rounded-md border px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a9bdea]', pageNumber === currentPage ? 'border-[#91d4ae] bg-[#17352f] text-[#b8edd5]' : 'border-[#30445d] bg-[#101c2b] text-[#b7c8dc] hover:text-[#edf3fb]')}>{pageNumber}</button>)}
+            <button type="button" onClick={() => selectPage(currentPage + 1)} disabled={currentPage === pageCount} className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md border border-[#30445d] bg-[#101c2b] text-[#b7c8dc] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a9bdea]" aria-label="Next page"><ChevronRight className="h-3.5 w-3.5" aria-hidden="true" /></button>
           </div>
-        )}
+        </nav>}
       </main>
       <EventInspector event={selectedEvent} />
       </div>
